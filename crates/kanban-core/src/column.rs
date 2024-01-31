@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn create_column_stores_title() {
         let mut doc = AutoCommit::new();
-        crate::init_doc(&mut doc);
+        crate::init_doc(&mut doc).unwrap();
         let id = create_column(&mut doc, "Backlog").unwrap();
         assert!(!id.is_empty());
         let obj = find_column_obj(&doc, &id).unwrap().unwrap();

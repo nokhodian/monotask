@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn create_card_stores_title() {
         let mut doc = AutoCommit::new();
-        crate::init_doc(&mut doc);
+        crate::init_doc(&mut doc).unwrap();
         let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
         let card = create_card(&mut doc, &col_id, "My Task").unwrap();
         assert_eq!(card.title, "My Task");
@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn delete_card_sets_tombstone() {
         let mut doc = AutoCommit::new();
-        crate::init_doc(&mut doc);
+        crate::init_doc(&mut doc).unwrap();
         let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
         let card = create_card(&mut doc, &col_id, "Task").unwrap();
         delete_card(&mut doc, &card.id).unwrap();

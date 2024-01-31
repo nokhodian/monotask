@@ -9,17 +9,17 @@ pub struct Board {
     pub created_at: String,
 }
 
-pub fn create_board(title: &str, created_by: &str) -> (AutoCommit, Board) {
+pub fn create_board(title: &str, created_by: &str) -> Result<(AutoCommit, Board)> {
     let mut doc = AutoCommit::new();
-    crate::init_doc(&mut doc);
+    crate::init_doc(&mut doc)?;
     let id = uuid::Uuid::new_v4().to_string();
     let hlc = crate::clock::now();
-    let _ = doc.put(ROOT, "id", id.as_str());
-    let _ = doc.put(ROOT, "title", title);
-    let _ = doc.put(ROOT, "created_at", hlc.as_str());
-    let _ = doc.put(ROOT, "created_by", created_by);
+    doc.put(ROOT, "id", id.as_str())?;
+    doc.put(ROOT, "title", title)?;
+    doc.put(ROOT, "created_at", hlc.as_str())?;
+    doc.put(ROOT, "created_by", created_by)?;
     let board = Board { id, title: title.into(), created_at: hlc };
-    (doc, board)
+    Ok((doc, board))
 }
 
 pub fn get_board_title(doc: &AutoCommit) -> Result<String> {
