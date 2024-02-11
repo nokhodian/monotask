@@ -1,0 +1,36 @@
+use automerge::AutoCommit;
+use rusqlite::params;
+use crate::StorageError;
+
+pub fn save_board(conn: &rusqlite::Connection, board_id: &str, doc: &mut AutoCommit) -> Result<(), StorageError> {
+    let bytes = doc.save();
+    conn.execute(
+        "INSERT INTO boards (board_id, automerge_doc, last_modified)
+         VALUES (?1, ?2, unixepoch())
+         ON CONFLICT(board_id) DO UPDATE SET
+             automerge_doc = excluded.automerge_doc,
+             last_modified = excluded.last_modified",
+        params![board_id, bytes],
+    )?;
+    Ok(())
+}
+
+pub fn load_board(conn: &rusqlite::Connection, board_id: &str) -> Result<AutoCommit, StorageError> {
+    let bytes: Vec<u8> = conn.query_row(
+        "SELECT automerge_doc FROM boards WHERE board_id = ?1",
+        params![board_id],
+        |r| r.get(0),
+    ).map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => StorageError::NotFound(board_id.into()),
+        other => StorageError::Sqlite(other),
+    })?;
+    automerge::AutoCommit::load(&bytes)
+        .map_err(|e| StorageError::Automerge(e.to_string()))
+}
+
+pub fn list_board_ids(conn: &rusqlite::Connection) -> Result<Vec<String>, StorageError> {
+    let mut stmt = conn.prepare("SELECT board_id FROM boards ORDER BY last_modified DESC")?;
+    let ids = stmt.query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(ids)
+}

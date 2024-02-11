@@ -1,0 +1,18 @@
+[package]
+name = "kanban-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+automerge    = { workspace = true }
+rusqlite     = { workspace = true }
+kanban-core  = { path = "../kanban-core" }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+chrono       = { workspace = true }
+
+[dev-dependencies]
+tempfile   = { workspace = true }
+kanban-core = { path = "../kanban-core" }
