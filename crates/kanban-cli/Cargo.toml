@@ -1,0 +1,25 @@
+[package]
+name = "kanban-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "app-cli"
+path = "src/main.rs"
+
+[dependencies]
+kanban-core    = { path = "../kanban-core" }
+kanban-crypto  = { path = "../kanban-crypto" }
+kanban-storage = { path = "../kanban-storage" }
+clap           = { workspace = true }
+anyhow         = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+tabled         = { workspace = true }
+colored        = { workspace = true }
+tracing        = { workspace = true }
+dirs           = { workspace = true }
+
+[dev-dependencies]
+tempfile   = { workspace = true }
+serde_json = { workspace = true }
