@@ -42,6 +42,34 @@ pub fn create_card(doc: &mut AutoCommit, col_id: &str, title: &str) -> Result<Ca
     })
 }
 
+pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let title = crate::get_string(doc, &card_obj, "title")?.unwrap_or_default();
+    let description = crate::get_string(doc, &card_obj, "description")?.unwrap_or_default();
+    let created_at = crate::get_string(doc, &card_obj, "created_at")?.unwrap_or_default();
+    let created_by = crate::get_string(doc, &card_obj, "created_by")?.unwrap_or_default();
+    let due_date = crate::get_string(doc, &card_obj, "due_date")?;
+    let deleted = match doc.get(&card_obj, "deleted")? {
+        Some((automerge::Value::Scalar(s), _)) => matches!(s.as_ref(), automerge::ScalarValue::Boolean(true)),
+        _ => false,
+    };
+    let archived = match doc.get(&card_obj, "archived")? {
+        Some((automerge::Value::Scalar(s), _)) => matches!(s.as_ref(), automerge::ScalarValue::Boolean(true)),
+        _ => false,
+    };
+    Ok(Card {
+        id: card_id.to_string(),
+        title,
+        description,
+        created_at,
+        created_by,
+        due_date,
+        deleted,
+        archived,
+        ..Default::default()
+    })
+}
+
 pub fn get_card_obj(doc: &AutoCommit, card_id: &str) -> Result<automerge::ObjId> {
     let cards_map = crate::get_cards_map_readonly(doc)?;
     match doc.get(&cards_map, card_id)? {
