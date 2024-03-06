@@ -1,4 +1,5 @@
 pub mod board;
+pub mod card_number;
 pub mod card;
 pub mod checklist;
 pub mod clock;
