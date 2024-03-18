@@ -109,7 +109,10 @@ fn main() -> anyhow::Result<()> {
         Commands::Card { cmd } => match cmd {
             CardCommands::Create { board_id, col_id, title, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                let card = kanban_core::card::create_card(&mut doc, &col_id, &title)?;
+                // Placeholder until identity system is wired in Phase 3
+                let actor_pk = vec![0u8; 32];
+                let members = vec![actor_pk.clone()];
+                let card = kanban_core::card::create_card(&mut doc, &col_id, &title, &actor_pk, &members)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::json!({"id": card.id, "title": card.title, "board_id": board_id}));
