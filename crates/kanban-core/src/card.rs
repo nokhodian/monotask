@@ -189,6 +189,70 @@ pub fn get_card_display_name(doc: &AutoCommit, card_id: &str) -> Result<Option<S
     }
 }
 
+/// Duplicate a card into the same or different column.
+///
+/// Copies: title (prefixed "Copy of"), description, labels.
+/// Resets: assignees (empty), comments (empty), checklists (not copied in MVP).
+/// Sets: new UUID, new card number, `copied_from` pointing to the source card.
+pub fn copy_card(
+    doc: &mut AutoCommit,
+    source_card_id: &str,
+    target_col_id: &str,
+    actor_pk: &[u8],
+    all_members: &[Vec<u8>],
+) -> Result<Card> {
+    // Read source card fields (immutable borrow)
+    let (title, description) = {
+        let cards_map = crate::get_cards_map_readonly(doc)?;
+        let src_obj = match doc.get(&cards_map, source_card_id)? {
+            Some((_, id)) => id,
+            None => return Err(crate::Error::NotFound(source_card_id.to_string())),
+        };
+        let title = crate::get_string(doc, &src_obj, "title")?
+            .map(|t| format!("Copy of {t}"))
+            .unwrap_or_else(|| "Copy of card".to_string());
+        let description = crate::get_string(doc, &src_obj, "description")?.unwrap_or_default();
+        (title, description)
+    };
+
+    // Assign new card number (mutable)
+    let number = assign_next_card_number(doc, actor_pk, all_members)?;
+    let new_card_id = uuid::Uuid::new_v4().to_string();
+    let hlc = crate::clock::now();
+
+    // Write the new card (mutable borrow)
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = doc.put_object(&cards_map, &new_card_id, ObjType::Map)?;
+    doc.put(&card_obj, "id", new_card_id.as_str())?;
+    doc.put(&card_obj, "title", title.as_str())?;
+    doc.put(&card_obj, "description", description.as_str())?;
+    doc.put(&card_obj, "number", number.to_display())?;
+    doc.put(&card_obj, "created_by", hex::encode(actor_pk))?;
+    doc.put(&card_obj, "created_at", hlc.as_str())?;
+    doc.put(&card_obj, "copied_from", source_card_id)?;
+    doc.put(&card_obj, "deleted", false)?;
+    doc.put(&card_obj, "archived", false)?;
+    doc.put_object(&card_obj, "assignees", ObjType::List)?;
+    doc.put_object(&card_obj, "labels", ObjType::List)?;
+    doc.put_object(&card_obj, "comments", ObjType::List)?;
+    doc.put_object(&card_obj, "checklists", ObjType::List)?;
+    doc.put_object(&card_obj, "related", ObjType::Map)?;
+
+    // Append to target column
+    crate::column::append_card_to_column(doc, target_col_id, &new_card_id)?;
+
+    Ok(Card {
+        id: new_card_id,
+        title,
+        description,
+        number: Some(number),
+        copied_from: Some(source_card_id.to_string()),
+        created_at: hlc,
+        created_by: hex::encode(actor_pk),
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +307,23 @@ mod tests {
         let c2 = create_card(&mut doc, &col_id, "Task 2", &actor_pk, &members).unwrap();
         assert_eq!(c1.number.unwrap().seq, 1);
         assert_eq!(c2.number.unwrap().seq, 2);
+    }
+
+    #[test]
+    fn copy_card_produces_new_card_with_fresh_fields() {
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let original = create_card(&mut doc, &col_id, "Deploy API", &actor_pk, &members).unwrap();
+
+        let copy = copy_card(&mut doc, &original.id, &col_id, &actor_pk, &members).unwrap();
+
+        assert_ne!(copy.id, original.id);
+        assert_eq!(copy.title, "Copy of Deploy API");
+        assert_eq!(copy.number.as_ref().unwrap().seq, 2); // seq incremented from 1
+        assert!(copy.assignees.is_empty());
+        assert_eq!(copy.copied_from, Some(original.id.clone()));
     }
 }
