@@ -40,8 +40,25 @@ pub fn assign_numbers_for_actor(
     // Second pass: assign numbers (mutable borrow)
     let mut assigned = Vec::new();
     for (card_id, _) in &owned_unnumbered {
+        // Verify card still exists and still has no number (TOCTOU guard)
+        let still_needs_number = {
+            let cards_map = crate::get_cards_map_readonly(doc)?;
+            match doc.get(&cards_map, card_id.as_str())? {
+                None => false, // card was removed
+                Some((_, card_obj)) => {
+                    crate::get_string(doc, &card_obj, "number")?.is_none()
+                }
+            }
+        };
+        if !still_needs_number {
+            continue;
+        }
+
+        // Now safe to increment counter
         let number = crate::card::assign_next_card_number(doc, actor_pk, all_members)?;
         let num_str = number.to_display();
+
+        // Write the number
         let cards_map = crate::get_cards_map(doc)?;
         let card_obj = match doc.get(&cards_map, card_id.as_str())? {
             Some((_, id)) => id,
