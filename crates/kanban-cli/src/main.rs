@@ -28,6 +28,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: CardCommands,
     },
+    /// Checklist management
+    Checklist {
+        #[command(subcommand)]
+        cmd: ChecklistCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -46,6 +51,70 @@ enum ColumnCommands {
 enum CardCommands {
     Create { board_id: String, col_id: String, title: String, #[arg(long)] json: bool },
     View { board_id: String, card_id: String, #[arg(long)] json: bool },
+    /// Comment management
+    Comment {
+        #[command(subcommand)]
+        cmd: CommentCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum CommentCommands {
+    /// Add a comment to a card
+    Add {
+        board_id: String,
+        card_id: String,
+        text: String,
+        #[arg(long)] json: bool,
+    },
+    /// List comments on a card
+    List {
+        board_id: String,
+        card_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// Delete a comment
+    Delete {
+        board_id: String,
+        card_id: String,
+        comment_id: String,
+        #[arg(long)] json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ChecklistCommands {
+    /// Add a checklist to a card
+    Add {
+        board_id: String,
+        card_id: String,
+        title: String,
+        #[arg(long)] json: bool,
+    },
+    /// Add an item to a checklist
+    ItemAdd {
+        board_id: String,
+        card_id: String,
+        checklist_id: String,
+        text: String,
+        #[arg(long)] json: bool,
+    },
+    /// Check a checklist item
+    ItemCheck {
+        board_id: String,
+        card_id: String,
+        checklist_id: String,
+        item_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// Uncheck a checklist item
+    ItemUncheck {
+        board_id: String,
+        card_id: String,
+        checklist_id: String,
+        item_id: String,
+        #[arg(long)] json: bool,
+    },
 }
 
 fn data_dir(cli: &Cli) -> anyhow::Result<std::path::PathBuf> {
@@ -134,6 +203,83 @@ fn main() -> anyhow::Result<()> {
                     if card.deleted { println!("Status:      DELETED"); }
                     else if card.archived { println!("Status:      archived"); }
                     if let Some(due) = &card.due_date { println!("Due:         {due}"); }
+                }
+            }
+            CardCommands::Comment { cmd } => match cmd {
+                CommentCommands::Add { board_id, card_id, text, json } => {
+                    let mut doc = storage.load_board(&board_id)?;
+                    // Use placeholder identity until Phase 3 wires real identity
+                    let author_key = "placeholder";
+                    let comment = kanban_core::comment::add_comment(&mut doc, &card_id, &text, author_key)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&comment)?);
+                    } else {
+                        println!("Added comment {}", comment.id);
+                    }
+                }
+                CommentCommands::List { board_id, card_id, json } => {
+                    let doc = storage.load_board(&board_id)?;
+                    let comments = kanban_core::comment::list_comments(&doc, &card_id)?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&comments)?);
+                    } else {
+                        for c in &comments {
+                            println!("[{}] {}: {}", c.created_at, c.author, c.text);
+                        }
+                    }
+                }
+                CommentCommands::Delete { board_id, card_id, comment_id, json } => {
+                    let mut doc = storage.load_board(&board_id)?;
+                    kanban_core::comment::delete_comment(&mut doc, &card_id, &comment_id)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json {
+                        println!("{}", serde_json::json!({"deleted": comment_id}));
+                    } else {
+                        println!("Deleted comment {comment_id}");
+                    }
+                }
+            },
+        },
+        Commands::Checklist { cmd } => match cmd {
+            ChecklistCommands::Add { board_id, card_id, title, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                let cl = kanban_core::checklist::add_checklist(&mut doc, &card_id, &title)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&cl)?);
+                } else {
+                    println!("Created checklist: {} ({})", cl.title, cl.id);
+                }
+            }
+            ChecklistCommands::ItemAdd { board_id, card_id, checklist_id, text, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                let item = kanban_core::checklist::add_checklist_item(&mut doc, &card_id, &checklist_id, &text)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&item)?);
+                } else {
+                    println!("Added item: {} ({})", item.text, item.id);
+                }
+            }
+            ChecklistCommands::ItemCheck { board_id, card_id, checklist_id, item_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::checklist::set_item_checked(&mut doc, &card_id, &checklist_id, &item_id, true)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::json!({"checked": true, "item_id": item_id}));
+                } else {
+                    println!("Checked item {item_id}");
+                }
+            }
+            ChecklistCommands::ItemUncheck { board_id, card_id, checklist_id, item_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::checklist::set_item_checked(&mut doc, &card_id, &checklist_id, &item_id, false)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::json!({"checked": false, "item_id": item_id}));
+                } else {
+                    println!("Unchecked item {item_id}");
                 }
             }
         },
