@@ -18,6 +18,23 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
 }
 
+/// Extract (card_id, number_string) pairs from an Automerge doc.
+fn extract_card_numbers(doc: &automerge::AutoCommit) -> Vec<(String, String)> {
+    use automerge::ReadDoc;
+    let cards_map = match kanban_core::get_cards_map_readonly(doc) {
+        Ok(id) => id,
+        Err(_) => return vec![],
+    };
+    doc.keys(&cards_map)
+        .filter_map(|card_id| {
+            let card_id = card_id.to_string();
+            let card_obj = doc.get(&cards_map, &card_id).ok()?.map(|(_, id)| id)?;
+            let number = kanban_core::get_string(doc, &card_obj, "number").ok()??;
+            Some((card_id, number))
+        })
+        .collect()
+}
+
 pub struct Storage {
     conn: Connection,
 }
@@ -38,7 +55,14 @@ impl Storage {
     }
 
     pub fn save_board(&mut self, board_id: &str, doc: &mut automerge::AutoCommit) -> Result<(), StorageError> {
-        board::save_board(&self.conn, board_id, doc)
+        board::save_board(&self.conn, board_id, doc)?;
+        // Keep the card_number_index in sync with the document
+        let cards = extract_card_numbers(doc);
+        if !cards.is_empty() {
+            card_number::sync_card_number_index(&self.conn, board_id, &cards)
+                .map_err(StorageError::Sqlite)?;
+        }
+        Ok(())
     }
 
     pub fn load_board(&self, board_id: &str) -> Result<automerge::AutoCommit, StorageError> {
