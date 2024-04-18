@@ -40,6 +40,19 @@ pub fn resolve_card_ref(
     }
 }
 
+/// Delete all card_number_index rows for a given board.
+/// Called before re-syncing to remove stale entries.
+pub fn clear_card_numbers_for_board(
+    conn: &rusqlite::Connection,
+    board_id: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM card_number_index WHERE board_id = ?1",
+        rusqlite::params![board_id],
+    )?;
+    Ok(())
+}
+
 pub fn sync_card_number_index(
     conn: &rusqlite::Connection,
     board_id: &str,

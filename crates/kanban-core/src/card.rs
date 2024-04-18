@@ -104,6 +104,8 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
     let created_at = crate::get_string(doc, &card_obj, "created_at")?.unwrap_or_default();
     let created_by = crate::get_string(doc, &card_obj, "created_by")?.unwrap_or_default();
     let due_date = crate::get_string(doc, &card_obj, "due_date")?;
+    let number_str = crate::get_string(doc, &card_obj, "number")?;
+    let number = number_str.and_then(|s| s.parse::<crate::card_number::CardNumber>().ok());
     let deleted = match doc.get(&card_obj, "deleted")? {
         Some((automerge::Value::Scalar(s), _)) => matches!(s.as_ref(), automerge::ScalarValue::Boolean(true)),
         _ => false,
@@ -121,6 +123,7 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         due_date,
         deleted,
         archived,
+        number,
         ..Default::default()
     })
 }
