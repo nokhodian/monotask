@@ -29,6 +29,16 @@ fn extract_card_numbers(doc: &automerge::AutoCommit) -> Vec<(String, String)> {
         .filter_map(|card_id| {
             let card_id = card_id.to_string();
             let card_obj = doc.get(&cards_map, &card_id).ok()?.map(|(_, id)| id)?;
+            // Skip deleted cards — they should not be resolvable by number
+            let is_deleted = match doc.get(&card_obj, "deleted").ok().flatten() {
+                Some((automerge::Value::Scalar(s), _)) => {
+                    matches!(s.as_ref(), automerge::ScalarValue::Boolean(true))
+                }
+                _ => false,
+            };
+            if is_deleted {
+                return None;
+            }
             let number = kanban_core::get_string(doc, &card_obj, "number").ok()??;
             Some((card_id, number))
         })
@@ -85,10 +95,6 @@ impl Storage {
         card_number::resolve_card_ref(&self.conn, board_id, card_ref)
     }
 
-    pub fn sync_card_number_index(&self, board_id: &str, cards: &[(String, String)]) -> Result<(), StorageError> {
-        card_number::sync_card_number_index(&self.conn, board_id, cards)
-            .map_err(StorageError::Sqlite)
-    }
 }
 
 #[cfg(test)]
