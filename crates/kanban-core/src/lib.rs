@@ -6,6 +6,7 @@ pub mod clock;
 pub mod column;
 pub mod comment;
 pub mod migration;
+pub mod space;
 
 use thiserror::Error;
 
