@@ -63,7 +63,78 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             PRIMARY KEY (board_id, actor_key, seq)
         );
 
+        CREATE TABLE IF NOT EXISTS spaces (
+            id              TEXT PRIMARY KEY,
+            name            TEXT NOT NULL CHECK(length(name) >= 1 AND length(name) <= 255),
+            owner_pubkey    TEXT NOT NULL,
+            created_at      INTEGER NOT NULL,
+            automerge_bytes BLOB NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS space_members (
+            space_id     TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+            pubkey       TEXT NOT NULL,
+            display_name TEXT,
+            avatar_blob  BLOB,
+            kicked       INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (space_id, pubkey)
+        );
+
+        CREATE TABLE IF NOT EXISTS space_boards (
+            space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+            board_id TEXT NOT NULL,
+            PRIMARY KEY (space_id, board_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS space_invites (
+            token_hash TEXT PRIMARY KEY,
+            token      TEXT NOT NULL,
+            space_id   TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER,
+            revoked    INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS space_invites_one_active
+            ON space_invites (space_id) WHERE revoked = 0;
+
+        CREATE TABLE IF NOT EXISTS user_profile (
+            pk           TEXT PRIMARY KEY DEFAULT 'local',
+            pubkey       TEXT NOT NULL,
+            display_name TEXT,
+            avatar_blob  BLOB,
+            ssh_key_path TEXT
+        );
+
         COMMIT;
     ")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod space_schema_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    #[test]
+    fn space_tables_created_by_migration() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        // Verify all 5 tables exist
+        for table in &["spaces", "space_members", "space_boards", "space_invites", "user_profile"] {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                [table],
+                |r| r.get(0),
+            ).unwrap();
+            assert_eq!(count, 1, "table {} not found", table);
+        }
+        // Verify unique index on space_invites
+        let idx_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='space_invites_one_active'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(idx_count, 1);
+    }
 }
