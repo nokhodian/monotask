@@ -21,9 +21,8 @@ fn load_identity(
 
     let key_path = data_dir.join("identity.key");
 
-    // Step 1: read user_profile row
+    // Step 1 & 2: If profile row exists and has an SSH key path, try loading it
     if let Some(profile) = space_store::get_profile(conn)? {
-        // Step 2: SSH key path set?
         if let Some(ssh_path) = &profile.ssh_key_path {
             let p = std::path::Path::new(ssh_path);
             if p.exists() {
@@ -32,17 +31,18 @@ fn load_identity(
                 }
             }
         }
-        // Step 3: load from identity.key
-        if key_path.exists() {
-            let bytes = std::fs::read(&key_path)?;
-            if bytes.len() == 32 {
-                let arr: [u8; 32] = bytes.try_into().unwrap();
-                return Ok(Identity::from_secret_bytes(&arr));
-            }
+    }
+
+    // Step 3: Fall back to identity.key (runs regardless of whether profile exists)
+    if key_path.exists() {
+        let bytes = std::fs::read(&key_path)?;
+        if bytes.len() == 32 {
+            let arr: [u8; 32] = bytes.try_into().unwrap();
+            return Ok(Identity::from_secret_bytes(&arr));
         }
     }
 
-    // Step 4: generate new identity
+    // Step 4: Generate new identity
     let id = Identity::generate();
     std::fs::write(&key_path, id.to_secret_bytes())?;
     let new_profile = kanban_core::space::UserProfile {
