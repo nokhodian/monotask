@@ -480,6 +480,7 @@
   };
   document.getElementById('btn-revoke-invite').onclick = async () => {
     try {
+      await invoke('revoke_invite', { spaceId: currentSpaceId });
       await invoke('generate_invite', { spaceId: currentSpaceId });
       await renderInviteTab();
     } catch (e) { alert('Error: ' + e); }
