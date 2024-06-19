@@ -652,7 +652,9 @@ fn parse_token_or_file(input: &str) -> anyhow::Result<(String, String, Option<Ve
     if input.ends_with(".space") || std::path::Path::new(input).exists() {
         let content = std::fs::read_to_string(input)?;
         let v: serde_json::Value = serde_json::from_str(&content)?;
-        let token = v["token"].as_str().unwrap_or("").to_string();
+        let token = v["token"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing or invalid 'token' field in .space file"))?
+            .to_string();
         let name = v["space_name"].as_str().unwrap_or("Shared Space").to_string();
         let doc_b64 = v["space_doc"].as_str().unwrap_or("");
         let doc_bytes = if doc_b64.is_empty() {
