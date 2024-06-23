@@ -342,8 +342,10 @@
   }
 
   async function refreshSpacePanel() {
+    const spaceId = currentSpaceId;
     try {
-      const space = await invoke('get_space_cmd', { spaceId: currentSpaceId });
+      const space = await invoke('get_space_cmd', { spaceId });
+      if (spaceId !== currentSpaceId) return; // stale
       currentSpaceData = space;
       document.getElementById('space-panel-name').textContent = space.name;
       renderMembersTab(space);
@@ -362,24 +364,42 @@
     for (const m of space.members) {
       const li = document.createElement('li');
       if (m.kicked) li.classList.add('member-kicked');
-      const initial = (m.display_name || m.pubkey).charAt(0).toUpperCase();
-      li.innerHTML = `
-        <div class="member-avatar">${initial}</div>
-        <div class="member-info">
-          <div class="member-name">${m.display_name || '(unnamed)'}</div>
-          <div class="member-pubkey">${m.pubkey.slice(0, 20)}\u2026</div>
-        </div>
-        ${isOwner && !m.kicked && m.pubkey !== myPubkey
-          ? `<button class="btn-kick btn-small" data-pubkey="${m.pubkey}">Kick</button>`
-          : ''}
-      `;
+
+      const avatar = document.createElement('div');
+      avatar.className = 'member-avatar';
+      avatar.textContent = (m.display_name || m.pubkey).charAt(0).toUpperCase();
+
+      const info = document.createElement('div');
+      info.className = 'member-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'member-name';
+      nameEl.textContent = m.display_name || '(unnamed)';
+      const pkEl = document.createElement('div');
+      pkEl.className = 'member-pubkey';
+      pkEl.textContent = m.pubkey.slice(0, 20) + '\u2026';
+      info.appendChild(nameEl);
+      info.appendChild(pkEl);
+
+      li.appendChild(avatar);
+      li.appendChild(info);
+
+      if (isOwner && !m.kicked && m.pubkey !== myPubkey) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-kick btn-small';
+        btn.textContent = 'Kick';
+        btn.dataset.pubkey = m.pubkey;
+        li.appendChild(btn);
+      }
+
       ul.appendChild(li);
     }
     ul.querySelectorAll('.btn-kick').forEach(btn => {
       btn.onclick = async () => {
-        if (!confirm(`Kick ${btn.dataset.pubkey.slice(0, 16)}\u2026?`)) return;
-        await invoke('kick_member_cmd', { spaceId: currentSpaceId, pubkey: btn.dataset.pubkey });
-        await refreshSpacePanel();
+        if (!confirm('Kick ' + btn.dataset.pubkey.slice(0, 16) + '\u2026?')) return;
+        try {
+          await invoke('kick_member_cmd', { spaceId: currentSpaceId, pubkey: btn.dataset.pubkey });
+          await refreshSpacePanel();
+        } catch (e) { alert('Error kicking member: ' + e); }
       };
     });
   }
@@ -389,16 +409,23 @@
     ul.innerHTML = '';
     for (const boardId of space.boards) {
       const li = document.createElement('li');
-      li.innerHTML = `
-        <span style="font-family:monospace;font-size:12px;">${boardId}</span>
-        <button class="btn-remove-board btn-small btn-danger" data-board="${boardId}">Remove</button>
-      `;
+      const span = document.createElement('span');
+      span.style.cssText = 'font-family:monospace;font-size:12px;';
+      span.textContent = boardId;
+      const btn = document.createElement('button');
+      btn.className = 'btn-remove-board btn-small btn-danger';
+      btn.textContent = 'Remove';
+      btn.dataset.board = boardId;
+      li.appendChild(span);
+      li.appendChild(btn);
       ul.appendChild(li);
     }
     ul.querySelectorAll('.btn-remove-board').forEach(btn => {
       btn.onclick = async () => {
-        await invoke('remove_board_from_space', { spaceId: currentSpaceId, boardId: btn.dataset.board });
-        await refreshSpacePanel();
+        try {
+          await invoke('remove_board_from_space', { spaceId: currentSpaceId, boardId: btn.dataset.board });
+          await refreshSpacePanel();
+        } catch (e) { alert('Error removing board: ' + e); }
       };
     });
   }
