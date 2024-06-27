@@ -160,7 +160,7 @@ pub fn insert_invite(
         .unwrap_or_default()
         .as_secs() as i64;
     conn.execute(
-        "INSERT INTO space_invites (token_hash, token, space_id, created_at, expires_at, revoked)
+        "INSERT OR REPLACE INTO space_invites (token_hash, token, space_id, created_at, expires_at, revoked)
          VALUES (?1, ?2, ?3, ?4, ?5, 0)",
         params![token_hash, token, space_id, now, expires_at],
     )?;
