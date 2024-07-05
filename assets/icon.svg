@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- App icon background -->
+    <linearGradient id="iconBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1f1108"/>
+      <stop offset="50%" stop-color="#150d05"/>
+      <stop offset="100%" stop-color="#0d0702"/>
+    </linearGradient>
+
+    <!-- Subtle warm vignette -->
+    <radialGradient id="vignette" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#3d2010" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#0d0702" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Monkey fur -->
+    <radialGradient id="fur" cx="42%" cy="34%" r="58%">
+      <stop offset="0%" stop-color="#7a4a22"/>
+      <stop offset="55%" stop-color="#4f2e10"/>
+      <stop offset="100%" stop-color="#2a1608"/>
+    </radialGradient>
+
+    <!-- Face patch -->
+    <radialGradient id="face" cx="50%" cy="38%" r="54%">
+      <stop offset="0%" stop-color="#f2c285"/>
+      <stop offset="45%" stop-color="#d9905a"/>
+      <stop offset="100%" stop-color="#b86838"/>
+    </radialGradient>
+
+    <!-- Left eye iris -->
+    <radialGradient id="irisL" cx="36%" cy="32%" r="58%">
+      <stop offset="0%" stop-color="#ffe880"/>
+      <stop offset="35%" stop-color="#f5a820"/>
+      <stop offset="75%" stop-color="#d07800"/>
+      <stop offset="100%" stop-color="#9a5500"/>
+    </radialGradient>
+
+    <!-- Right eye iris -->
+    <radialGradient id="irisR" cx="36%" cy="32%" r="58%">
+      <stop offset="0%" stop-color="#ffe880"/>
+      <stop offset="35%" stop-color="#f5a820"/>
+      <stop offset="75%" stop-color="#d07800"/>
+      <stop offset="100%" stop-color="#9a5500"/>
+    </radialGradient>
+
+    <!-- Ear inner -->
+    <radialGradient id="earIn" cx="50%" cy="42%" r="55%">
+      <stop offset="0%" stop-color="#9a5a2e"/>
+      <stop offset="100%" stop-color="#4a2410"/>
+    </radialGradient>
+
+    <!-- Nose -->
+    <radialGradient id="nose" cx="50%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#c87040"/>
+      <stop offset="100%" stop-color="#7a3e18"/>
+    </radialGradient>
+
+    <!-- Glow filter for eyes -->
+    <filter id="eyeGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft shadow under elements -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+
+    <!-- Subtle texture noise -->
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix type="saturate" values="0" in="noise" result="grayNoise"/>
+      <feBlend in="SourceGraphic" in2="grayNoise" mode="overlay" result="blend"/>
+      <feComposite in="blend" in2="SourceGraphic" operator="in"/>
+    </filter>
+
+    <!-- Rounded square clip -->
+    <clipPath id="roundedSquare">
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224"/>
+    </clipPath>
+  </defs>
+
+  <!-- ── BACKGROUND ── -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#iconBg)"/>
+  <!-- Warm center glow -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#vignette)"/>
+
+  <!-- Subtle kanban column lines in background -->
+  <g clip-path="url(#roundedSquare)" opacity="0.04">
+    <rect x="180" y="0" width="2" height="1024" fill="#f5a820"/>
+    <rect x="420" y="0" width="2" height="1024" fill="#f5a820"/>
+    <rect x="660" y="0" width="2" height="1024" fill="#f5a820"/>
+    <!-- Subtle card shapes -->
+    <rect x="200" y="120" width="200" height="80" rx="10" fill="#f5a820"/>
+    <rect x="200" y="220" width="160" height="80" rx="10" fill="#f5a820"/>
+    <rect x="440" y="140" width="180" height="80" rx="10" fill="#f5a820"/>
+    <rect x="680" y="110" width="190" height="80" rx="10" fill="#f5a820"/>
+    <rect x="680" y="210" width="140" height="80" rx="10" fill="#f5a820"/>
+  </g>
+
+  <!-- ── LEFT EAR ── -->
+  <circle cx="176" cy="448" r="118" fill="url(#fur)" filter="url(#shadow)"/>
+  <circle cx="176" cy="448" r="82"  fill="url(#earIn)"/>
+  <circle cx="176" cy="448" r="46"  fill="#1e0e06"/>
+  <ellipse cx="164" cy="432" rx="18" ry="13" fill="#6a3c1c" opacity="0.45"/>
+
+  <!-- ── RIGHT EAR ── -->
+  <circle cx="848" cy="448" r="118" fill="url(#fur)" filter="url(#shadow)"/>
+  <circle cx="848" cy="448" r="82"  fill="url(#earIn)"/>
+  <circle cx="848" cy="448" r="46"  fill="#1e0e06"/>
+  <ellipse cx="836" cy="432" rx="18" ry="13" fill="#6a3c1c" opacity="0.45"/>
+
+  <!-- ── HEAD ── -->
+  <ellipse cx="512" cy="490" rx="308" ry="330" fill="url(#fur)" filter="url(#shadow)"/>
+
+  <!-- Top head sheen -->
+  <ellipse cx="476" cy="280" rx="90" ry="38" fill="#8a5230" opacity="0.3"/>
+
+  <!-- Brow shadow ridge -->
+  <ellipse cx="512" cy="370" rx="200" ry="44" fill="#150a03" opacity="0.55"/>
+
+  <!-- ── FACE PATCH ── -->
+  <ellipse cx="512" cy="570" rx="208" ry="238" fill="url(#face)"/>
+
+  <!-- Face highlight -->
+  <ellipse cx="490" cy="510" rx="75" ry="52" fill="#f8d0a0" opacity="0.1"/>
+
+  <!-- ── LEFT EYE ── -->
+  <!-- Socket shadow -->
+  <circle cx="404" cy="445" r="76" fill="#0e0804"/>
+  <!-- Iris -->
+  <circle cx="404" cy="445" r="62" fill="url(#irisL)" filter="url(#eyeGlow)"/>
+  <!-- Iris ring detail -->
+  <circle cx="404" cy="445" r="58" fill="none" stroke="#d07800" stroke-width="3" opacity="0.5"/>
+  <circle cx="404" cy="445" r="48" fill="none" stroke="#ffe880" stroke-width="1.5" opacity="0.2"/>
+  <!-- Pupil -->
+  <circle cx="408" cy="449" r="30" fill="#0a0602"/>
+  <!-- Main glint -->
+  <circle cx="392" cy="434" r="14" fill="white" opacity="0.88"/>
+  <!-- Secondary glint -->
+  <circle cx="416" cy="430" r="7"  fill="white" opacity="0.38"/>
+  <!-- Bottom reflection -->
+  <ellipse cx="408" cy="466" rx="12" ry="5" fill="#f5a820" opacity="0.14"/>
+
+  <!-- ── RIGHT EYE ── -->
+  <circle cx="620" cy="445" r="76" fill="#0e0804"/>
+  <circle cx="620" cy="445" r="62" fill="url(#irisR)" filter="url(#eyeGlow)"/>
+  <circle cx="620" cy="445" r="58" fill="none" stroke="#d07800" stroke-width="3" opacity="0.5"/>
+  <circle cx="620" cy="445" r="48" fill="none" stroke="#ffe880" stroke-width="1.5" opacity="0.2"/>
+  <circle cx="624" cy="449" r="30" fill="#0a0602"/>
+  <circle cx="608" cy="434" r="14" fill="white" opacity="0.88"/>
+  <circle cx="632" cy="430" r="7"  fill="white" opacity="0.38"/>
+  <ellipse cx="624" cy="466" rx="12" ry="5" fill="#f5a820" opacity="0.14"/>
+
+  <!-- ── BROWS ── -->
+  <path d="M 352 402 Q 404 382 456 398" stroke="#1e0e06" stroke-width="20" fill="none" stroke-linecap="round"/>
+  <path d="M 352 398 Q 404 378 456 394" stroke="#3d2010" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>
+  <path d="M 568 398 Q 620 382 672 402" stroke="#1e0e06" stroke-width="20" fill="none" stroke-linecap="round"/>
+  <path d="M 568 394 Q 620 378 672 398" stroke="#3d2010" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.55"/>
+
+  <!-- ── NOSE ── -->
+  <ellipse cx="512" cy="548" rx="52" ry="36" fill="url(#nose)"/>
+  <!-- Nostrils -->
+  <ellipse cx="493" cy="554" rx="17" ry="13" fill="#2a0e04" opacity="0.92"/>
+  <ellipse cx="531" cy="554" rx="17" ry="13" fill="#2a0e04" opacity="0.92"/>
+  <!-- Nose bridge highlight -->
+  <ellipse cx="512" cy="534" rx="14" ry="8" fill="#e09060" opacity="0.35"/>
+
+  <!-- ── MOUTH ── -->
+  <path d="M 448 630 Q 512 682 576 630" stroke="#6a3010" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Mouth corner dimples -->
+  <circle cx="448" cy="630" r="9" fill="#8a4020" opacity="0.55"/>
+  <circle cx="576" cy="630" r="9" fill="#8a4020" opacity="0.55"/>
+
+  <!-- ── CHIN FUR TUFT ── -->
+  <ellipse cx="512" cy="790" rx="82" ry="38" fill="#3d2010" opacity="0.38"/>
+
+  <!-- ── OUTER RING ACCENT ── -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224"
+        fill="none" stroke="#6b4020" stroke-width="3" opacity="0.35"/>
+
+  <!-- Inner ring (subtle depth) -->
+  <rect x="12" y="12" width="1000" height="1000" rx="215" ry="215"
+        fill="none" stroke="#f5a820" stroke-width="1" opacity="0.06"/>
+
+</svg>
