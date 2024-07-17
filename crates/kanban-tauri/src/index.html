@@ -562,10 +562,12 @@
     try {
       const space = await invoke('get_space_cmd', { spaceId });
       for (const boardId of (space.boards || [])) {
-        const title = allBoards[boardId] || boardId.slice(0, 10) + '\u2026';
+        const isLocal = boardId in allBoards;
+        const title = isLocal ? allBoards[boardId] : boardId.slice(0, 12) + '\u2026';
         const li = document.createElement('li');
         li.textContent = title;
         li.dataset.boardId = boardId;
+        if (!isLocal) li.style.opacity = '0.45';
         if (boardId === currentBoardId) li.classList.add('active');
         li.onclick = (e) => {
           e.stopPropagation();
@@ -618,10 +620,12 @@
     }
 
     for (const boardId of space.boards) {
-      const title = allBoards[boardId] || boardId;
+      const isLocal = boardId in allBoards;
+      const title = isLocal ? allBoards[boardId] : boardId.slice(0, 16);
       const card = document.createElement('div');
       card.className = 'board-card';
       card.dataset.boardId = boardId;
+      if (!isLocal) card.style.opacity = '0.45';
 
       const titleEl = document.createElement('div');
       titleEl.className = 'board-card-title';
@@ -629,7 +633,7 @@
 
       const idEl = document.createElement('div');
       idEl.className = 'board-card-id';
-      idEl.textContent = boardId.slice(0, 8) + '\u2026';
+      idEl.textContent = isLocal ? boardId.slice(0, 8) + '\u2026' : 'not synced';
 
       card.appendChild(titleEl);
       card.appendChild(idEl);
@@ -659,10 +663,24 @@
         area.appendChild(buildColumnEl(detail.id, col));
       }
     } catch (e) {
-      const msg = document.createElement('div');
-      msg.style.cssText = 'color:#555;font-size:13px;padding:24px;';
-      msg.textContent = 'Error loading board: ' + e;
-      area.appendChild(msg);
+      const isNotFound = String(e).includes('not found') || String(e).includes('NotFound');
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'padding:32px;display:flex;flex-direction:column;gap:10px;';
+      const icon = document.createElement('div');
+      icon.style.cssText = 'font-size:32px;opacity:0.25;';
+      icon.textContent = '⬡';
+      const title = document.createElement('div');
+      title.style.cssText = 'color:#555;font-size:14px;font-weight:600;';
+      title.textContent = isNotFound ? 'Board not available locally' : 'Failed to load board';
+      const sub = document.createElement('div');
+      sub.style.cssText = 'color:#3a3a4a;font-size:12px;max-width:320px;line-height:1.6;';
+      sub.textContent = isNotFound
+        ? 'This board is listed in the space but the data hasn\'t synced to this device yet. Board ID: ' + boardId
+        : String(e);
+      wrap.appendChild(icon);
+      wrap.appendChild(title);
+      wrap.appendChild(sub);
+      area.appendChild(wrap);
     }
   }
 
