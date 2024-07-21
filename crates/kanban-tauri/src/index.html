@@ -343,6 +343,7 @@
     <div id="boards-grid-area">
       <div class="boards-grid-header">
         <h3>Boards</h3>
+        <button id="btn-new-board-quick" style="font-size:12px;padding:4px 12px;">+ New Board</button>
       </div>
       <div id="boards-grid" class="boards-grid"></div>
     </div>
@@ -378,9 +379,17 @@
     <!-- Boards tab -->
     <div id="tab-boards" class="space-tab-content">
       <ul id="space-boards-list"></ul>
-      <div class="add-board-row">
-        <input id="input-board-id-to-add" placeholder="Board ID to add" style="flex:1;" />
-        <button id="btn-add-board-to-space" class="btn-primary">Add Board</button>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.05em;">Add existing board</div>
+        <div class="add-board-row">
+          <select id="select-board-to-add" style="flex:1;"></select>
+          <button id="btn-add-board-to-space" class="btn-primary">Add</button>
+        </div>
+        <div style="font-size:11px;color:#444;margin-top:4px;">— or —</div>
+        <div class="add-board-row">
+          <input id="input-new-board-title" placeholder="New board title…" style="flex:1;" />
+          <button id="btn-create-and-add-board" class="btn-primary">Create &amp; Add</button>
+        </div>
       </div>
     </div>
 
@@ -856,6 +865,7 @@
   }
 
   function renderBoardsTab(space) {
+    populateBoardSelect(space.boards);
     const ul = document.getElementById('space-boards-list');
     ul.innerHTML = '';
     for (const boardId of space.boards) {
@@ -1006,16 +1016,72 @@
     } catch (e) { alert('Error: ' + e); }
   };
 
-  // ── Add board to space ─────────────────────────────────────────────────────
+  // ── Populate board select in settings ─────────────────────────────────────
+  function populateBoardSelect(spaceBoards) {
+    const sel = document.getElementById('select-board-to-add');
+    sel.innerHTML = '';
+    // Only show local boards not already in the space
+    const inSpace = new Set(spaceBoards || []);
+    const candidates = Object.entries(allBoards).filter(([id]) => !inSpace.has(id));
+    if (candidates.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(no other local boards)';
+      sel.appendChild(opt);
+    } else {
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Select a board…';
+      sel.appendChild(placeholder);
+      for (const [id, title] of candidates) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = title;
+        sel.appendChild(opt);
+      }
+    }
+  }
+
+  // ── Add existing board to space ────────────────────────────────────────────
   document.getElementById('btn-add-board-to-space').onclick = async () => {
-    const boardId = document.getElementById('input-board-id-to-add').value.trim();
+    const boardId = document.getElementById('select-board-to-add').value;
     if (!boardId) return;
     try {
       await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId });
-      document.getElementById('input-board-id-to-add').value = '';
       await refreshAllBoards();
       await refreshSpaceSettings();
       await refreshSpaceMain();
+    } catch (e) { alert('Error: ' + e); }
+  };
+
+  // ── Create new board and add to space ─────────────────────────────────────
+  document.getElementById('btn-create-and-add-board').onclick = async () => {
+    const title = document.getElementById('input-new-board-title').value.trim();
+    if (!title) return;
+    try {
+      const board = await invoke('create_board_cmd', { title });
+      await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
+      document.getElementById('input-new-board-title').value = '';
+      await refreshAllBoards();
+      await refreshSpaceSettings();
+      await refreshSpaceMain();
+      // Expand sidebar for this space
+      const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
+      if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
+    } catch (e) { alert('Error: ' + e); }
+  };
+
+  // ── Quick new board from boards grid ──────────────────────────────────────
+  document.getElementById('btn-new-board-quick').onclick = async () => {
+    const title = prompt('Board title:');
+    if (!title || !title.trim()) return;
+    try {
+      const board = await invoke('create_board_cmd', { title: title.trim() });
+      await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
+      await refreshAllBoards();
+      await refreshSpaceMain();
+      const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
+      if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
     } catch (e) { alert('Error: ' + e); }
   };
 

@@ -185,6 +185,18 @@ struct BoardDetail {
 const DEFAULT_COLUMNS: &[&str] = &["Todo", "In Progress", "Review", "Done"];
 
 #[tauri::command]
+fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<BoardSummary, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let pk = state.identity.public_key_hex();
+    let (mut doc, _board) = kanban_core::board::create_board(&title, &pk)
+        .map_err(|e| e.to_string())?;
+    let board_id = uuid::Uuid::new_v4().to_string();
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(BoardSummary { id: board_id, title })
+}
+
+#[tauri::command]
 fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let ids = kanban_storage::board::list_board_ids(storage.conn())
@@ -642,6 +654,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            create_board_cmd,
             list_boards,
             get_board_detail,
             create_column_cmd,
