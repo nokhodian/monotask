@@ -633,10 +633,14 @@ fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to resolve app data dir");
+            // Use the same data directory as the CLI so they share one database.
+            // CLI uses dirs::data_dir().join("p2p-kanban").
+            let data_dir = dirs::data_dir()
+                .expect("failed to resolve data dir")
+                .join("p2p-kanban");
+            std::fs::create_dir_all(&data_dir)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            let _ = app; // suppress unused warning
 
             let storage = Storage::open(&data_dir)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
