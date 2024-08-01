@@ -186,6 +186,16 @@
     .kanban-card:hover { border-color: #2e2e5a; }
     .kanban-card-title { font-size: 13px; color: #ccc; line-height: 1.4; }
     .kanban-card-num { font-size: 10px; color: #3a3a5a; font-family: monospace; margin-top: 5px; }
+    /* Drag and drop */
+    .kanban-card[draggable="true"] { cursor: grab; }
+    .kanban-card.dragging { opacity: 0.4; cursor: grabbing; }
+    .board-col.drag-over { border-color: #c8962a88; background: #131320; }
+    .board-col.drag-over .board-col-cards { background: #0f0f1c; border-radius: 0 0 8px 8px; }
+    .drop-indicator {
+      height: 3px; background: #c8962a; border-radius: 2px;
+      margin: 2px 0; pointer-events: none;
+    }
+
     .board-col-add {
       flex-shrink: 0; padding: 6px 8px;
       border-top: 1px solid #141428;
@@ -737,10 +747,14 @@
     }
   }
 
+  // ── Drag state ────────────────────────────────────────────────────────────
+  let dragState = null; // { boardId, cardId, fromColId, cardEl }
+
   function buildColumnEl(boardId, col) {
     const colEl = document.createElement('div');
     colEl.className = 'board-col';
     colEl.dataset.colId = col.id;
+    colEl.dataset.boardId = boardId;
 
     // Header
     const header = document.createElement('div');
@@ -757,8 +771,55 @@
     const cardsList = document.createElement('ul');
     cardsList.className = 'board-col-cards';
     for (const card of col.cards) {
-      cardsList.appendChild(buildCardEl(card));
+      cardsList.appendChild(buildCardEl(card, col.id, boardId));
     }
+
+    // ── Drop handling ─────────────────────────────────────────────────────
+    colEl.addEventListener('dragover', (e) => {
+      if (!dragState || dragState.fromColId === col.id) return;
+      e.preventDefault();
+      colEl.classList.add('drag-over');
+      // Show drop indicator position
+      const indicator = colEl.querySelector('.drop-indicator');
+      if (indicator) indicator.remove();
+      const ind = document.createElement('div');
+      ind.className = 'drop-indicator';
+      const afterEl = getDragAfterElement(cardsList, e.clientY);
+      if (afterEl) {
+        cardsList.insertBefore(ind, afterEl);
+      } else {
+        cardsList.appendChild(ind);
+      }
+    });
+
+    colEl.addEventListener('dragleave', (e) => {
+      if (!colEl.contains(e.relatedTarget)) {
+        colEl.classList.remove('drag-over');
+        const indicator = colEl.querySelector('.drop-indicator');
+        if (indicator) indicator.remove();
+      }
+    });
+
+    colEl.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      colEl.classList.remove('drag-over');
+      const indicator = colEl.querySelector('.drop-indicator');
+      if (indicator) indicator.remove();
+
+      if (!dragState || dragState.fromColId === col.id) return;
+      const { boardId: bId, cardId, fromColId } = dragState;
+      dragState = null;
+
+      try {
+        await invoke('move_card_cmd', {
+          boardId: bId,
+          cardId,
+          fromColId,
+          toColId: col.id,
+        });
+        await loadBoardColumns(bId);
+      } catch (e2) { alert('Error moving card: ' + e2); }
+    });
 
     // Add card area
     const addArea = document.createElement('div');
@@ -804,8 +865,7 @@
         addForm.classList.remove('open');
         addBtn.style.display = '';
         await loadBoardColumns(boardId);
-        // refresh sidebar board title cache (card count changed)
-      } catch (e) { alert('Error adding card: ' + e); }
+      } catch (err) { alert('Error adding card: ' + err); }
     };
     addInput.onkeydown = (e) => {
       if (e.key === 'Enter') confirmBtn.click();
@@ -821,14 +881,16 @@
     return colEl;
   }
 
-  function buildCardEl(card) {
+  function buildCardEl(card, colId, boardId) {
     const li = document.createElement('li');
     li.className = 'kanban-card';
+    li.draggable = true;
+    li.dataset.cardId = card.id;
+    li.dataset.colId = colId;
 
     const titleEl = document.createElement('div');
     titleEl.className = 'kanban-card-title';
     titleEl.textContent = card.title;
-
     li.appendChild(titleEl);
 
     if (card.number) {
@@ -838,7 +900,33 @@
       li.appendChild(numEl);
     }
 
+    li.addEventListener('dragstart', (e) => {
+      dragState = { boardId, cardId: card.id, fromColId: colId, cardEl: li };
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.id);
+    });
+    li.addEventListener('dragend', () => {
+      li.classList.remove('dragging');
+      document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+      if (dragState) dragState = null;
+    });
+
     return li;
+  }
+
+  // Returns the card element that the dragged card should be inserted before
+  function getDragAfterElement(container, y) {
+    const cards = [...container.querySelectorAll('.kanban-card:not(.dragging)')];
+    return cards.reduce((closest, el) => {
+      const box = el.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, element: el };
+      }
+      return closest;
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
   }
 
   // ── Space settings (members / boards / invite) ─────────────────────────────

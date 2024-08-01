@@ -290,6 +290,46 @@ fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppSta
 }
 
 #[tauri::command]
+fn move_card_cmd(
+    board_id: String,
+    card_id: String,
+    from_col_id: String,
+    to_col_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    use automerge::{ReadDoc, transaction::Transactable};
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+
+    // Remove from source column
+    {
+        let from_obj = kanban_core::column::find_column_obj(&doc, &from_col_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("column not found: {from_col_id}"))?;
+        let card_ids = kanban_core::column::get_card_ids_list(&doc, &from_obj)
+            .map_err(|e| e.to_string())?;
+        let len = doc.length(&card_ids);
+        let idx = (0..len).find(|&i| {
+            doc.get(&card_ids, i).ok().flatten()
+                .and_then(|(v, _)| if let automerge::Value::Scalar(s) = v {
+                    if let automerge::ScalarValue::Str(t) = s.as_ref() { Some(t.to_string()) } else { None }
+                } else { None })
+                .as_deref() == Some(&card_id)
+        }).ok_or_else(|| format!("card {card_id} not in column {from_col_id}"))?;
+        doc.delete(&card_ids, idx).map_err(|e| e.to_string())?;
+    }
+
+    // Append to destination column
+    kanban_core::column::append_card_to_column(&mut doc, &to_col_id, &card_id)
+        .map_err(|e| e.to_string())?;
+
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
@@ -659,6 +699,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             create_board_cmd,
             list_boards,
+            move_card_cmd,
             get_board_detail,
             create_column_cmd,
             create_card_cmd,
