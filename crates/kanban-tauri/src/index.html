@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>P2P Kanban</title>
+  <title>Monotask</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="sortable.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; background: #0a0a12; color: #ccc; font-family: system-ui, sans-serif; font-size: 14px; }
@@ -13,12 +14,22 @@
     body { display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
 
     /* ── Spaces sidebar ────────────────────────────────────────────────── */
+    .sidebar-brand {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 12px 10px;
+      border-bottom: 1px solid #1e1e3a;
+      margin: 0 -8px 10px;
+    }
+    .sidebar-brand-name {
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
+      color: #c8962a; font-family: inherit;
+    }
     #spaces-sidebar {
       width: 200px; min-width: 160px;
       background: #0d0d1a;
       border-right: 1px solid #1e1e3a;
       display: flex; flex-direction: column;
-      padding: 12px 8px;
+      padding: 0 8px 12px;
       flex-shrink: 0;
     }
     .sidebar-header {
@@ -187,14 +198,59 @@
     .kanban-card-title { font-size: 13px; color: #ccc; line-height: 1.4; }
     .kanban-card-num { font-size: 10px; color: #3a3a5a; font-family: monospace; margin-top: 5px; }
     /* Drag and drop */
-    .kanban-card[draggable="true"] { cursor: grab; }
-    .kanban-card.dragging { opacity: 0.4; cursor: grabbing; }
-    .board-col.drag-over { border-color: #c8962a88; background: #131320; }
-    .board-col.drag-over .board-col-cards { background: #0f0f1c; border-radius: 0 0 8px 8px; }
-    .drop-indicator {
-      height: 3px; background: #c8962a; border-radius: 2px;
-      margin: 2px 0; pointer-events: none;
+    .kanban-card { cursor: pointer; }
+    .kanban-card.sortable-ghost { opacity: 0.35; background: #1e1e3a; }
+    .kanban-card.sortable-chosen { cursor: grabbing; }
+    /* SortableJS drag-over highlight handled via .sortable-drag */
+    .board-col-cards.sortable-drag-over { background: #0f0f1c; border-radius: 0 0 8px 8px; }
+
+    /* Column delete button */
+    .btn-delete-col {
+      background: none; border: none; color: #2a2a4a; cursor: pointer;
+      font-size: 14px; padding: 0 2px; line-height: 1; border-radius: 3px;
     }
+    .btn-delete-col:hover { color: #c05050; background: #1a0808; }
+
+    /* Card label chips */
+    .kanban-card-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .card-label-chip {
+      height: 6px; border-radius: 3px; min-width: 32px; display: inline-block;
+    }
+    .kanban-card-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .card-meta-desc { font-size: 10px; color: #3a3a5a; }
+    .card-meta-due { font-size: 10px; color: #c8962a; cursor: pointer; }
+    .card-due-wrap { position: relative; display: inline-flex; align-items: center; }
+    .card-due-input-overlay {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+      width: 100%; height: 100%; font-size: 0;
+    }
+    .card-last-move { font-size: 10px; color: #888; margin-top: 5px; opacity: 0.75; }
+    .card-assignee-avatar {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: #2a1e08; border: 1px solid #c8962a;
+      font-size: 9px; font-weight: 700; color: #c8962a;
+      display: inline-flex; align-items: center; justify-content: center;
+      margin-top: 5px; vertical-align: middle; flex-shrink: 0;
+    }
+    /* Assignee picker in card detail */
+    .assignee-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .assignee-chip {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 10px 4px 6px; border-radius: 20px;
+      border: 1px solid #2e2e5a; background: #0d0d1a;
+      cursor: pointer; font-size: 12px; color: #aaa;
+      transition: border-color .15s, background .15s;
+    }
+    .assignee-chip:hover { border-color: #c8962a; color: #eee; }
+    .assignee-chip.selected { border-color: #c8962a; background: #1a1408; color: #e8a83a; }
+    .assignee-chip-avatar {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #2a1e08; border: 1px solid #c8962a55;
+      font-size: 8px; font-weight: 700; color: #c8962a;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .assignee-chip.selected .assignee-chip-avatar { border-color: #c8962a; background: #3a2808; }
 
     .board-col-add {
       flex-shrink: 0; padding: 6px 8px;
@@ -312,12 +368,122 @@
     .btn-danger { border-color: #3a1a1a; color: #c05050; }
     .btn-danger:hover { background: #1a0808; }
     .btn-small { padding: 3px 8px; font-size: 11px; }
+
+    /* Card detail modal */
+    .modal-box.card-detail-box {
+      min-width: 680px; max-width: 860px; width: 92%;
+      max-height: 90vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;
+    }
+    .card-detail-inner {
+      display: flex; flex: 1; overflow: hidden;
+    }
+    .card-detail-left {
+      flex: 1; padding: 24px 20px 16px; overflow-y: auto;
+      border-right: 1px solid #1a1a2e;
+    }
+    .card-detail-right {
+      width: 300px; flex-shrink: 0; padding: 20px 16px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .card-detail-header {
+      padding: 16px 20px 0; border-bottom: 1px solid #1a1a2e; flex-shrink: 0;
+    }
+    .card-detail-footer {
+      padding: 10px 20px 14px; border-top: 1px solid #1a1a2e;
+      display: flex; justify-content: space-between; align-items: center;
+      flex-shrink: 0;
+    }
+    .card-detail-title {
+      font-size: 16px; font-weight: 600; color: #eee;
+      background: none; border: none; border-bottom: 1px solid #1e1e3a;
+      width: 100%; padding: 4px 0 10px; margin-bottom: 0; outline: none;
+    }
+    .card-detail-title:focus { border-bottom-color: #c8962a; }
+    .card-detail-section { margin-bottom: 16px; }
+    .card-detail-label {
+      font-size: 10px; color: #555; text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 6px;
+    }
+    .card-detail-desc {
+      width: 100%; min-height: 72px; resize: vertical;
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 8px 10px; border-radius: 4px; font-size: 13px;
+      font-family: inherit; outline: none; line-height: 1.5;
+    }
+    .card-detail-desc:focus { border-color: #2e2e5a; }
+    .card-detail-due {
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 6px 10px; border-radius: 4px; font-size: 13px;
+      outline: none; width: 180px;
+    }
+    .card-detail-due:focus { border-color: #2e2e5a; }
+    /* Label picker */
+    .label-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .label-chip {
+      width: 48px; height: 22px; border-radius: 4px; border: 2px solid transparent;
+      cursor: pointer; transition: transform 0.1s;
+    }
+    .label-chip:hover { transform: scale(1.1); }
+    .label-chip.selected { border-color: #fff; }
+    .card-detail-num { font-size: 11px; color: #3a3a5a; font-family: monospace; }
+
+    /* Activity feed (right panel) */
+    .activity-feed-title {
+      font-size: 10px; color: #555; text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 10px; flex-shrink: 0;
+    }
+    .activity-feed {
+      flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+      gap: 8px; margin-bottom: 12px;
+    }
+    .activity-item {
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .activity-move {
+      background: #0e0e1c; border-left: 2px solid #2a3a5a;
+      border-radius: 0 4px 4px 0; padding: 6px 10px;
+      font-size: 11px; color: #666;
+    }
+    .activity-move strong { color: #4a6a9a; }
+    .activity-move .activity-time { font-size: 10px; color: #3a3a5a; margin-top: 2px; }
+    .activity-comment {
+      background: #111124; border: 1px solid #1e1e36;
+      border-radius: 4px; padding: 8px 10px;
+    }
+    .comment-author { font-size: 10px; color: #4a6a9a; font-family: monospace; margin-bottom: 3px; }
+    .comment-text { font-size: 12px; color: #bbb; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .comment-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .comment-time { font-size: 10px; color: #3a3a5a; }
+    .btn-del-comment {
+      background: none; border: none; color: #2a2a4a; cursor: pointer;
+      font-size: 10px; padding: 0 2px;
+    }
+    .btn-del-comment:hover { color: #c05050; }
+    /* Comment input */
+    .comment-compose { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+    .comment-compose textarea {
+      width: 100%; min-height: 52px; resize: none;
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 6px 8px; border-radius: 4px; font-size: 12px;
+      font-family: inherit; outline: none; line-height: 1.4;
+    }
+    .comment-compose textarea:focus { border-color: #2e2e5a; }
+    .comment-compose button { align-self: flex-end; font-size: 11px; padding: 4px 12px; }
   </style>
 </head>
 <body>
 
 <!-- ── Spaces sidebar ─────────────────────────────────────────────────────── -->
 <div id="spaces-sidebar">
+  <div class="sidebar-brand">
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="1" width="20" height="20" rx="5" fill="#1a1408" stroke="#c8962a" stroke-width="1.2"/>
+      <rect x="5" y="5" width="4" height="12" rx="1.5" fill="#c8962a" opacity="0.9"/>
+      <rect x="11" y="8" width="4" height="9" rx="1.5" fill="#c8962a" opacity="0.55"/>
+      <rect x="17" y="5" width="0" height="0"/>
+    </svg>
+    <span class="sidebar-brand-name">monotask</span>
+  </div>
   <div class="sidebar-header">
     <span>Spaces</span>
     <button id="btn-new-space" title="New Space">+</button>
@@ -335,7 +501,7 @@
   <!-- Empty state (no space selected) -->
   <div id="board-dashboard">
     <div class="board-placeholder">
-      <h2>P2P Kanban</h2>
+      <h2>Monotask</h2>
       <p>Select a space from the sidebar<br/>or create one to get started.</p>
     </div>
   </div>
@@ -496,6 +662,57 @@
     <div class="modal-actions">
       <button id="btn-import-invite-cancel">Cancel</button>
       <button id="btn-import-invite-confirm" class="btn-primary">Join</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Card detail modal ──────────────────────────────────────────────────── -->
+<div id="modal-card-detail" class="modal">
+  <div class="modal-box card-detail-box">
+    <!-- Header: title + card number -->
+    <div class="card-detail-header">
+      <input id="card-detail-title" class="card-detail-title" placeholder="Card title" />
+      <div id="card-detail-num" class="card-detail-num" style="padding:4px 0 10px;"></div>
+    </div>
+    <!-- Body: left fields + right activity -->
+    <div class="card-detail-inner">
+      <!-- Left: description, labels, due date -->
+      <div class="card-detail-left">
+        <div class="card-detail-section">
+          <div class="card-detail-label">Description</div>
+          <textarea id="card-detail-desc" class="card-detail-desc" placeholder="Add a description…"></textarea>
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Labels</div>
+          <div class="label-picker" id="card-detail-label-picker"></div>
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Due Date</div>
+          <input id="card-detail-due" class="card-detail-due" type="date" />
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Assignee</div>
+          <div id="card-detail-assignee-picker" class="assignee-picker"></div>
+        </div>
+      </div>
+      <!-- Right: activity feed -->
+      <div class="card-detail-right">
+        <div class="activity-feed-title">Activity</div>
+        <div id="card-activity-feed" class="activity-feed"></div>
+        <!-- Comment compose -->
+        <div class="comment-compose">
+          <textarea id="comment-input" placeholder="Write a comment…" rows="2"></textarea>
+          <button id="btn-add-comment" class="btn-primary">Comment</button>
+        </div>
+      </div>
+    </div>
+    <!-- Footer: delete + save/cancel -->
+    <div class="card-detail-footer">
+      <button id="btn-delete-card" class="btn-danger btn-small">Delete Card</button>
+      <div style="display:flex;gap:8px;">
+        <button id="btn-card-detail-cancel">Cancel</button>
+        <button id="btn-card-detail-save" class="btn-primary">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -747,8 +964,23 @@
     }
   }
 
-  // ── Drag state ────────────────────────────────────────────────────────────
-  let dragState = null; // { boardId, cardId, fromColId, cardEl }
+  // Track SortableJS drag to prevent click handler firing after drag ends
+  let _sortableDragging = false;
+
+  function _dbg(msg) { console.log('[DND]', msg); }
+
+  // ── Label colors ──────────────────────────────────────────────────────────
+  const LABEL_COLORS = {
+    green:  '#61bd4f',
+    yellow: '#f2d600',
+    orange: '#ff9f1a',
+    red:    '#eb5a46',
+    purple: '#c377e0',
+    blue:   '#0079bf',
+    teal:   '#00c2e0',
+    pink:   '#ff78cb',
+  };
+  const LABEL_KEYS = Object.keys(LABEL_COLORS);
 
   function buildColumnEl(boardId, col) {
     const colEl = document.createElement('div');
@@ -761,11 +993,27 @@
     header.className = 'board-col-header';
     const titleSpan = document.createElement('span');
     titleSpan.textContent = col.title;
+    const rightGroup = document.createElement('div');
+    rightGroup.style.cssText = 'display:flex;align-items:center;gap:6px;';
     const countBadge = document.createElement('span');
     countBadge.className = 'board-col-count';
     countBadge.textContent = col.cards.length;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-delete-col';
+    delBtn.title = 'Delete column';
+    delBtn.textContent = '×';
+    delBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete column "${col.title}" and all its cards?`)) return;
+      try {
+        await invoke('delete_column_cmd', { boardId, colId: col.id });
+        await loadBoardColumns(boardId);
+      } catch (err) { alert('Error deleting column: ' + err); }
+    };
+    rightGroup.appendChild(countBadge);
+    rightGroup.appendChild(delBtn);
     header.appendChild(titleSpan);
-    header.appendChild(countBadge);
+    header.appendChild(rightGroup);
 
     // Cards list
     const cardsList = document.createElement('ul');
@@ -774,52 +1022,42 @@
       cardsList.appendChild(buildCardEl(card, col.id, boardId));
     }
 
-    // ── Drop handling ─────────────────────────────────────────────────────
-    colEl.addEventListener('dragover', (e) => {
-      if (!dragState || dragState.fromColId === col.id) return;
-      e.preventDefault();
-      colEl.classList.add('drag-over');
-      // Show drop indicator position
-      const indicator = colEl.querySelector('.drop-indicator');
-      if (indicator) indicator.remove();
-      const ind = document.createElement('div');
-      ind.className = 'drop-indicator';
-      const afterEl = getDragAfterElement(cardsList, e.clientY);
-      if (afterEl) {
-        cardsList.insertBefore(ind, afterEl);
-      } else {
-        cardsList.appendChild(ind);
-      }
-    });
-
-    colEl.addEventListener('dragleave', (e) => {
-      if (!colEl.contains(e.relatedTarget)) {
-        colEl.classList.remove('drag-over');
-        const indicator = colEl.querySelector('.drop-indicator');
-        if (indicator) indicator.remove();
-      }
-    });
-
-    colEl.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      colEl.classList.remove('drag-over');
-      const indicator = colEl.querySelector('.drop-indicator');
-      if (indicator) indicator.remove();
-
-      if (!dragState || dragState.fromColId === col.id) return;
-      const { boardId: bId, cardId, fromColId } = dragState;
-      dragState = null;
-
-      try {
-        await invoke('move_card_cmd', {
-          boardId: bId,
-          cardId,
-          fromColId,
-          toColId: col.id,
-        });
-        await loadBoardColumns(bId);
-      } catch (e2) { alert('Error moving card: ' + e2); }
-    });
+    // ── SortableJS drag and drop ───────────────────────────────────────────
+    if (window.Sortable) {
+      Sortable.create(cardsList, {
+        group: 'kanban-cards',
+        animation: 150,
+        // CRITICAL for Tauri WKWebView: HTML5 DnD fires dragstart but never fires
+        // 'drop', causing cards to snap back. forceFallback bypasses HTML5 DnD
+        // entirely and uses mouse events (mousedown/mousemove/mouseup) instead.
+        forceFallback: true,
+        fallbackClass: 'sortable-ghost',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        onStart: () => { _sortableDragging = true; },
+        onEnd: async (evt) => {
+          setTimeout(() => { _sortableDragging = false; }, 100);
+          const cardId = evt.item.dataset.cardId;
+          const fromColEl = evt.from.closest('.board-col');
+          const toColEl = evt.to.closest('.board-col');
+          const fromColId = fromColEl ? fromColEl.dataset.colId : null;
+          const toColId = toColEl ? toColEl.dataset.colId : null;
+          _dbg(`onEnd cardId=${cardId} from=${fromColId} to=${toColId}`);
+          if (!fromColId || !toColId) { _dbg('ERROR: col element not found'); return; }
+          if (fromColId === toColId) { _dbg('same col, skip'); return; }
+          try {
+            _dbg('calling move_card_cmd…');
+            await invoke('move_card_cmd', { boardId, cardId, fromColId, toColId });
+            _dbg('move_card_cmd OK');
+            await loadBoardColumns(boardId);
+          } catch (err) {
+            _dbg('ERROR: ' + err);
+            alert('Error moving card: ' + err);
+            await loadBoardColumns(boardId);
+          }
+        },
+      });
+    }
 
     // Add card area
     const addArea = document.createElement('div');
@@ -884,50 +1122,360 @@
   function buildCardEl(card, colId, boardId) {
     const li = document.createElement('li');
     li.className = 'kanban-card';
-    li.draggable = true;
     li.dataset.cardId = card.id;
     li.dataset.colId = colId;
+
+    // Label chips
+    if (card.labels && card.labels.length > 0) {
+      const labelsRow = document.createElement('div');
+      labelsRow.className = 'kanban-card-labels';
+      for (const lbl of card.labels) {
+        const chip = document.createElement('span');
+        chip.className = 'card-label-chip';
+        chip.style.background = LABEL_COLORS[lbl] || '#555';
+        chip.title = lbl;
+        labelsRow.appendChild(chip);
+      }
+      li.appendChild(labelsRow);
+    }
 
     const titleEl = document.createElement('div');
     titleEl.className = 'kanban-card-title';
     titleEl.textContent = card.title;
     li.appendChild(titleEl);
 
+    // Meta row (number, description indicator, due date)
+    const meta = document.createElement('div');
+    meta.className = 'kanban-card-meta';
     if (card.number) {
-      const numEl = document.createElement('div');
+      const numEl = document.createElement('span');
       numEl.className = 'kanban-card-num';
       numEl.textContent = '#' + card.number;
-      li.appendChild(numEl);
+      meta.appendChild(numEl);
     }
+    if (card.has_description) {
+      const descIcon = document.createElement('span');
+      descIcon.className = 'card-meta-desc';
+      descIcon.title = 'Has description';
+      descIcon.textContent = '☰';
+      meta.appendChild(descIcon);
+    }
+    // Due date — inline picker, click to pick, auto-saves
+    const dueWrap = document.createElement('div');
+    dueWrap.className = 'card-due-wrap';
+    const dueLabel = document.createElement('span');
+    dueLabel.className = 'card-meta-due';
+    dueLabel.textContent = card.due_date ? '📅 ' + card.due_date : '📅 Set date';
+    dueLabel.style.opacity = card.due_date ? '1' : '0.35';
+    const dueInput = document.createElement('input');
+    dueInput.type = 'date';
+    dueInput.className = 'card-due-input-overlay';
+    dueInput.value = card.due_date || '';
+    dueInput.onchange = async (e) => {
+      e.stopPropagation();
+      const newDate = dueInput.value || null;
+      dueLabel.textContent = newDate ? '📅 ' + newDate : '📅 Set date';
+      dueLabel.style.opacity = newDate ? '1' : '0.35';
+      try {
+        const current = await invoke('get_card_cmd', { boardId, cardId: card.id });
+        await invoke('update_card_cmd', {
+          boardId, cardId: card.id,
+          title: current.title, description: current.description,
+          labels: current.labels, dueDate: newDate,
+          assignee: current.assignee || null,
+        });
+      } catch (err) { console.error('Failed to save due date', err); }
+    };
+    dueInput.onclick = e => e.stopPropagation(); // don't open card detail
+    dueWrap.appendChild(dueLabel);
+    dueWrap.appendChild(dueInput);
+    meta.appendChild(dueWrap);
+    li.appendChild(meta); // always show meta row (contains due date picker)
 
-    li.addEventListener('dragstart', (e) => {
-      dragState = { boardId, cardId: card.id, fromColId: colId, cardEl: li };
-      li.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', card.id);
-    });
-    li.addEventListener('dragend', () => {
-      li.classList.remove('dragging');
-      document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-      document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
-      if (dragState) dragState = null;
+    // Last-move + assignee row
+    const bottomRow = document.createElement('div');
+    bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:5px;';
+    if (card.last_move) {
+      const mv = document.createElement('span');
+      mv.className = 'card-last-move';
+      mv.style.marginTop = '0';
+      mv.textContent = `↪ ${card.last_move.to_col}  ·  ${formatHlc(card.last_move.timestamp)}`;
+      bottomRow.appendChild(mv);
+    } else {
+      bottomRow.appendChild(document.createElement('span'));
+    }
+    if (card.assignee) {
+      const av = document.createElement('div');
+      av.className = 'card-assignee-avatar';
+      av.title = card.assignee;
+      av.textContent = initials(card.assignee);
+      bottomRow.appendChild(av);
+    }
+    if (bottomRow.children.length > 0 && (card.last_move || card.assignee)) li.appendChild(bottomRow);
+
+    // Click to open detail (suppressed during/after drag)
+    li.addEventListener('click', (e) => {
+      if (_sortableDragging) return;
+      e.stopPropagation();
+      openCardDetail(card.id, boardId);
     });
 
     return li;
   }
 
-  // Returns the card element that the dragged card should be inserted before
-  function getDragAfterElement(container, y) {
-    const cards = [...container.querySelectorAll('.kanban-card:not(.dragging)')];
-    return cards.reduce((closest, el) => {
-      const box = el.getBoundingClientRect();
-      const offset = y - box.top - box.height / 2;
-      if (offset < 0 && offset > closest.offset) {
-        return { offset, element: el };
-      }
-      return closest;
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
+  // ── Card detail modal ─────────────────────────────────────────────────────
+  let _cardDetailCtx = null; // { boardId, cardId }
+
+  function formatHlc(hlc) {
+    try {
+      const ms = parseInt(hlc.split('-')[0], 16);
+      if (!ms) return '';
+      const d = new Date(ms);
+      return d.toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    } catch { return ''; }
   }
+
+  function shortKey(pk) {
+    return pk ? pk.slice(0, 8) + '…' : '?';
+  }
+
+  function initials(name) {
+    if (!name) return '?';
+    // Use display name if it looks like one, else first 2 chars of pubkey
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    if (name.length <= 12) return name.slice(0, 2).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+
+  let _assigneeSelected = null; // display name of selected assignee
+
+  function renderAssigneePicker(members, currentAssignee) {
+    _assigneeSelected = currentAssignee || null;
+    const container = document.getElementById('card-detail-assignee-picker');
+    container.innerHTML = '';
+    if (!members || members.length === 0) {
+      container.textContent = 'No members';
+      container.style.color = '#444';
+      container.style.fontSize = '12px';
+      return;
+    }
+    // "Unassigned" chip
+    const unassigned = document.createElement('div');
+    unassigned.className = 'assignee-chip' + (!_assigneeSelected ? ' selected' : '');
+    unassigned.dataset.pubkey = '';
+    unassigned.innerHTML = '<span style="font-size:11px;color:#666;">Unassigned</span>';
+    unassigned.onclick = () => {
+      _assigneeSelected = null;
+      container.querySelectorAll('.assignee-chip').forEach(c => c.classList.remove('selected'));
+      unassigned.classList.add('selected');
+    };
+    container.appendChild(unassigned);
+
+    for (const m of members.filter(m => !m.kicked)) {
+      const name = m.display_name || shortKey(m.pubkey);
+      const chip = document.createElement('div');
+      chip.className = 'assignee-chip' + (name === _assigneeSelected ? ' selected' : '');
+      chip.dataset.pubkey = m.pubkey;
+      const av = document.createElement('div');
+      av.className = 'assignee-chip-avatar';
+      if (m.avatar_b64) {
+        av.style.cssText = `background-image:url(data:image/png;base64,${m.avatar_b64});background-size:cover;`;
+        av.textContent = '';
+      } else {
+        av.textContent = initials(name);
+      }
+      chip.appendChild(av);
+      chip.appendChild(document.createTextNode(name));
+      chip.onclick = () => {
+        _assigneeSelected = name; // store display name
+        container.querySelectorAll('.assignee-chip').forEach(c => c.classList.remove('selected'));
+        chip.classList.add('selected');
+      };
+      container.appendChild(chip);
+    }
+  }
+
+  async function openCardDetail(cardId, boardId) {
+    _cardDetailCtx = { boardId, cardId };
+    try {
+      const [card, spaceMembers] = await Promise.all([
+        invoke('get_card_cmd', { boardId, cardId }),
+        currentSpaceId ? invoke('get_space_cmd', { spaceId: currentSpaceId }).then(s => s.members).catch(() => []) : Promise.resolve([]),
+      ]);
+      document.getElementById('card-detail-title').value = card.title;
+      document.getElementById('card-detail-desc').value = card.description || '';
+      document.getElementById('card-detail-due').value = card.due_date || '';
+      document.getElementById('card-detail-num').textContent = card.number ? '#' + card.number : '';
+      document.getElementById('comment-input').value = '';
+      renderLabelPicker(card.labels || []);
+      renderAssigneePicker(spaceMembers, card.assignee || null);
+      renderActivityFeed(card, boardId, cardId);
+      openModal('modal-card-detail');
+    } catch (e) { alert('Error loading card: ' + e); }
+  }
+
+  function renderActivityFeed(card, boardId, cardId) {
+    const feed = document.getElementById('card-activity-feed');
+    feed.innerHTML = '';
+
+    // Build unified timeline: history events + comments, sorted by timestamp
+    const items = [];
+    for (const h of (card.history || [])) {
+      items.push({ type: 'move', ts: h.timestamp, data: h });
+    }
+    for (const c of (card.comments || [])) {
+      items.push({ type: 'comment', ts: c.created_at, data: c });
+    }
+    // Created event
+    if (card.created_at) {
+      items.push({ type: 'created', ts: card.created_at, data: {} });
+    }
+    items.sort((a, b) => a.ts < b.ts ? -1 : 1);
+
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color:#333;font-size:12px;padding:8px 0;';
+      empty.textContent = 'No activity yet.';
+      feed.appendChild(empty);
+      return;
+    }
+
+    for (const item of items) {
+      const el = document.createElement('div');
+      el.className = 'activity-item';
+
+      if (item.type === 'created') {
+        const div = document.createElement('div');
+        div.className = 'activity-move';
+        div.innerHTML = '<strong>Card created</strong>';
+        const timeEl = document.createElement('div');
+        timeEl.className = 'activity-time';
+        timeEl.textContent = formatHlc(item.ts);
+        div.appendChild(timeEl);
+        el.appendChild(div);
+
+      } else if (item.type === 'move') {
+        const div = document.createElement('div');
+        div.className = 'activity-move';
+        div.innerHTML = `Moved <strong>${item.data.from_col}</strong> → <strong>${item.data.to_col}</strong>`;
+        const timeEl = document.createElement('div');
+        timeEl.className = 'activity-time';
+        timeEl.textContent = formatHlc(item.ts);
+        div.appendChild(timeEl);
+        el.appendChild(div);
+
+      } else if (item.type === 'comment') {
+        const div = document.createElement('div');
+        div.className = 'activity-comment';
+        const author = document.createElement('div');
+        author.className = 'comment-author';
+        author.textContent = shortKey(item.data.author);
+        const text = document.createElement('div');
+        text.className = 'comment-text';
+        text.textContent = item.data.text;
+        const footer = document.createElement('div');
+        footer.className = 'comment-footer';
+        const time = document.createElement('span');
+        time.className = 'comment-time';
+        time.textContent = formatHlc(item.ts);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-del-comment';
+        delBtn.title = 'Delete comment';
+        delBtn.textContent = '×';
+        delBtn.dataset.commentId = item.data.id;
+        delBtn.onclick = async () => {
+          try {
+            await invoke('delete_comment_cmd', { boardId, cardId, commentId: item.data.id });
+            const refreshed = await invoke('get_card_cmd', { boardId, cardId });
+            renderActivityFeed(refreshed, boardId, cardId);
+          } catch (err) { alert('Error deleting comment: ' + err); }
+        };
+        footer.appendChild(time);
+        footer.appendChild(delBtn);
+        div.appendChild(author);
+        div.appendChild(text);
+        div.appendChild(footer);
+        el.appendChild(div);
+      }
+
+      feed.appendChild(el);
+    }
+    // Scroll to bottom
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function renderLabelPicker(selectedLabels) {
+    const picker = document.getElementById('card-detail-label-picker');
+    picker.innerHTML = '';
+    for (const key of LABEL_KEYS) {
+      const chip = document.createElement('div');
+      chip.className = 'label-chip' + (selectedLabels.includes(key) ? ' selected' : '');
+      chip.dataset.label = key;
+      chip.style.background = LABEL_COLORS[key];
+      chip.title = key;
+      chip.onclick = () => chip.classList.toggle('selected');
+      picker.appendChild(chip);
+    }
+  }
+
+  function getSelectedLabels() {
+    return [...document.querySelectorAll('#card-detail-label-picker .label-chip.selected')]
+      .map(el => el.dataset.label);
+  }
+
+  document.getElementById('btn-add-comment').onclick = async () => {
+    if (!_cardDetailCtx) return;
+    const { boardId, cardId } = _cardDetailCtx;
+    const text = document.getElementById('comment-input').value.trim();
+    if (!text) return;
+    try {
+      await invoke('add_comment_cmd', { boardId, cardId, text });
+      document.getElementById('comment-input').value = '';
+      const refreshed = await invoke('get_card_cmd', { boardId, cardId });
+      renderActivityFeed(refreshed, boardId, cardId);
+    } catch (e) { alert('Error adding comment: ' + e); }
+  };
+
+  document.getElementById('comment-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      document.getElementById('btn-add-comment').click();
+    }
+  });
+
+  document.getElementById('btn-card-detail-save').onclick = async () => {
+    if (!_cardDetailCtx) return;
+    const { boardId, cardId } = _cardDetailCtx;
+    const title = document.getElementById('card-detail-title').value.trim();
+    const description = document.getElementById('card-detail-desc').value;
+    const dueDate = document.getElementById('card-detail-due').value || null;
+    const labels = getSelectedLabels();
+    const assignee = _assigneeSelected || null;
+    if (!title) return;
+    try {
+      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee });
+      closeModal('modal-card-detail');
+      _cardDetailCtx = null;
+      await loadBoardColumns(boardId);
+    } catch (e) { alert('Error saving card: ' + e); }
+  };
+
+  document.getElementById('btn-card-detail-cancel').onclick = () => {
+    closeModal('modal-card-detail');
+    _cardDetailCtx = null;
+  };
+
+  document.getElementById('btn-delete-card').onclick = async () => {
+    if (!_cardDetailCtx) return;
+    if (!confirm('Delete this card? This cannot be undone.')) return;
+    const { boardId, cardId } = _cardDetailCtx;
+    try {
+      await invoke('delete_card_cmd', { boardId, cardId });
+      closeModal('modal-card-detail');
+      _cardDetailCtx = null;
+      await loadBoardColumns(boardId);
+    } catch (e) { alert('Error deleting card: ' + e); }
+  };
 
   // ── Space settings (members / boards / invite) ─────────────────────────────
   async function openSpaceSettings() {

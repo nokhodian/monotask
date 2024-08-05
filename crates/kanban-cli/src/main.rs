@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "app-cli", about = "P2P Kanban CLI")]
+#[command(name = "app-cli", about = "Monotask – P2P Kanban CLI")]
 struct Cli {
     #[arg(long, global = true, help = "Data directory")]
     data_dir: Option<std::path::PathBuf>,
@@ -43,6 +43,9 @@ enum Commands {
         #[command(subcommand)]
         cmd: ProfileCommands,
     },
+    /// Print full reference documentation for AI agents and automation
+    #[command(name = "ai-help")]
+    AiHelp,
 }
 
 #[derive(Subcommand)]
@@ -397,6 +400,7 @@ fn main() -> anyhow::Result<()> {
         },
         Commands::Space { cmd } => handle_space(cmd, &mut storage, &identity)?,
         Commands::Profile { cmd } => handle_profile(cmd, &mut storage, &identity, &dir)?,
+        Commands::AiHelp => print_ai_help(),
     }
     Ok(())
 }
@@ -646,6 +650,444 @@ fn get_local_member_profile(conn: &rusqlite::Connection) -> kanban_core::space::
             .unwrap_or_default(),
         kicked: false,
     }
+}
+
+fn print_ai_help() {
+    print!("{}", r#"
+================================================================================
+MONOTASK CLI – AI AGENT REFERENCE
+================================================================================
+Binary : app-cli  (alias: monotask)
+Version: 0.1.0
+Purpose: P2P Kanban board manager with local-first CRDT storage. Designed for
+         task management, collaborative workspaces, and automation via CLI.
+
+Run `app-cli ai-help` to print this document at any time.
+
+--------------------------------------------------------------------------------
+QUICK-START FOR AGENTS
+--------------------------------------------------------------------------------
+1. Check your identity:       app-cli profile show
+2. Create a board:            app-cli board create "My Project"
+3. List columns on a board:   app-cli column list <BOARD_ID>
+4. Create a card:             app-cli card create <BOARD_ID> <COL_ID> "Task title"
+5. View a card:               app-cli card view <BOARD_ID> <CARD_ID>
+6. Add a comment:             app-cli card comment add <BOARD_ID> <CARD_ID> "text"
+
+Always use --json for machine-readable output when parsing results.
+
+--------------------------------------------------------------------------------
+GLOBAL FLAGS
+--------------------------------------------------------------------------------
+--data-dir <PATH>
+    Override the storage directory (default: $XDG_DATA_HOME/p2p-kanban or
+    ~/.local/share/p2p-kanban on Linux/macOS).
+    The directory contains:
+      kanban.db    – SQLite database (boards, spaces, profile, invites)
+      identity.key – Raw 32-byte Ed25519 secret key (auto-created on first run)
+
+--------------------------------------------------------------------------------
+IDENTITY & AUTHENTICATION
+--------------------------------------------------------------------------------
+Every user has an Ed25519 keypair. The public key (hex, 64 chars) is your
+persistent identity across all operations.
+
+Identity resolution order (first found wins):
+  1. SSH Ed25519 key at path stored in profile (set via `profile import-ssh-key`)
+  2. identity.key file in data directory
+  3. Auto-generated key (written to identity.key on first run)
+
+Your public key is used as:
+  - Space ownership and membership
+  - Card authorship (created_by field)
+  - Invite token signing/verification
+
+--------------------------------------------------------------------------------
+COMMANDS
+--------------------------------------------------------------------------------
+
+## init
+Usage: app-cli init
+Effect: Prints the data directory path. Triggers identity creation if missing.
+        Safe to run multiple times (idempotent).
+
+────────────────────────────────────────────────────────────────────────────────
+## board
+Boards are the top-level containers. Each board holds an ordered list of
+columns; each column holds an ordered list of cards. Boards are stored as
+Automerge CRDT documents (binary blobs in SQLite).
+
+### board create <TITLE>
+  --json   Output JSON
+
+  Creates a new board with the given title. Prints the board ID.
+  Text output:  "Created board: <title> (<id>)"
+  JSON output:  {"id":"<uuid>","title":"<title>","deep_link":"kanban://board/<id>"}
+
+  Example:
+    $ app-cli board create "Sprint 42" --json
+    {"id":"a1b2c3d4-...","title":"Sprint 42","deep_link":"kanban://board/a1b2c3..."}
+
+### board list
+  --json   Output JSON
+
+  Lists all board IDs stored locally.
+  Text output:  one board ID per line
+  JSON output:  ["<uuid>", ...]
+
+  Example:
+    $ app-cli board list --json
+    ["a1b2c3d4-...","e5f6a7b8-..."]
+
+────────────────────────────────────────────────────────────────────────────────
+## column
+Columns are ordered within a board. Each column has an ID and a title and
+maintains an ordered list of card IDs.
+
+### column create <BOARD_ID> <TITLE>
+  --json   Output JSON
+
+  Creates a new column in the specified board.
+  Text output:  "Created column: <title> (<id>)"
+  JSON output:  {"id":"<uuid>","board_id":"<board_id>"}
+
+  Example:
+    $ app-cli column create a1b2c3d4-... "In Progress" --json
+    {"id":"c9d0e1f2-...","board_id":"a1b2c3d4-..."}
+
+### column list <BOARD_ID>
+  --json   Output JSON
+
+  Lists all columns in the board in order.
+  Text output:  "<col_id>: <title>"  (one per line)
+  JSON output:  [{"id":"...","title":"...","card_ids":["..."]}, ...]
+
+  Note: card_ids is the ordered list of card UUIDs in each column.
+
+  Example:
+    $ app-cli column list a1b2c3d4-... --json
+    [{"id":"c9d0e1f2-...","title":"Todo","card_ids":[]},
+     {"id":"d3e4f5a6-...","title":"Done","card_ids":["card-uuid-..."]}]
+
+────────────────────────────────────────────────────────────────────────────────
+## card
+Cards are the primary work items. Each card belongs to exactly one column.
+
+Card fields:
+  id          – UUID (use this for all card operations)
+  number      – Human-readable short ID, format "<prefix>-<seq>" e.g. "a7f3-1"
+                Prefix = first 4 chars of base32-encoded creator pubkey.
+                Sequence = per-creator counter (1, 2, 3, ...).
+  title       – Short summary string
+  description – Long-form markdown text (may be empty)
+  assignees   – List of pubkey strings (future: currently unused in CLI)
+  labels      – List of label strings
+  due_date    – Optional date string "YYYY-MM-DD" or null
+  archived    – Boolean (soft-archive, hidden from normal views)
+  deleted     – Boolean (soft-delete, hidden from all views)
+  created_by  – Hex pubkey of creator
+  created_at  – HLC timestamp (see TIMESTAMPS section)
+
+### card create <BOARD_ID> <COL_ID> <TITLE>
+  --json   Output JSON
+
+  Creates a card in the specified column of the specified board.
+  Text output:  "Created card: <title> (<id>)"
+  JSON output:  {"id":"<uuid>","title":"<title>","board_id":"<board_id>","number":"<prefix>-<n>"}
+
+  Example:
+    $ app-cli card create a1b2-... c9d0-... "Fix login bug" --json
+    {"id":"f1a2b3c4-...","title":"Fix login bug","board_id":"a1b2-...","number":"aaaa-1"}
+
+### card view <BOARD_ID> <CARD_ID>
+  --json   Output JSON
+
+  Reads and prints all fields of a single card.
+  Text output:  labelled key-value lines (ID, Title, Description, Status, Due)
+  JSON output:  full Card struct as JSON
+
+  JSON schema:
+    {
+      "id": "<uuid>",
+      "number": {"prefix":"<str>","seq":<int>} | null,
+      "title": "<str>",
+      "description": "<str>",
+      "assignees": ["<pubkey>", ...],
+      "labels": ["<str>", ...],
+      "due_date": "<YYYY-MM-DD>" | null,
+      "archived": false,
+      "deleted": false,
+      "copied_from": "<uuid>" | null,
+      "created_by": "<hex-pubkey>",
+      "created_at": "<hlc-timestamp>"
+    }
+
+  Example:
+    $ app-cli card view a1b2-... f1a2b3c4-... --json
+
+### card comment add <BOARD_ID> <CARD_ID> <TEXT>
+  --json   Output JSON
+
+  Adds a comment to the card.
+  JSON output:  {"id":"<uuid>","author":"<str>","text":"<str>","created_at":"<hlc>","deleted":false}
+
+### card comment list <BOARD_ID> <CARD_ID>
+  --json   Output JSON
+
+  Lists all non-deleted comments on a card in chronological order.
+  Text output:  "[<created_at>] <author>: <text>"
+  JSON output:  array of comment objects
+
+### card comment delete <BOARD_ID> <CARD_ID> <COMMENT_ID>
+  --json   Output JSON
+
+  Soft-deletes a comment (marked deleted=true, not returned in list).
+  JSON output:  {"deleted":"<comment_id>"}
+
+────────────────────────────────────────────────────────────────────────────────
+## checklist
+Checklists are ordered task lists attached to a card. A card can have multiple
+checklists.
+
+### checklist add <BOARD_ID> <CARD_ID> <TITLE>
+  --json
+
+  Creates a new checklist on the card.
+  JSON output:  {"id":"<uuid>","title":"<str>","items":[]}
+
+### checklist item-add <BOARD_ID> <CARD_ID> <CHECKLIST_ID> <TEXT>
+  --json
+
+  Adds an unchecked item to a checklist.
+  JSON output:  {"id":"<uuid>","text":"<str>","checked":false}
+
+### checklist item-check <BOARD_ID> <CARD_ID> <CHECKLIST_ID> <ITEM_ID>
+  --json
+
+  Marks a checklist item as checked.
+  JSON output:  {"checked":true,"item_id":"<uuid>"}
+
+### checklist item-uncheck <BOARD_ID> <CARD_ID> <CHECKLIST_ID> <ITEM_ID>
+  --json
+
+  Marks a checklist item as unchecked.
+  JSON output:  {"checked":false,"item_id":"<uuid>"}
+
+────────────────────────────────────────────────────────────────────────────────
+## space
+Spaces are shared containers that group boards and members. They enable
+multi-user collaboration via signed invite tokens.
+
+Space ownership: The creator is the owner (cannot be changed).
+Members: Any user who joins via a valid invite token.
+Boards: Boards are associated with a space; they can be on multiple spaces.
+
+### space create <NAME>
+  Creates a new space owned by the current user.
+  Output:  "Created Space: <name> (<id>)"
+
+### space list
+  Lists all spaces stored locally.
+  Output:  "<id> | <name> | <member_count> members"
+
+### space info <SPACE_ID>
+  Prints full details: name, owner pubkey, member list, board IDs.
+  Members are shown as: "  <pubkey[0..16]>  <display_name>"
+
+### space invite generate <SPACE_ID>
+  Generates a new signed invite token (revokes previous tokens first).
+  Output: the raw Base58 token string (share this with invitees)
+
+  Token format:  Base58-encoded 120-byte payload
+    Bytes 0-15:  space_id (raw UUID bytes)
+    Bytes 16-47: owner Ed25519 pubkey (32 bytes)
+    Bytes 48-55: creation timestamp (u64 big-endian unix ms)
+    Bytes 56-119: Ed25519 signature over bytes 0-55
+
+### space invite export <SPACE_ID> <OUTPUT_FILE>
+  Generates an invite and writes a .space JSON file containing:
+    {"token":"<base58>","space_name":"<str>","space_doc":"<base64-automerge>"}
+  The .space file includes the full space CRDT document so the joiner gets
+  the current member list and board references immediately.
+
+### space invite revoke <SPACE_ID>
+  Invalidates all active invite tokens for the space.
+  Existing members are not affected; only new joins are blocked.
+
+### space join <TOKEN_OR_FILE>
+  Joins a space using either:
+    - A raw Base58 token string
+    - A path to a .space JSON file (recommended; includes space document)
+
+  The command verifies the token signature, checks it hasn't been revoked,
+  then adds the local user as a member of the space.
+  Idempotent: safe to run again if already a member.
+  Output: "Joined Space: <name> (<id>)"
+
+### space boards add <SPACE_ID> <BOARD_ID>
+  Associates a local board with the space.
+  The board must already exist locally (created via `board create`).
+
+### space boards remove <SPACE_ID> <BOARD_ID>
+  Removes the board association from the space (board data is not deleted).
+
+### space boards list <SPACE_ID>
+  Prints one board ID per line for all boards in the space.
+
+### space members list <SPACE_ID>
+  Prints one member per line: "<pubkey>  <display_name>"
+  Kicked members are shown with " [kicked]" suffix.
+
+### space members kick <SPACE_ID> <PUBKEY>
+  Marks a member as kicked in the space document and local DB.
+  Kicked members cannot interact with the space (enforcement is app-level).
+
+────────────────────────────────────────────────────────────────────────────────
+## profile
+Manages the local user's identity and display information.
+
+### profile show
+  Prints:
+    Pubkey:       <64-char hex>
+    Display name: <name> or "(not set)"
+    Avatar:       "set" or "not set"
+    SSH key path: <path> or "(auto-generated)"
+
+### profile set-name <NAME>
+  Sets your display name (shown to other space members).
+  Example:  app-cli profile set-name "Alice"
+
+### profile set-avatar <PATH>
+  Reads an image file (any format) and stores it as your avatar blob.
+  Example:  app-cli profile set-avatar ~/avatar.png
+
+### profile import-ssh-key [PATH]
+  Imports an OpenSSH Ed25519 private key as your identity.
+  If PATH is omitted, defaults to ~/.ssh/id_ed25519
+  The imported key replaces the current identity.key.
+  WARNING: This changes your public key — space memberships tied to the old
+           key will no longer match. Run this before joining any spaces.
+
+--------------------------------------------------------------------------------
+TIMESTAMPS (HLC FORMAT)
+--------------------------------------------------------------------------------
+All created_at / timestamp fields use Hybrid Logical Clock format:
+  "<wall_ms_hex>-<logical_hex>"
+  Example: "018f3a2b4c5d6e7f-00000001"
+           wall_ms  = 018f3a2b4c5d6e7f (hex, Unix milliseconds)
+           logical  = 00000001 (hex counter, increments on same-ms operations)
+
+To convert to a Unix timestamp in milliseconds:
+  ms = parseInt(hlc.split('-')[0], 16)
+To convert to a human date (JavaScript):
+  new Date(ms).toISOString()
+
+--------------------------------------------------------------------------------
+ID FORMATS
+--------------------------------------------------------------------------------
+Board ID   : UUID v4, e.g. "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+Column ID  : UUID v4
+Card ID    : UUID v4  ← use this in all card/comment/checklist commands
+Card Number: "<base32-prefix>-<seq>"  e.g. "a7f3-42"  (human-readable only;
+             the CLI commands require the full UUID card ID, not the number)
+Space ID   : UUID v4
+Comment ID : UUID v4
+Item ID    : UUID v4
+
+--------------------------------------------------------------------------------
+STORAGE
+--------------------------------------------------------------------------------
+Location:  ~/.local/share/p2p-kanban/kanban.db  (or custom --data-dir)
+
+Database tables:
+  boards            board_id | automerge_doc (BLOB) | last_modified | last_heads
+  card_number_index board_id | card_id | number
+  spaces            id | name | owner_pubkey | created_at | automerge_bytes
+  space_members     space_id | pubkey | display_name | avatar_blob | kicked
+  space_boards      space_id | board_id
+  space_invites     token_hash (PK) | token | space_id | created_at | revoked
+  user_profile      pk='local' | pubkey | display_name | avatar_blob | ssh_key_path
+
+Board data is stored as Automerge CRDT binary documents. The root map contains:
+  columns       – list of column objects [{id, title, card_ids[]}]
+  cards         – map of card_id → card object
+  members       – map of pubkey → member profile
+  actor_card_seq – map of pubkey → int (per-actor card counter)
+  label_definitions – map of label_id → label object
+
+--------------------------------------------------------------------------------
+COMMON AGENT WORKFLOWS
+--------------------------------------------------------------------------------
+
+### Workflow: Create a board and populate it
+  BOARD=$(app-cli board create "My Board" --json | jq -r .id)
+  TODO_COL=$(app-cli column create $BOARD "Todo" --json | jq -r .id)
+  DOING_COL=$(app-cli column create $BOARD "Doing" --json | jq -r .id)
+  DONE_COL=$(app-cli column create $BOARD "Done" --json | jq -r .id)
+  CARD=$(app-cli card create $BOARD $TODO_COL "First task" --json | jq -r .id)
+  app-cli card view $BOARD $CARD --json
+
+### Workflow: Inspect all cards in a board
+  # 1. List columns
+  COLS=$(app-cli column list $BOARD --json)
+  # 2. For each column, iterate card_ids and call card view
+  echo $COLS | jq -r '.[].card_ids[]' | while read CARD_ID; do
+    app-cli card view $BOARD $CARD_ID --json
+  done
+
+### Workflow: Collaborative space setup (two users, A and B)
+  # --- User A ---
+  SPACE=$(app-cli space create "Team" | awk '{print $NF}' | tr -d '()')
+  app-cli space boards add $SPACE $BOARD
+  app-cli space invite export $SPACE invite.space
+  # Share invite.space with User B
+
+  # --- User B ---
+  app-cli space join invite.space
+  app-cli space boards list $SPACE   # see boards shared by A
+
+### Workflow: Add a checklist to a card
+  CL=$(app-cli checklist add $BOARD $CARD "Definition of Done" --json | jq -r .id)
+  ITEM=$(app-cli checklist item-add $BOARD $CARD $CL "Write tests" --json | jq -r .id)
+  app-cli checklist item-check $BOARD $CARD $CL $ITEM
+
+### Workflow: Comment thread
+  app-cli card comment add $BOARD $CARD "Starting work on this"
+  app-cli card comment add $BOARD $CARD "Blocked on API access"
+  app-cli card comment list $BOARD $CARD --json
+
+--------------------------------------------------------------------------------
+ERROR HANDLING
+--------------------------------------------------------------------------------
+All commands exit with code 0 on success, non-zero on error.
+Errors are printed to stderr as plain text (not JSON).
+Common error causes:
+  - Board/card/column/space ID not found in local database
+  - Invalid UUID format for IDs
+  - Board file corrupted or missing
+  - Invite token invalid signature or revoked
+  - SSH key file not found or wrong format (must be Ed25519)
+
+--------------------------------------------------------------------------------
+LIMITATIONS & NOTES FOR AGENTS
+--------------------------------------------------------------------------------
+- The CLI does NOT sync between users automatically. P2P sync is handled
+  by the desktop app (Monotask GUI). The CLI operates only on local data.
+- `card create` currently uses a placeholder identity for card numbers
+  (all cards get prefix "aaaa"). Full identity wiring is planned.
+- There is no `card move` CLI command yet. Card column assignment is managed
+  by the GUI. To get a card's current column: iterate column list and check
+  which column's card_ids contains the card.
+- `card view --json` returns the full Card struct; the `number` field is a
+  JSON object {"prefix":"...","seq":N}, not the display string "prefix-N".
+- Invite tokens are single-use per generation: generating a new token revokes
+  the previous one. Use `invite export` (not `invite generate`) to share
+  invites that include full space state.
+- Data directory must be consistent across all CLI invocations for the same
+  instance. If using --data-dir, always pass the same path.
+
+================================================================================
+"#);
 }
 
 fn parse_token_or_file(input: &str) -> anyhow::Result<(String, String, Option<Vec<u8>>)> {
