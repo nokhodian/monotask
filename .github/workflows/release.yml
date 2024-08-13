@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-macos:
-    name: Build macOS (${{ matrix.target }})
+    name: Build CLI macOS (${{ matrix.target }})
     runs-on: macos-latest
     strategy:
       matrix:
@@ -39,7 +39,7 @@ jobs:
             ${{ matrix.artifact }}.tar.gz.sha256
 
   build-linux:
-    name: Build Linux (x86_64)
+    name: Build CLI Linux (x86_64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,9 +62,39 @@ jobs:
             monotask-${{ github.ref_name }}-x86_64-linux.tar.gz
             monotask-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256
 
+  build-desktop-macos:
+    name: Build Desktop App (macOS arm64 DMG)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+      - name: Build desktop app
+        working-directory: crates/kanban-tauri
+        run: tauri build --target aarch64-apple-darwin
+      - name: Collect and rename DMG
+        run: |
+          VERSION="${{ github.ref_name }}"
+          DMG=$(find target/aarch64-apple-darwin/release/bundle/dmg -name "*.dmg" | head -1)
+          DEST="Monotask-${VERSION}-aarch64.dmg"
+          cp "$DMG" "$DEST"
+          shasum -a 256 "$DEST" > "$DEST.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monotask-desktop-${{ github.ref_name }}-aarch64
+          path: |
+            Monotask-*.dmg
+            Monotask-*.dmg.sha256
+
   release:
     name: Create GitHub Release
-    needs: [build-macos, build-linux]
+    needs: [build-macos, build-linux, build-desktop-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,30 +106,35 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} dist/*.tar.gz dist/*.sha256 \
+          gh release create ${{ github.ref_name }} dist/*.tar.gz dist/*.sha256 dist/*.dmg \
             --title "Monotask ${{ github.ref_name }}" \
             --notes "$(cat <<'EOF'
           ## Monotask ${{ github.ref_name }}
 
-          ### Install via Homebrew
+          ### Desktop App (macOS) — via Homebrew
+          \`\`\`
+          brew tap nokhodian/tap
+          brew install --cask monotask
+          \`\`\`
+
+          ### CLI — via Homebrew
           \`\`\`
           brew tap nokhodian/tap
           brew install monotask
           \`\`\`
 
           ### Manual install
-          Download the archive for your platform, extract, and place `monotask` in your PATH.
-
-          | Platform | Archive |
-          |----------|---------|
-          | macOS Apple Silicon | \`monotask-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz\` |
-          | macOS Intel | \`monotask-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz\` |
-          | Linux x86_64 | \`monotask-${{ github.ref_name }}-x86_64-linux.tar.gz\` |
+          | Platform | Download |
+          |----------|----------|
+          | macOS Desktop (Apple Silicon) | \`Monotask-${{ github.ref_name }}-aarch64.dmg\` |
+          | macOS CLI (Apple Silicon) | \`monotask-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz\` |
+          | macOS CLI (Intel) | \`monotask-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz\` |
+          | Linux x86_64 CLI | \`monotask-${{ github.ref_name }}-x86_64-linux.tar.gz\` |
           EOF
           )"
 
   update-homebrew:
-    name: Update Homebrew Formula
+    name: Update Homebrew Formula (CLI)
     needs: release
     runs-on: ubuntu-latest
     steps:
@@ -113,7 +148,6 @@ jobs:
           echo "arm64=$(cat dist/monotask-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
           echo "x86=$(cat dist/monotask-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
           echo "linux=$(cat dist/monotask-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
-          echo "ver=${{ github.ref_name }}" | sed 's/v//' >> $GITHUB_OUTPUT
       - name: Update formula in homebrew-tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -155,21 +189,76 @@ jobs:
             end
           end"
 
-          # Get current file SHA for update API
           FILE_SHA=$(gh api repos/nokhodian/homebrew-tap/contents/Formula/monotask.rb \
             --jq '.sha' 2>/dev/null || echo "")
 
           if [ -z "$FILE_SHA" ]; then
-            # Create new file
             gh api repos/nokhodian/homebrew-tap/contents/Formula/monotask.rb \
               --method PUT \
-              --field message="Update monotask to ${VERSION}" \
+              --field message="Update monotask CLI to ${VERSION}" \
               --field content="$(echo "$FORMULA" | base64 -w0)"
           else
-            # Update existing file
             gh api repos/nokhodian/homebrew-tap/contents/Formula/monotask.rb \
               --method PUT \
-              --field message="Update monotask to ${VERSION}" \
+              --field message="Update monotask CLI to ${VERSION}" \
               --field content="$(echo "$FORMULA" | base64 -w0)" \
+              --field sha="$FILE_SHA"
+          fi
+
+  update-homebrew-cask:
+    name: Update Homebrew Cask (Desktop App)
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Compute DMG SHA
+        id: sha
+        run: |
+          echo "dmg=$(cat dist/Monotask-${{ github.ref_name }}-aarch64.dmg.sha256 | awk '{print $1}')" >> $GITHUB_OUTPUT
+      - name: Update Cask in homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION_PLAIN="${VERSION#v}"
+          DMG_SHA="${{ steps.sha.outputs.dmg }}"
+
+          CASK="cask \"monotask\" do
+            version \"${VERSION_PLAIN}\"
+            sha256 \"${DMG_SHA}\"
+
+            url \"https://github.com/nokhodian/monotask/releases/download/${VERSION}/Monotask-${VERSION}-aarch64.dmg\"
+            name \"Monotask\"
+            desc \"Local-first peer-to-peer kanban board with cryptographic identity\"
+            homepage \"https://github.com/nokhodian/monotask\"
+
+            depends_on macos: \">= :ventura\"
+
+            app \"Monotask.app\"
+
+            zap trash: [
+              \"~/.local/share/p2p-kanban\",
+              \"~/Library/Application Support/dev.monotask\",
+              \"~/Library/Preferences/dev.monotask.plist\",
+              \"~/Library/Saved Application State/dev.monotask.savedState\",
+            ]
+          end"
+
+          FILE_SHA=$(gh api repos/nokhodian/homebrew-tap/contents/Casks/monotask.rb \
+            --jq '.sha' 2>/dev/null || echo "")
+
+          if [ -z "$FILE_SHA" ]; then
+            gh api repos/nokhodian/homebrew-tap/contents/Casks/monotask.rb \
+              --method PUT \
+              --field message="Update Monotask desktop app to ${VERSION}" \
+              --field content="$(echo "$CASK" | base64 -w0)"
+          else
+            gh api repos/nokhodian/homebrew-tap/contents/Casks/monotask.rb \
+              --method PUT \
+              --field message="Update Monotask desktop app to ${VERSION}" \
+              --field content="$(echo "$CASK" | base64 -w0)" \
               --field sha="$FILE_SHA"
           fi
