@@ -239,9 +239,11 @@ jobs:
 
             app \"Monotask.app\"
 
-            postflight do
-              system_command \"/usr/bin/xattr\", args: [\"-cr\", \"\#{appdir}/Monotask.app\"]
-            end
+            caveats <<~EOS
+              Monotask is not code-signed. If macOS blocks it on first launch, run:
+                xattr -cr /Applications/Monotask.app
+              Then try opening it again.
+            EOS
 
             zap trash: [
               \"~/.local/share/p2p-kanban\",
