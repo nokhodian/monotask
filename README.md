@@ -61,6 +61,18 @@ brew install --cask monotask
 
 Opens as a native macOS app. Double-click `Monotask.app` in Applications.
 
+> **⚠️ macOS Gatekeeper warning**
+>
+> Monotask is not code-signed with an Apple Developer certificate. macOS may show
+> **"Monotask is damaged and can't be opened"** on first launch. This is a Gatekeeper
+> false positive — the app is not damaged. To fix it, run this once after installing:
+>
+> ```bash
+> xattr -cr /Applications/Monotask.app
+> ```
+>
+> Then open the app normally from Applications or Spotlight.
+
 ### CLI — Homebrew Formula
 
 ```bash
