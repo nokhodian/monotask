@@ -4,8 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-thiserror = { workspace = true }
-tracing   = { workspace = true }
-tokio     = { workspace = true }
-serde     = { workspace = true }
-ciborium  = { workspace = true }
+libp2p = { version = "0.53", features = [
+    "tcp", "quic", "noise", "yamux",
+    "mdns", "kad", "relay", "dcutr", "autonat",
+    "request-response", "identify",
+    "tokio",
+] }
+kanban-core    = { path = "../kanban-core" }
+kanban-crypto  = { path = "../kanban-crypto" }
+kanban-storage = { path = "../kanban-storage" }
+automerge   = { workspace = true }
+sha2        = { workspace = true }
+hex         = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+tokio       = { workspace = true }
+serde       = { workspace = true }
+ciborium    = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile    = { workspace = true }
