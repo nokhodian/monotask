@@ -11,7 +11,7 @@ use kanban_storage::Storage;
 use crate::{NetCommand, NetConfig, NetError, NetEvent};
 use crate::behaviour::{ComposedBehaviour, ComposedBehaviourEvent};
 
-pub(crate) async fn run(
+pub async fn run(
     config: NetConfig,
     storage: Arc<Mutex<Storage>>,
     identity_bytes: [u8; 32],
@@ -79,6 +79,7 @@ async fn run_inner(
     let mut pubkey_cache: HashMap<PeerId, libp2p::identity::PublicKey> = HashMap::new();
     let mut my_spaces: Vec<String> = Vec::new();
     let mut reannounce = tokio::time::interval(Duration::from_secs(20 * 3600));
+    let mut sync_states: HashMap<String, automerge::sync::State> = HashMap::new();
 
     loop {
         tokio::select! {
@@ -108,6 +109,7 @@ async fn run_inner(
                     &my_spaces,
                     identity_bytes,
                     event_tx,
+                    &mut sync_states,
                 ).await;
             }
 
@@ -129,6 +131,7 @@ async fn handle_swarm_event(
     my_spaces: &[String],
     identity_bytes: [u8; 32],
     event_tx: &mpsc::Sender<NetEvent>,
+    sync_states: &mut HashMap<String, automerge::sync::State>,
 ) {
     use libp2p::{identify, mdns, kad, request_response};
     match event {
@@ -166,7 +169,7 @@ async fn handle_swarm_event(
             }
         )) => {
             let response = handle_sync_request(
-                request, peer, storage, pubkey_cache, my_spaces,
+                request, peer, storage, pubkey_cache, my_spaces, sync_states,
             );
             let _ = swarm.behaviour_mut().sync.send_response(channel, response);
         }
@@ -177,7 +180,7 @@ async fn handle_swarm_event(
                 message: request_response::Message::Response { response, .. },
             }
         )) => {
-            handle_sync_response(response, peer, storage, event_tx).await;
+            handle_sync_response(response, peer, storage, event_tx, sync_states).await;
         }
 
         SwarmEvent::Behaviour(ComposedBehaviourEvent::Kademlia(
@@ -237,6 +240,7 @@ fn handle_sync_request(
     storage: &Arc<Mutex<Storage>>,
     pubkey_cache: &HashMap<PeerId, libp2p::identity::PublicKey>,
     _my_spaces: &[String],
+    sync_states: &mut HashMap<String, automerge::sync::State>,
 ) -> crate::sync_protocol::SyncResponse {
     use crate::sync_protocol::{SyncRequest, SyncResponse};
     use kanban_crypto::Identity;
@@ -275,7 +279,8 @@ fn handle_sync_request(
         }
 
         SyncRequest::BoardSync { board_id, sync_message } => {
-            match process_incoming_sync(&board_id, &sync_message, storage) {
+            let sync_state = sync_states.entry(board_id.clone()).or_insert_with(automerge::sync::State::new);
+            match process_incoming_sync(&board_id, &sync_message, storage, sync_state) {
                 Ok(reply_msg) => SyncResponse::BoardSync { board_id, sync_message: reply_msg },
                 Err(e) => SyncResponse::Rejected { reason: e.to_string() },
             }
@@ -287,6 +292,7 @@ fn process_incoming_sync(
     board_id: &str,
     sync_message: &[u8],
     storage: &Arc<Mutex<Storage>>,
+    sync_state: &mut automerge::sync::State,
 ) -> Result<Option<Vec<u8>>, crate::NetError> {
     use automerge::{AutoCommit, sync as am_sync};
     use am_sync::SyncDoc;
@@ -306,9 +312,7 @@ fn process_incoming_sync(
         }
     };
 
-    let mut sync_state = am_sync::State::new();
-
-    doc.sync().receive_sync_message(&mut sync_state, msg)
+    doc.sync().receive_sync_message(sync_state, msg)
         .map_err(|e| crate::NetError::Sync(e.to_string()))?;
 
     {
@@ -317,7 +321,7 @@ fn process_incoming_sync(
             .map_err(crate::NetError::Storage)?;
     }
 
-    let reply = doc.sync().generate_sync_message(&mut sync_state);
+    let reply = doc.sync().generate_sync_message(sync_state);
 
     Ok(reply.map(|m| m.encode()))
 }
@@ -327,6 +331,7 @@ async fn handle_sync_response(
     peer: PeerId,
     storage: &Arc<Mutex<Storage>>,
     event_tx: &mpsc::Sender<NetEvent>,
+    sync_states: &mut HashMap<String, automerge::sync::State>,
 ) {
     use crate::sync_protocol::SyncResponse;
     match response {
@@ -337,7 +342,8 @@ async fn handle_sync_response(
             );
         }
         SyncResponse::BoardSync { board_id, sync_message: Some(msg) } => {
-            if let Err(e) = process_incoming_sync(&board_id, &msg, storage) {
+            let sync_state = sync_states.entry(board_id.clone()).or_insert_with(automerge::sync::State::new);
+            if let Err(e) = process_incoming_sync(&board_id, &msg, storage, sync_state) {
                 let _ = event_tx.send(NetEvent::SyncError { board_id, error: e.to_string() }).await;
             } else {
                 let _ = event_tx.send(NetEvent::BoardSynced { board_id, peer_id: peer.to_string() }).await;
