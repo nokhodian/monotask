@@ -46,6 +46,18 @@ enum Commands {
     /// Print full reference documentation for AI agents and automation
     #[command(name = "ai-help")]
     AiHelp,
+    /// Start P2P sync daemon
+    Sync {
+        /// Run in background (writes PID to data dir)
+        #[arg(long)]
+        detach: bool,
+        /// Stop background daemon
+        #[arg(long)]
+        stop: bool,
+        /// Show sync status
+        #[arg(long)]
+        status: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -241,7 +253,8 @@ fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) ->
     Ok(id)
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let dir = data_dir(&cli)?;
     let mut storage = kanban_storage::Storage::open(&dir)?;
@@ -401,8 +414,92 @@ fn main() -> anyhow::Result<()> {
         Commands::Space { cmd } => handle_space(cmd, &mut storage, &identity)?,
         Commands::Profile { cmd } => handle_profile(cmd, &mut storage, &identity, &dir)?,
         Commands::AiHelp => print_ai_help(),
+        Commands::Sync { detach, stop, status } => {
+            cmd_sync(dir, detach, stop, status).await?;
+        }
     }
     Ok(())
+}
+
+async fn cmd_sync(
+    data_dir: std::path::PathBuf,
+    detach: bool,
+    stop: bool,
+    status: bool,
+) -> anyhow::Result<()> {
+    use kanban_net::{NetworkHandle, NetConfig, NetEvent};
+    use kanban_storage::Storage;
+    use std::sync::{Arc, Mutex};
+
+    let pid_file = data_dir.join("sync.pid");
+
+    if stop {
+        let pid_str = std::fs::read_to_string(&pid_file)
+            .map_err(|_| anyhow::anyhow!("sync daemon not running (no PID file)"))?;
+        let pid: i32 = pid_str.trim().parse()?;
+        unsafe { libc::kill(pid, libc::SIGTERM); }
+        println!("Stopped sync daemon (PID {pid})");
+        return Ok(());
+    }
+
+    if status {
+        match std::fs::read_to_string(&pid_file) {
+            Ok(pid) => println!("Sync daemon running (PID {})", pid.trim()),
+            Err(_) => println!("Sync daemon not running"),
+        }
+        return Ok(());
+    }
+
+    if detach {
+        let exe = std::env::current_exe()?;
+        let mut args: Vec<String> = std::env::args().collect();
+        args.retain(|a| a != "--detach");
+        let child = std::process::Command::new(exe)
+            .args(&args[1..])
+            .spawn()?;
+        std::fs::write(&pid_file, child.id().to_string())?;
+        println!("Sync daemon started (PID {})", child.id());
+        return Ok(());
+    }
+
+    // Load identity bytes and space IDs
+    let (identity_bytes, space_ids) = {
+        let storage = Storage::open(&data_dir)?;
+        let space_ids: Vec<String> = kanban_storage::space::list_spaces(storage.conn())?
+            .into_iter().map(|s| s.id).collect();
+        let key_path = data_dir.join("identity.key");
+        let bytes = std::fs::read(&key_path)
+            .map_err(|_| anyhow::anyhow!("Identity key not found. Run `monotask init` first."))?;
+        let identity_bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid key file length"))?;
+        (identity_bytes, space_ids)
+    };
+
+    let storage = Arc::new(Mutex::new(Storage::open(&data_dir)?));
+    let mut handle = NetworkHandle::start(
+        NetConfig { listen_port: 7272, data_dir: data_dir.clone() },
+        storage,
+        identity_bytes,
+    ).await?;
+
+    handle.announce_spaces(space_ids).await;
+
+    println!("Sync daemon running. Press Ctrl+C to stop.");
+    loop {
+        if let Some(event) = handle.event_rx.recv().await {
+            match &event {
+                NetEvent::PeerConnected { peer_id } =>
+                    println!("connected: {peer_id}"),
+                NetEvent::PeerDisconnected { peer_id } =>
+                    println!("disconnected: {peer_id}"),
+                NetEvent::BoardSynced { board_id, peer_id } =>
+                    println!("synced board {board_id} with {peer_id}"),
+                NetEvent::SyncError { board_id, error } =>
+                    println!("sync error {board_id}: {error}"),
+            }
+        }
+    }
 }
 
 fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, identity: &kanban_crypto::Identity) -> anyhow::Result<()> {
