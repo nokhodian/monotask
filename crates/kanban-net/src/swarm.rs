@@ -11,7 +11,7 @@ use kanban_storage::Storage;
 use crate::{NetCommand, NetConfig, NetError, NetEvent};
 use crate::behaviour::{ComposedBehaviour, ComposedBehaviourEvent};
 
-pub async fn run(
+pub(crate) async fn run(
     config: NetConfig,
     storage: Arc<Mutex<Storage>>,
     identity_bytes: [u8; 32],
