@@ -24,9 +24,11 @@ pub(crate) async fn run(
 }
 
 fn build_swarm(identity_bytes: [u8; 32]) -> Result<Swarm<ComposedBehaviour>, NetError> {
+    // Bridge: 32-byte seed → libp2p Ed25519 keypair (two separate dalek crates — bytes only)
     let mut key_bytes = identity_bytes;
-    let ed_kp = libp2p::identity::ed25519::Keypair::try_from_bytes(&mut key_bytes)
+    let secret = libp2p::identity::ed25519::SecretKey::try_from_bytes(&mut key_bytes)
         .map_err(|e| NetError::Libp2p(e.to_string()))?;
+    let ed_kp = libp2p::identity::ed25519::Keypair::from(secret);
     let keypair = identity::Keypair::from(ed_kp);
 
     let swarm = SwarmBuilder::with_existing_identity(keypair)
@@ -149,6 +151,7 @@ async fn handle_swarm_event(
         )) => {
             for (peer_id, addr) in peers {
                 swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
+                let _ = swarm.dial(peer_id);
                 tracing::debug!("net: mDNS discovered {peer_id}");
             }
         }

@@ -14,12 +14,7 @@ fn make_identity() -> [u8; 32] {
 
 /// Integration test: two NetworkHandle nodes start, mDNS discovers them on loopback,
 /// and at least one side emits a PeerConnected event.
-///
-/// NOTE: This test is marked #[ignore] because mDNS multicast may not work in some
-/// CI/sandbox environments (no loopback multicast, restricted networking, etc.).
-/// Run manually with: cargo test -p kanban-net --test sync_test -- --ignored --nocapture
 #[tokio::test]
-#[ignore]
 async fn two_nodes_connect_and_emit_peer_connected() {
     let id_a = make_identity();
     let id_b = make_identity();
