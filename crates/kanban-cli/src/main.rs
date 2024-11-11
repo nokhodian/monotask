@@ -478,7 +478,7 @@ async fn cmd_sync(
 
     let storage = Arc::new(Mutex::new(Storage::open(&data_dir)?));
     let mut handle = NetworkHandle::start(
-        NetConfig { listen_port: 7272, data_dir: data_dir.clone() },
+        NetConfig { listen_port: 0, data_dir: data_dir.clone() },
         storage,
         identity_bytes,
     ).await?;

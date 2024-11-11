@@ -183,7 +183,84 @@ async fn handle_swarm_event(
                 message: request_response::Message::Response { response, .. },
             }
         )) => {
-            handle_sync_response(response, peer, storage, event_tx, sync_states).await;
+            use crate::sync_protocol::{SyncRequest, SyncResponse};
+            use automerge::sync::SyncDoc;
+            // HelloAck must be handled here where we have &mut swarm to send follow-up BoardSync requests
+            if let SyncResponse::HelloAck { board_ids: their_board_ids } = response {
+                let our_board_ids = {
+                    let guard = storage.lock().unwrap();
+                    guard.list_board_ids().unwrap_or_default()
+                };
+                let all_boards: std::collections::HashSet<String> =
+                    our_board_ids.into_iter().chain(their_board_ids).collect();
+                for board_id in all_boards {
+                    let sync_state = sync_states
+                        .entry(format!("{peer}/{board_id}"))
+                        .or_insert_with(automerge::sync::State::new);
+                    let msg_bytes = {
+                        let mut guard = storage.lock().unwrap();
+                        let mut doc = match guard.load_board(&board_id) {
+                            Ok(d) => d,
+                            Err(_) => {
+                                let mut d = automerge::AutoCommit::new();
+                                kanban_core::init_doc(&mut d).ok();
+                                d
+                            }
+                        };
+                        let msg = doc.sync().generate_sync_message(sync_state);
+                        msg.map(|m| m.encode())
+                    };
+                    if let Some(bytes) = msg_bytes {
+                        swarm.behaviour_mut().sync.send_request(
+                            &peer,
+                            SyncRequest::BoardSync { board_id, sync_message: bytes },
+                        );
+                    }
+                }
+            } else if let SyncResponse::BoardSync { board_id, sync_message } = response {
+                // Multi-round sync: process the incoming message, then send follow-up if needed.
+                // handle_sync_response lacks &mut swarm, so we handle BoardSync here.
+                let sync_key = format!("{peer}/{board_id}");
+                let sync_state = sync_states.entry(sync_key).or_insert_with(automerge::sync::State::new);
+                match sync_message {
+                    None => {
+                        // Peer has converged on this board
+                        let _ = event_tx.send(NetEvent::BoardSynced {
+                            board_id,
+                            peer_id: peer.to_string(),
+                        }).await;
+                    }
+                    Some(msg_bytes) => {
+                        match process_incoming_sync(&board_id, &msg_bytes, storage, sync_state) {
+                            Err(e) => {
+                                let _ = event_tx.send(NetEvent::SyncError {
+                                    board_id,
+                                    error: e.to_string(),
+                                }).await;
+                            }
+                            Ok(Some(reply_bytes)) => {
+                                // Send follow-up round (contains our changes the peer is missing)
+                                swarm.behaviour_mut().sync.send_request(
+                                    &peer,
+                                    SyncRequest::BoardSync {
+                                        board_id: board_id.clone(),
+                                        sync_message: reply_bytes,
+                                    },
+                                );
+                            }
+                            Ok(None) => {
+                                // We've converged — nothing more to send
+                                let _ = event_tx.send(NetEvent::BoardSynced {
+                                    board_id,
+                                    peer_id: peer.to_string(),
+                                }).await;
+                            }
+                        }
+                    }
+                }
+            } else {
+                handle_sync_response(response, peer, storage, event_tx, sync_states).await;
+            }
         }
 
         SwarmEvent::Behaviour(ComposedBehaviourEvent::Kademlia(
