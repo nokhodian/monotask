@@ -81,27 +81,60 @@ impl Identity {
     }
 }
 
-pub fn generate_invite_token(space_id: &str, identity: &Identity) -> Result<String, CryptoError> {
+/// Build an invite token.
+///
+/// Token layout (v2, when `space_doc` is provided):
+///   [0..16]               space UUID bytes
+///   [16..48]              owner Ed25519 pubkey
+///   [48..56]              timestamp (u64 LE)
+///   [56..60]              doc length (u32 LE)
+///   [60..60+doc_len]      automerge space doc bytes
+///   [60+doc_len..]        Ed25519 signature over all preceding bytes
+///
+/// Legacy layout (v1, `space_doc = None`): 120 bytes, no doc.
+pub fn generate_invite_token(
+    space_id: &str,
+    identity: &Identity,
+    space_doc: Option<&[u8]>,
+) -> Result<String, CryptoError> {
     let uuid = uuid::Uuid::parse_str(space_id).map_err(|_| CryptoError::InvalidKey)?;
-    let space_id_bytes = *uuid.as_bytes(); // [u8; 16]
+    let space_id_bytes = *uuid.as_bytes();
     let pubkey_bytes = identity.public_key_bytes();
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
-    let mut payload = [0u8; 56];
-    payload[0..16].copy_from_slice(&space_id_bytes);
-    payload[16..48].copy_from_slice(&pubkey_bytes);
-    payload[48..56].copy_from_slice(&timestamp.to_le_bytes());
-
-    let sig = identity.sign(&payload);
-
-    let mut token_bytes = [0u8; 120];
-    token_bytes[0..56].copy_from_slice(&payload);
-    token_bytes[56..120].copy_from_slice(&sig);
-
-    Ok(bs58::encode(token_bytes).into_string())
+    match space_doc {
+        None => {
+            // Legacy v1: fixed 120 bytes
+            let mut payload = [0u8; 56];
+            payload[0..16].copy_from_slice(&space_id_bytes);
+            payload[16..48].copy_from_slice(&pubkey_bytes);
+            payload[48..56].copy_from_slice(&timestamp.to_le_bytes());
+            let sig = identity.sign(&payload);
+            let mut token_bytes = [0u8; 120];
+            token_bytes[0..56].copy_from_slice(&payload);
+            token_bytes[56..120].copy_from_slice(&sig);
+            Ok(bs58::encode(token_bytes).into_string())
+        }
+        Some(doc) => {
+            // v2: header + doc length + doc + signature
+            let doc_len = doc.len() as u32;
+            let header_len = 56 + 4 + doc.len(); // fields before signature
+            let mut pre_sig = Vec::with_capacity(header_len);
+            pre_sig.extend_from_slice(&space_id_bytes);
+            pre_sig.extend_from_slice(&pubkey_bytes);
+            pre_sig.extend_from_slice(&timestamp.to_le_bytes());
+            pre_sig.extend_from_slice(&doc_len.to_le_bytes());
+            pre_sig.extend_from_slice(doc);
+            let sig = identity.sign(&pre_sig);
+            let mut token_bytes = Vec::with_capacity(header_len + 64);
+            token_bytes.extend_from_slice(&pre_sig);
+            token_bytes.extend_from_slice(&sig);
+            Ok(bs58::encode(token_bytes).into_string())
+        }
+    }
 }
 
 pub fn verify_invite_token_signature(token: &str) -> Result<InviteMetadata, CryptoError> {
@@ -109,26 +142,38 @@ pub fn verify_invite_token_signature(token: &str) -> Result<InviteMetadata, Cryp
         .into_vec()
         .map_err(|_| CryptoError::InvalidBase58)?;
 
-    if bytes.len() != 120 {
+    if bytes.len() < 120 {
         return Err(CryptoError::InvalidLength);
     }
 
-    // Compute token_hash from raw bytes (not from base58 string)
     let token_hash = hex::encode(Sha256::digest(&bytes));
-
     let space_id_bytes: [u8; 16] = bytes[0..16].try_into().unwrap();
     let pubkey_bytes: [u8; 32] = bytes[16..48].try_into().unwrap();
     let timestamp = u64::from_le_bytes(bytes[48..56].try_into().unwrap());
-    let sig_bytes = &bytes[56..120];
 
-    // Verify signature over first 56 bytes
-    Identity::verify(&pubkey_bytes, &bytes[0..56], sig_bytes)
-        .map_err(|_| CryptoError::InvalidSignature)?;
+    let (space_doc, sig_bytes) = if bytes.len() == 120 {
+        // Legacy v1: no doc
+        let sig = &bytes[56..120];
+        Identity::verify(&pubkey_bytes, &bytes[0..56], sig)
+            .map_err(|_| CryptoError::InvalidSignature)?;
+        (None, sig)
+    } else {
+        // v2: has doc
+        if bytes.len() < 60 { return Err(CryptoError::InvalidLength); }
+        let doc_len = u32::from_le_bytes(bytes[56..60].try_into().unwrap()) as usize;
+        let doc_end = 60 + doc_len;
+        if bytes.len() != doc_end + 64 { return Err(CryptoError::InvalidLength); }
+        let sig = &bytes[doc_end..doc_end + 64];
+        Identity::verify(&pubkey_bytes, &bytes[0..doc_end], sig)
+            .map_err(|_| CryptoError::InvalidSignature)?;
+        let doc = bytes[60..doc_end].to_vec();
+        (Some(doc), sig)
+    };
 
     let space_id = uuid::Uuid::from_bytes(space_id_bytes).to_string();
     let owner_pubkey = hex::encode(pubkey_bytes);
 
-    Ok(InviteMetadata { space_id, owner_pubkey, timestamp, token_hash })
+    Ok(InviteMetadata { space_id, owner_pubkey, timestamp, token_hash, space_doc })
 }
 
 pub fn import_ssh_identity(path: Option<&Path>) -> Result<Identity, CryptoError> {
@@ -200,7 +245,7 @@ mod invite_tests {
     fn generate_and_verify_token_roundtrip() {
         let identity = Identity::generate();
         let space_id = uuid::Uuid::new_v4().to_string();
-        let token = generate_invite_token(&space_id, &identity).unwrap();
+        let token = generate_invite_token(&space_id, &identity, None).unwrap();
         let meta = verify_invite_token_signature(&token).unwrap();
         assert_eq!(meta.space_id, space_id);
         assert_eq!(meta.owner_pubkey, identity.public_key_hex());
@@ -211,7 +256,7 @@ mod invite_tests {
     fn verify_rejects_tampered_token() {
         let identity = Identity::generate();
         let space_id = uuid::Uuid::new_v4().to_string();
-        let token = generate_invite_token(&space_id, &identity).unwrap();
+        let token = generate_invite_token(&space_id, &identity, None).unwrap();
         let mut bytes = bs58::decode(&token).into_vec().unwrap();
         bytes[60] ^= 0xFF; // flip bits in signature
         let tampered = bs58::encode(&bytes).into_string();
