@@ -172,6 +172,8 @@ struct CardView {
     due_date: Option<String>,
     assignee: Option<String>,
     last_move: Option<MoveEvent>,
+    checklist_total: usize,
+    checklist_done: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -190,6 +192,20 @@ struct MoveEvent {
 }
 
 #[derive(serde::Serialize)]
+struct ChecklistItemView {
+    id: String,
+    text: String,
+    checked: bool,
+}
+
+#[derive(serde::Serialize)]
+struct ChecklistView {
+    id: String,
+    title: String,
+    items: Vec<ChecklistItemView>,
+}
+
+#[derive(serde::Serialize)]
 struct CardDetailView {
     id: String,
     title: String,
@@ -201,6 +217,7 @@ struct CardDetailView {
     created_at: String,
     comments: Vec<CommentView>,
     history: Vec<MoveEvent>,
+    checklists: Vec<ChecklistView>,
 }
 
 #[derive(serde::Serialize)]
@@ -279,6 +296,11 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let history = get_card_history(&doc, &cid);
                     let last_move = history.into_iter().last();
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
+                    let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
+                        .unwrap_or_default()
+                        .iter()
+                        .flat_map(|cl| cl.items.iter())
+                        .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
                     cards.push(CardView {
                         id: card.id.clone(),
                         title: card.title,
@@ -288,6 +310,8 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         assignee,
                         labels,
                         last_move,
+                        checklist_total,
+                        checklist_done,
                     });
                 }
             }
@@ -484,6 +508,17 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         .into_iter()
         .map(|c| CommentView { id: c.id, author: c.author, text: c.text, created_at: c.created_at })
         .collect();
+    let checklists = kanban_core::checklist::list_checklists(&doc, &card_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|cl| ChecklistView {
+            id: cl.id,
+            title: cl.title,
+            items: cl.items.into_iter().map(|it| ChecklistItemView {
+                id: it.id, text: it.text, checked: it.checked,
+            }).collect(),
+        })
+        .collect();
     Ok(CardDetailView {
         id: card.id,
         title: card.title,
@@ -495,6 +530,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         created_at: card.created_at,
         comments,
         history,
+        checklists,
     })
 }
 
@@ -574,6 +610,72 @@ fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppSta
 }
 
 #[tauri::command]
+fn reorder_card_cmd(
+    board_id: String,
+    col_id: String,
+    card_id: String,
+    new_index: usize,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::column::reorder_card_in_column(&mut doc, &col_id, &card_id, new_index)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn add_checklist_cmd(board_id: String, card_id: String, title: String, state: tauri::State<AppState>) -> Result<ChecklistView, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let cl = kanban_core::checklist::add_checklist(&mut doc, &card_id, &title)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(ChecklistView { id: cl.id, title: cl.title, items: vec![] })
+}
+
+#[tauri::command]
+fn add_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, text: String, state: tauri::State<AppState>) -> Result<ChecklistItemView, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let item = kanban_core::checklist::add_checklist_item(&mut doc, &card_id, &cl_id, &text)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(ChecklistItemView { id: item.id, text: item.text, checked: item.checked })
+}
+
+#[tauri::command]
+fn toggle_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, item_id: String, checked: bool, state: tauri::State<AppState>) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::checklist::set_item_checked(&mut doc, &card_id, &cl_id, &item_id, checked)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, item_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::checklist::delete_checklist_item(&mut doc, &card_id, &cl_id, &item_id)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     use automerge::{ReadDoc, transaction::Transactable};
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -617,10 +719,11 @@ fn get_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<Spac
 #[tauri::command]
 fn generate_invite(space_id: String, state: tauri::State<AppState>) -> Result<String, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    // Revoke any existing active token first
     kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
-    let token = kanban_crypto::generate_invite_token(&space_id, &state.identity)
+    let doc_bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())?;
+    let token = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&doc_bytes))
         .map_err(|e| e.to_string())?;
     let meta = kanban_crypto::verify_invite_token_signature(&token)
         .map_err(|e| e.to_string())?;
@@ -644,15 +747,15 @@ fn export_invite_file(space_id: String, path: String, state: tauri::State<AppSta
         // Revoke existing + generate fresh token
         kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
             .map_err(|e| e.to_string())?;
-        let tok = kanban_crypto::generate_invite_token(&space_id, &state.identity)
+        let bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
+            .map_err(|e| e.to_string())?;
+        let tok = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&bytes))
             .map_err(|e| e.to_string())?;
         let meta = kanban_crypto::verify_invite_token_signature(&tok)
             .map_err(|e| e.to_string())?;
         kanban_storage::space::insert_invite(storage.conn(), &meta.token_hash, &tok, &space_id, None)
             .map_err(|e| e.to_string())?;
         let space = kanban_storage::space::get_space(storage.conn(), &space_id)
-            .map_err(|e| e.to_string())?;
-        let bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
             .map_err(|e| e.to_string())?;
         (tok, space.name, bytes)
     };
@@ -980,6 +1083,7 @@ fn main() {
             create_board_cmd,
             list_boards,
             move_card_cmd,
+            reorder_card_cmd,
             get_board_detail,
             create_column_cmd,
             create_card_cmd,
@@ -989,6 +1093,10 @@ fn main() {
             delete_column_cmd,
             add_comment_cmd,
             delete_comment_cmd,
+            add_checklist_cmd,
+            add_checklist_item_cmd,
+            toggle_checklist_item_cmd,
+            delete_checklist_item_cmd,
             create_space,
             list_spaces,
             get_space_cmd,
