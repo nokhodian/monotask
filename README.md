@@ -61,6 +61,23 @@ brew install --cask monotask
 
 Opens as a native macOS app. Double-click `Monotask.app` in Applications.
 
+> **⚠️ Upgrading from a DMG install**
+>
+> If you previously installed Monotask by dragging a `.dmg` (not via Homebrew), running
+> `brew install --cask monotask` or `brew upgrade --cask monotask` will fail with errors like:
+>
+> ```
+> Error: It seems there is already an App at '/Applications/Monotask.app'.
+> Error: Cask 'monotask' is not installed.
+> ```
+>
+> This happens because Homebrew doesn't recognize the manually installed app as its own.
+> Fix it by force-installing:
+>
+> ```bash
+> brew install --cask monotask --force
+> ```
+
 > **⚠️ macOS Gatekeeper warning**
 >
 > Monotask is not code-signed with an Apple Developer certificate. macOS may show

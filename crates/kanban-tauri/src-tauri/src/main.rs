@@ -124,6 +124,30 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
     }
 }
 
+// ── Space helpers ─────────────────────────────────────────────────────────────
+
+/// Re-announce all spaces to the P2P network. Call after creating or joining a space.
+fn announce_all_spaces(state: &AppState) {
+    let space_ids = {
+        let storage = state.storage.lock().unwrap();
+        kanban_storage::space::list_spaces(storage.conn())
+            .map(|v| v.into_iter().map(|s| s.id).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    if space_ids.is_empty() { return; }
+    let net = state.net.lock().unwrap();
+    if let Some(ref handle) = *net {
+        handle.announce_spaces_sync(space_ids);
+    }
+}
+
+fn trigger_board_sync(board_id: &str, state: &tauri::State<'_, AppState>) {
+    let net = state.net.lock().unwrap();
+    if let Some(ref handle) = *net {
+        handle.trigger_sync_sync(board_id.to_string());
+    }
+}
+
 // ── Space commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -153,6 +177,8 @@ fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView
         .map_err(|e| e.to_string())?;
     let space = kanban_storage::space::get_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
+    drop(storage);
+    announce_all_spaces(&state);
     Ok(space_to_view(space))
 }
 
@@ -174,6 +200,7 @@ struct CardView {
     last_move: Option<MoveEvent>,
     checklist_total: usize,
     checklist_done: usize,
+    cover_color: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -218,6 +245,7 @@ struct CardDetailView {
     comments: Vec<CommentView>,
     history: Vec<MoveEvent>,
     checklists: Vec<ChecklistView>,
+    cover_color: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -244,6 +272,7 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board.id, &state);
     Ok(BoardSummary { id: board.id, title })
 }
 
@@ -282,6 +311,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
         }
         kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
             .map_err(|e| e.to_string())?;
+        trigger_board_sync(&board_id, &state);
     }
 
     let columns = kanban_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
@@ -296,6 +326,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let history = get_card_history(&doc, &cid);
                     let last_move = history.into_iter().last();
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
+                    let cover_color = get_card_str_field(&doc, &cid, "cover_color");
                     let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
@@ -312,6 +343,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         last_move,
                         checklist_total,
                         checklist_done,
+                        cover_color,
                     });
                 }
             }
@@ -415,6 +447,7 @@ fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppSta
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(col_id)
 }
 
@@ -478,6 +511,7 @@ fn move_card_cmd(
 
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -491,6 +525,7 @@ fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(card.id)
 }
 
@@ -502,6 +537,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
     let card = kanban_core::card::read_card(&doc, &card_id).map_err(|e| e.to_string())?;
     let labels = get_card_labels(&doc, &card_id);
     let assignee = get_card_str_field(&doc, &card_id, "assignee");
+    let cover_color = get_card_str_field(&doc, &card_id, "cover_color");
     let history = get_card_history(&doc, &card_id);
     let comments = kanban_core::comment::list_comments(&doc, &card_id)
         .unwrap_or_default()
@@ -531,6 +567,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         comments,
         history,
         checklists,
+        cover_color,
     })
 }
 
@@ -543,6 +580,7 @@ fn update_card_cmd(
     labels: Vec<String>,
     due_date: Option<String>,
     assignee: Option<String>,
+    cover_color: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     use automerge::{ReadDoc, ObjType, transaction::Transactable};
@@ -556,6 +594,8 @@ fn update_card_cmd(
     doc.put(&card_obj, "due_date", due).map_err(|e| e.to_string())?;
     let assignee_val = assignee.as_deref().unwrap_or("");
     doc.put(&card_obj, "assignee", assignee_val).map_err(|e| e.to_string())?;
+    let cover = cover_color.as_deref().unwrap_or("");
+    doc.put(&card_obj, "cover_color", cover).map_err(|e| e.to_string())?;
     // Replace labels list
     let labels_obj = match doc.get(&card_obj, "labels").map_err(|e| e.to_string())? {
         Some((_, id)) => id,
@@ -570,6 +610,7 @@ fn update_card_cmd(
     }
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -583,6 +624,7 @@ fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(CommentView { id: comment.id, author: comment.author, text: comment.text, created_at: comment.created_at })
 }
 
@@ -595,6 +637,7 @@ fn delete_comment_cmd(board_id: String, card_id: String, comment_id: String, sta
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -606,6 +649,7 @@ fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppSta
     kanban_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -624,6 +668,7 @@ fn reorder_card_cmd(
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -636,6 +681,7 @@ fn add_checklist_cmd(board_id: String, card_id: String, title: String, state: ta
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(ChecklistView { id: cl.id, title: cl.title, items: vec![] })
 }
 
@@ -648,6 +694,7 @@ fn add_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, text
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(ChecklistItemView { id: item.id, text: item.text, checked: item.checked })
 }
 
@@ -660,6 +707,7 @@ fn toggle_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, i
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -672,6 +720,7 @@ fn delete_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, i
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -695,6 +744,7 @@ fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppSt
     doc.delete(&cols, idx).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
     Ok(())
 }
 
@@ -810,31 +860,55 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
     let meta = kanban_crypto::verify_invite_token_signature(&token)
         .map_err(|e| e.to_string())?;
 
+    // For plain token strings the space_doc_bytes was set to None above; fall back to
+    // the space doc embedded inside the signed token payload itself.
+    let space_doc_bytes = space_doc_bytes.or_else(|| meta.space_doc.clone());
+
     // 3. Check policy (owner-side only)
     {
         let storage = state.storage.lock().map_err(|e| e.to_string())?;
         kanban_storage::space::check_invite_policy(storage.conn(), &meta, &local_pubkey)
             .map_err(|e| e.to_string())?;
 
-        // 4. Idempotency check
+        // 4. Idempotency check — already a member, but still sync boards from the token
+        // in case the previous import happened before board refs were embedded in the token.
         let already = kanban_storage::space::get_space(storage.conn(), &meta.space_id);
         if let Ok(existing) = already {
-            // Check if local user is a member
             if existing.members.iter().any(|m| m.pubkey == local_pubkey) {
-                return Ok(space_to_view(existing));
+                if let Some(ref doc_bytes) = space_doc_bytes {
+                    if let Ok(doc) = automerge::AutoCommit::load(doc_bytes) {
+                        if let Ok(board_refs) = kanban_core::space::list_board_refs(&doc) {
+                            for board_id in &board_refs {
+                                let _ = kanban_storage::space::add_board(
+                                    storage.conn(), &meta.space_id, board_id,
+                                );
+                            }
+                        }
+                        let _ = kanban_storage::space::update_space_doc(
+                            storage.conn(), &meta.space_id, doc_bytes,
+                        );
+                    }
+                }
+                let space = kanban_storage::space::get_space(storage.conn(), &meta.space_id)
+                    .map_err(|e| e.to_string())?;
+                drop(storage);
+                announce_all_spaces(&state);
+                return Ok(space_to_view(space));
             }
         }
     }
 
     // 5–8. Create or merge space
-    let space_name = space_name_hint;
-    let (mut doc, members_to_insert, boards_to_insert) = if let Some(bytes) = space_doc_bytes {
+    let (mut doc, members_to_insert, boards_to_insert, space_name) = if let Some(bytes) = space_doc_bytes {
         let doc = automerge::AutoCommit::load(&bytes).map_err(|e| e.to_string())?;
         let members = kanban_core::space::list_members(&doc).map_err(|e| e.to_string())?;
         let boards = kanban_core::space::list_board_refs(&doc).map_err(|e| e.to_string())?;
-        (doc, members, boards)
+        // Use the name embedded in the space doc; fall back to the hint from the file
+        let name = kanban_core::space::get_space_name(&doc)
+            .unwrap_or(space_name_hint);
+        (doc, members, boards, name)
     } else {
-        let mut doc = kanban_core::space::create_space_doc(&space_name, &meta.owner_pubkey)
+        let mut doc = kanban_core::space::create_space_doc(&space_name_hint, &meta.owner_pubkey)
             .map_err(|e| e.to_string())?;
         let empty = kanban_core::space::MemberProfile {
             display_name: String::new(), avatar_b64: String::new(), kicked: false,
@@ -848,7 +922,7 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
             avatar_blob: None,
             kicked: false,
         };
-        (doc, vec![stub_owner], vec![])
+        (doc, vec![stub_owner], vec![], space_name_hint)
     };
 
     // Add local user to SpaceDoc
@@ -883,6 +957,8 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
     }
     let space = kanban_storage::space::get_space(storage.conn(), &meta.space_id)
         .map_err(|e| e.to_string())?;
+    drop(storage);
+    announce_all_spaces(&state);
     Ok(space_to_view(space))
 }
 
@@ -1038,14 +1114,131 @@ fn get_sync_status_cmd(_state: tauri::State<AppState>) -> Vec<SyncPeerView> {
     vec![]
 }
 
+#[tauri::command]
+fn get_app_version() -> serde_json::Value {
+    serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "build_ts": env!("BUILD_TS").parse::<u64>().unwrap_or(0),
+    })
+}
+
+fn peers_file(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("bootstrap_peers.txt")
+}
+
+fn load_saved_peers(data_dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(peers_file(data_dir))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+fn save_peer_addr(data_dir: &std::path::Path, addr: &str) {
+    let mut peers = load_saved_peers(data_dir);
+    if !peers.contains(&addr.to_string()) {
+        peers.push(addr.to_string());
+        let _ = std::fs::write(peers_file(data_dir), peers.join("\n") + "\n");
+    }
+}
+
+#[tauri::command]
+fn force_sync_cmd(peer_addr: Option<String>, state: tauri::State<AppState>) -> Result<String, String> {
+    let net = state.net.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = *net {
+        // Dial new peer if provided
+        if let Some(addr) = &peer_addr {
+            let addr = addr.trim().to_string();
+            if !addr.is_empty() {
+                save_peer_addr(&state.data_dir, &addr);
+                handle.add_peer_sync(addr.clone());
+            }
+        }
+        handle.force_rediscovery_sync();
+        Ok("Sync triggered".into())
+    } else {
+        Err("Network not running".into())
+    }
+}
+
+#[tauri::command]
+fn get_saved_peers_cmd(state: tauri::State<AppState>) -> Vec<String> {
+    load_saved_peers(&state.data_dir)
+}
+
+#[derive(serde::Serialize)]
+struct BoardSyncInfo {
+    board_id: String,
+    title: String,
+    last_modified: i64,
+}
+
+#[derive(serde::Serialize)]
+struct SyncInfo {
+    connected_peers: Vec<String>,
+    boards: Vec<BoardSyncInfo>,
+    local_peer_id: String,
+}
+
+#[tauri::command]
+fn get_sync_info_cmd(state: tauri::State<AppState>) -> Result<SyncInfo, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+
+    // Get boards with timestamps
+    let rows = kanban_storage::board::list_boards_with_timestamps(storage.conn())
+        .map_err(|e| e.to_string())?;
+
+    let mut boards = Vec::new();
+    for (board_id, last_modified) in rows {
+        // Load board to get title
+        let title = if let Ok(doc) = storage.load_board(&board_id) {
+            kanban_core::board::get_board_title(&doc).unwrap_or_else(|_| board_id[..8.min(board_id.len())].to_string())
+        } else {
+            board_id[..8.min(board_id.len())].to_string()
+        };
+        boards.push(BoardSyncInfo { board_id, title, last_modified });
+    }
+    drop(storage);
+
+    // Get connected peers from network
+    let net = state.net.lock().map_err(|e| e.to_string())?;
+    let connected_peers = if let Some(ref handle) = *net {
+        handle.get_peers_sync()
+    } else {
+        vec![]
+    };
+    drop(net);
+
+    let local_peer_id = kanban_net::NetworkHandle::peer_id_from_identity(
+        state.identity.to_secret_bytes()
+    );
+
+    Ok(SyncInfo { connected_peers, boards, local_peer_id })
+}
+
+#[tauri::command]
+fn remove_saved_peer_cmd(addr: String, state: tauri::State<AppState>) -> Result<(), String> {
+    let mut peers = load_saved_peers(&state.data_dir);
+    peers.retain(|p| p != &addr);
+    std::fs::write(peers_file(&state.data_dir), peers.join("\n") + "\n")
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Use the same data directory as the CLI so they share one database.
             // CLI uses dirs::data_dir().join("p2p-kanban").
-            let data_dir = dirs::data_dir()
-                .expect("failed to resolve data dir")
-                .join("p2p-kanban");
+            let base_data_dir = dirs::data_dir().expect("failed to resolve data dir");
+            // Migrate data from old "p2p-kanban" directory if "monotask" dir doesn't exist yet
+            let old_data = base_data_dir.join("p2p-kanban");
+            let data_dir = base_data_dir.join("monotask");
+            if !data_dir.exists() && old_data.exists() {
+                let _ = std::fs::rename(&old_data, &data_dir);
+            }
             std::fs::create_dir_all(&data_dir)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
             let _ = app; // suppress unused warning
@@ -1065,10 +1258,21 @@ fn main() {
             let net_config = kanban_net::NetConfig {
                 listen_port: 7272,
                 data_dir: data_dir.clone(),
+                bootstrap_peers: load_saved_peers(&data_dir),
             };
             let net_handle = tauri::async_runtime::block_on(
                 kanban_net::NetworkHandle::start(net_config, net_storage, identity_bytes)
             ).ok();
+
+            // Announce existing spaces so peers can find us immediately on startup.
+            if let Some(ref handle) = net_handle {
+                let space_ids = kanban_storage::space::list_spaces(storage.conn())
+                    .map(|v| v.into_iter().map(|s| s.id).collect::<Vec<_>>())
+                    .unwrap_or_default();
+                if !space_ids.is_empty() {
+                    handle.announce_spaces_sync(space_ids);
+                }
+            }
 
             app.manage(AppState {
                 storage: Mutex::new(storage),
@@ -1112,6 +1316,11 @@ fn main() {
             update_my_profile,
             import_ssh_key,
             get_sync_status_cmd,
+            get_app_version,
+            force_sync_cmd,
+            get_saved_peers_cmd,
+            remove_saved_peer_cmd,
+            get_sync_info_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,6 @@
 [package]
 name = "monotask"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 
 [lib]
@@ -17,6 +17,7 @@ kanban-crypto  = { path = "../../kanban-crypto" }
 kanban-storage = { path = "../../kanban-storage" }
 kanban-net     = { path = "../../kanban-net" }
 tauri          = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 serde          = { workspace = true }
 serde_json     = { workspace = true }
 thiserror      = { workspace = true }
