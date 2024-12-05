@@ -281,6 +281,14 @@ pub fn upsert_profile(conn: &Connection, profile: &UserProfile) -> Result<(), St
     Ok(())
 }
 
+pub fn delete_space(conn: &Connection, space_id: &str) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM space_invites WHERE space_id = ?1", [space_id])?;
+    conn.execute("DELETE FROM space_members WHERE space_id = ?1", [space_id])?;
+    conn.execute("DELETE FROM space_boards WHERE space_id = ?1", [space_id])?;
+    conn.execute("DELETE FROM spaces WHERE id = ?1", [space_id])?;
+    Ok(())
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
