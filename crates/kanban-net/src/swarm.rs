@@ -215,6 +215,12 @@ async fn run_inner(
                             .collect();
                         let _ = reply.send(peers);
                     }
+                    NetCommand::GetListenAddrs { reply } => {
+                        let addrs: Vec<String> = swarm.listeners()
+                            .map(|a| a.to_string())
+                            .collect();
+                        let _ = reply.send(addrs);
+                    }
                 }
             }
 
