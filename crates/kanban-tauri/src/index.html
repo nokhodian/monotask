@@ -764,6 +764,11 @@
         <button id="btn-delete-space" class="btn-delete-space">&#128465; Delete this Space</button>
         <p style="font-size:11px;color:#777;margin-top:8px;">This permanently deletes the space and all its data. Other members will keep their local copies.</p>
       </div>
+      <div id="space-leave-zone" style="display:none;" class="danger-zone">
+        <div class="danger-zone-title">&#9888; Leave Space</div>
+        <button id="btn-leave-space" class="btn-delete-space">&#10132; Leave this Space</button>
+        <p style="font-size:11px;color:#777;margin-top:8px;">Remove this space from your device. The space and its data remain on the owner's machine.</p>
+      </div>
     </div>
 
     <!-- Boards tab -->
@@ -2012,6 +2017,8 @@
     // Show/hide danger zone for owner only
     const dangerZone = document.getElementById('space-danger-zone');
     dangerZone.style.display = isOwner ? 'block' : 'none';
+    const leaveZone = document.getElementById('space-leave-zone');
+    leaveZone.style.display = isOwner ? 'none' : 'block';
     for (const m of space.members) {
       const li = document.createElement('li');
       if (m.kicked) li.classList.add('member-kicked');
@@ -2060,6 +2067,16 @@
         await loadSpacesSidebar();
         showView('dashboard');
       } catch (e) { alert('Failed to delete space: ' + e); }
+    };
+    document.getElementById('btn-leave-space').onclick = async () => {
+      if (!confirm('Leave "' + space.name + '"?\n\nThis removes the space from your device. You can rejoin with an invite.')) return;
+      try {
+        await invoke('leave_space_cmd', { spaceId: currentSpaceId });
+        currentSpaceId = null;
+        currentSpaceData = null;
+        await loadSpacesSidebar();
+        showView('dashboard');
+      } catch (e) { alert('Failed to leave space: ' + e); }
     };
   }
 
