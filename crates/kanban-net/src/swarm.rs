@@ -126,6 +126,10 @@ async fn run_inner(
                                 space_id,
                             );
                         }
+                        // Push the updated space list to already-connected peers
+                        for &peer_id in &connected_peers {
+                            initiate_hello(&mut swarm, &storage, &my_spaces, identity_bytes, peer_id);
+                        }
                     }
                     NetCommand::TriggerSync { board_id } => {
                         use crate::sync_protocol::SyncRequest;

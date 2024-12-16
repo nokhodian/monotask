@@ -138,8 +138,9 @@ mod tests {
             space_id: "space-1".into(),
             board_ids: vec!["b1".into(), "b2".into()],
             signature: vec![1, 2, 3],
+            space_doc_bytes: vec![],
         };
-        let SyncRequest::Hello { space_id, board_ids, signature } = cbor_roundtrip_request(req)
+        let SyncRequest::Hello { space_id, board_ids, signature, .. } = cbor_roundtrip_request(req)
             else { panic!("wrong variant") };
         assert_eq!(space_id, "space-1");
         assert_eq!(board_ids, vec!["b1", "b2"]);
