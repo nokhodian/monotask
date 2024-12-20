@@ -83,17 +83,18 @@
     }
     .sidebar-footer button:hover { color: #c8962a; background: #141426; }
 
-    /* ── Network Status panel ──────────────────────────────────────────── */
-    #net-status-panel {
+    /* ── Network & Sync panel (unified) ───────────────────────────────── */
+    #net-sync-panel {
       position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
       background: rgba(0,0,0,0.6); z-index: 200;
     }
-    #net-status-panel.open { display: flex; }
-    .net-status-box {
+    #net-sync-panel.open { display: flex; }
+    .net-sync-box {
       background: #0d0d1c; border: 1px solid #2a2a4a; border-radius: 10px;
-      padding: 24px; width: 560px; max-height: 80vh; display: flex; flex-direction: column; gap: 14px;
+      padding: 24px; width: 580px; max-height: 85vh; display: flex; flex-direction: column; gap: 16px;
+      overflow-y: auto;
     }
-    .net-status-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
+    .net-sync-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
     .net-status-section-title {
       font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;
     }
@@ -105,7 +106,7 @@
       margin: 3px 4px 3px 0;
     }
     .net-peer-dot { width: 6px; height: 6px; border-radius: 50%; background: #4a9a4a; flex-shrink: 0; }
-    .net-boards-section { flex: 1; overflow-y: auto; min-height: 0; }
+    .net-boards-section { flex-shrink: 0; }
     .net-boards-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .net-boards-table th {
       text-align: left; color: #777; font-size: 10px; text-transform: uppercase;
@@ -121,7 +122,7 @@
     }
     .net-status-footer {
       display: flex; justify-content: space-between; align-items: center;
-      border-top: 1px solid #1a1a2e; padding-top: 10px;
+      border-top: 1px solid #1a1a2e; padding-top: 10px; flex-shrink: 0;
     }
     .btn-net-refresh {
       background: none; border: 1px solid #2a2a3a; color: #999;
@@ -129,18 +130,13 @@
     }
     .btn-net-refresh:hover { color: #c8962a; border-color: #5a3a0a; }
     .net-status-ts { font-size: 10px; color: #666; }
-
-    /* ── Sync panel ────────────────────────────────────────────────────── */
-    #sync-panel {
-      position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.6); z-index: 200;
+    .net-sync-space-row {
+      display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+      background: #0a0a18; border: 1px solid #1a1a2e; border-radius: 4px; margin-bottom: 4px;
     }
-    #sync-panel.open { display: flex; }
-    .sync-box {
-      background: #0d0d1c; border: 1px solid #2a2a4a; border-radius: 10px;
-      padding: 24px; width: 380px; display: flex; flex-direction: column; gap: 14px;
-    }
-    .sync-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
+    .net-sync-space-dot { width: 6px; height: 6px; border-radius: 50%; background: #5a6a9a; flex-shrink: 0; }
+    .net-sync-space-name { font-size: 12px; color: #ccc; flex: 1; }
+    .net-sync-space-id { font-size: 10px; color: #444; font-family: monospace; }
     .sync-explain { font-size: 11px; color: #888; line-height: 1.6; }
     .sync-explain strong { color: #bbb; }
     .sync-peers-list { display: flex; flex-direction: column; gap: 6px; }
@@ -640,66 +636,71 @@
   <div class="sidebar-footer">
     <button id="btn-profile">&#9881; Profile</button>
     <button id="btn-import-invite-sidebar">&#8595; Join Space</button>
-    <button id="btn-open-sync">&#8635; Sync / Peers</button>
-    <button id="btn-open-net-status">&#128246; Network Status</button>
+    <button id="btn-open-net-sync">&#128246; Network &amp; Sync</button>
     <div id="app-version-badge" style="font-size:9px;color:#5a5a9a;padding:6px 10px 2px;font-family:monospace;letter-spacing:0.03em;"></div>
   </div>
 </div>
 
-<!-- ── Sync & Peers panel ──────────────────────────────────────────────── -->
-<div id="sync-panel">
-  <div class="sync-box">
-    <h3>&#8635; Sync &amp; Peers</h3>
-    <p class="sync-explain">
-      <strong>How peers find each other:</strong> mDNS (same LAN) or Kademlia DHT (internet).
-      Over <strong>Tailscale / VPN</strong>, enter the peer's address manually below.
-      Format: <code style="color:#888;font-size:10px;">/ip4/100.x.x.x/tcp/7272</code>
-    </p>
-    <div>
-      <div style="font-size:11px;color:#555;margin-bottom:8px;">Saved peers (dialed on startup &amp; on Refresh):</div>
-      <div id="sync-peers-list" class="sync-peers-list"></div>
+<!-- ── Network & Sync panel (unified) ────────────────────────────────────── -->
+<div id="net-sync-panel">
+  <div class="net-sync-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h3>&#128246; Network &amp; Sync</h3>
+      <button style="background:none;border:none;color:#555;cursor:pointer;font-size:12px;" id="btn-close-net-sync">Close &#215;</button>
     </div>
-    <div class="sync-input-row">
-      <input id="sync-addr-input" class="sync-addr-input" placeholder="/ip4/100.73.x.x/tcp/7272" />
-      <button class="btn-sync-connect" id="btn-sync-add-peer">+ Connect</button>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn-sync-refresh" id="btn-sync-refresh">&#8635; Refresh Sync</button>
-      <span id="sync-status-msg" class="sync-status-msg"></span>
-    </div>
-    <button style="background:none;border:none;color:#444;cursor:pointer;font-size:12px;text-align:right;align-self:flex-end;" id="btn-close-sync">Close</button>
-  </div>
-</div>
 
-<!-- ── Network Status panel ───────────────────────────────────────────────── -->
-<div id="net-status-panel">
-  <div class="net-status-box">
-    <h3>&#128246; Network Status</h3>
+    <!-- Connected Peers -->
     <div class="net-peers-section">
       <div class="net-status-section-title">Connected Peers</div>
       <div id="net-peers-container"><span style="color:#333;font-size:12px;">Loading…</span></div>
     </div>
+
+    <!-- Active Spaces -->
+    <div>
+      <div class="net-status-section-title">Active Spaces</div>
+      <div id="net-sync-spaces-list"></div>
+    </div>
+
+    <!-- Boards -->
     <div class="net-boards-section">
       <div class="net-status-section-title">Boards — Last Modified</div>
       <table class="net-boards-table">
         <thead>
-          <tr>
-            <th>Board</th>
-            <th>ID</th>
-            <th>Last Modified</th>
-          </tr>
+          <tr><th>Board</th><th>ID</th><th>Last Modified</th></tr>
         </thead>
         <tbody id="net-boards-tbody"></tbody>
       </table>
     </div>
+
+    <!-- Bootstrap Peers -->
+    <div>
+      <div class="net-status-section-title">Bootstrap Peers</div>
+      <p class="sync-explain" style="margin-bottom:8px;">
+        <strong>How peers find each other:</strong> mDNS (LAN) or Kademlia DHT (internet).
+        Over <strong>Tailscale / VPN</strong>, add the peer's address manually.
+        Format: <code style="color:#888;font-size:10px;">/ip4/100.x.x.x/tcp/7272</code>
+      </p>
+      <div id="sync-peers-list" class="sync-peers-list"></div>
+      <div class="sync-input-row" style="margin-top:8px;">
+        <input id="sync-addr-input" class="sync-addr-input" placeholder="/ip4/100.73.x.x/tcp/7272" />
+        <button class="btn-sync-connect" id="btn-sync-add-peer">+ Add</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <button class="btn-sync-refresh" id="btn-sync-refresh">&#8635; Refresh Sync</button>
+        <span id="sync-status-msg" class="sync-status-msg"></span>
+      </div>
+    </div>
+
+    <!-- Local Peer ID -->
     <div>
       <div class="net-status-section-title">Local Peer ID</div>
       <div id="net-local-id" class="net-local-id">—</div>
     </div>
+
+    <!-- Footer -->
     <div class="net-status-footer">
       <button class="btn-net-refresh" id="btn-net-refresh">&#8635; Refresh</button>
       <span class="net-status-ts" id="net-status-ts"></span>
-      <button style="background:none;border:none;color:#444;cursor:pointer;font-size:12px;" id="btn-close-net-status">Close</button>
     </div>
   </div>
 </div>
@@ -2381,15 +2382,38 @@
   };
   document.getElementById('btn-close-profile').onclick = () => closeModal('modal-profile');
 
-  // ── Sync & Peers panel ──────────────────────────────────────────────────────
-  async function openSyncPanel() {
-    await renderSyncPeers();
-    document.getElementById('sync-panel').classList.add('open');
-    document.getElementById('sync-addr-input').focus();
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    const profile = await invoke('get_my_profile').catch(() => null);
+    if (profile) window._myPubkey = profile.pubkey;
+    await refreshAllBoards();
+    await loadSpacesSidebar();
+    showView('dashboard');
+
+    // Display build version in sidebar footer
+    try {
+      const v = await invoke('get_app_version');
+      const d = new Date(v.build_ts * 1000);
+      const pad = n => String(n).padStart(2, '0');
+      const label = `v${v.version} · ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      document.getElementById('app-version-badge').textContent = label;
+    } catch (_) {}
   }
-  function closeSyncPanel() {
-    document.getElementById('sync-panel').classList.remove('open');
-    document.getElementById('sync-status-msg').textContent = '';
+
+  init();
+
+  // ── Network & Sync panel (unified) ─────────────────────────────────────────
+  let _netSyncInterval = null;
+
+  function formatTs(unix) {
+    if (!unix || unix === 0) return '—';
+    const d = new Date(unix * 1000);
+    const now = Date.now();
+    const diffMs = now - d.getTime();
+    if (diffMs < 60000) return 'just now';
+    if (diffMs < 3600000) return Math.floor(diffMs / 60000) + 'm ago';
+    if (diffMs < 86400000) return Math.floor(diffMs / 3600000) + 'h ago';
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   async function renderSyncPeers() {
@@ -2424,10 +2448,85 @@
     }
   }
 
-  document.getElementById('btn-open-sync').onclick = openSyncPanel;
-  document.getElementById('btn-close-sync').onclick = closeSyncPanel;
-  document.getElementById('sync-panel').onclick = (e) => {
-    if (e.target === document.getElementById('sync-panel')) closeSyncPanel();
+  async function refreshNetSync() {
+    try {
+      const [info, spaces] = await Promise.all([
+        invoke('get_sync_info_cmd'),
+        invoke('list_spaces').catch(() => []),
+      ]);
+
+      // Connected Peers
+      const peersEl = document.getElementById('net-peers-container');
+      if (info.connected_peers.length === 0) {
+        peersEl.innerHTML = '<span style="color:#555;font-size:12px;">No connected peers</span>';
+      } else {
+        peersEl.innerHTML = info.connected_peers.map(p =>
+          `<span class="net-peer-chip"><span class="net-peer-dot"></span>${p}</span>`
+        ).join('');
+      }
+
+      // Active Spaces
+      const spacesEl = document.getElementById('net-sync-spaces-list');
+      if (!spaces || spaces.length === 0) {
+        spacesEl.innerHTML = '<div style="font-size:11px;color:#333;padding:4px 0;">No spaces</div>';
+      } else {
+        spacesEl.innerHTML = spaces.map(s =>
+          `<div class="net-sync-space-row">
+            <span class="net-sync-space-dot"></span>
+            <span class="net-sync-space-name">${s.name || 'Unnamed'}</span>
+            <span class="net-sync-space-id">${(s.id || '').slice(0, 8)}</span>
+          </div>`
+        ).join('');
+      }
+
+      // Boards
+      const tbody = document.getElementById('net-boards-tbody');
+      tbody.innerHTML = '';
+      if (info.boards.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:#444;text-align:center;padding:12px;">No boards</td></tr>';
+      } else {
+        for (const b of info.boards) {
+          const tr = document.createElement('tr');
+          const tdTitle = document.createElement('td'); tdTitle.textContent = b.title;
+          const tdId = document.createElement('td');
+          tdId.style.cssText = 'color:#3a3a5a;font-family:monospace;font-size:10px;';
+          tdId.textContent = b.board_id.slice(0, 8);
+          const tdTs = document.createElement('td'); tdTs.textContent = formatTs(b.last_modified);
+          tr.appendChild(tdTitle); tr.appendChild(tdId); tr.appendChild(tdTs);
+          tbody.appendChild(tr);
+        }
+      }
+
+      // Local peer ID
+      document.getElementById('net-local-id').textContent = info.local_peer_id || '—';
+
+      // Timestamp
+      document.getElementById('net-status-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${e}</span>`;
+    }
+
+    await renderSyncPeers();
+  }
+
+  async function openNetSyncPanel() {
+    document.getElementById('net-sync-panel').classList.add('open');
+    await refreshNetSync();
+    _netSyncInterval = setInterval(refreshNetSync, 5000);
+    document.getElementById('sync-addr-input').focus();
+  }
+
+  function closeNetSyncPanel() {
+    document.getElementById('net-sync-panel').classList.remove('open');
+    if (_netSyncInterval) { clearInterval(_netSyncInterval); _netSyncInterval = null; }
+    document.getElementById('sync-status-msg').textContent = '';
+  }
+
+  document.getElementById('btn-open-net-sync').onclick = openNetSyncPanel;
+  document.getElementById('btn-close-net-sync').onclick = closeNetSyncPanel;
+  document.getElementById('btn-net-refresh').onclick = refreshNetSync;
+  document.getElementById('net-sync-panel').onclick = (e) => {
+    if (e.target === document.getElementById('net-sync-panel')) closeNetSyncPanel();
   };
 
   document.getElementById('btn-sync-add-peer').onclick = async () => {
@@ -2458,106 +2557,9 @@
     setTimeout(() => { statusEl.textContent = ''; statusEl.style.color = '#4a9a4a'; }, 3000);
   };
 
-  // Allow Enter key in peer address input
   document.getElementById('sync-addr-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('btn-sync-add-peer').click();
   });
-
-  // ── Init ───────────────────────────────────────────────────────────────────
-  async function init() {
-    const profile = await invoke('get_my_profile').catch(() => null);
-    if (profile) window._myPubkey = profile.pubkey;
-    await refreshAllBoards();
-    await loadSpacesSidebar();
-    showView('dashboard');
-
-    // Display build version in sidebar footer
-    try {
-      const v = await invoke('get_app_version');
-      const d = new Date(v.build_ts * 1000);
-      const pad = n => String(n).padStart(2, '0');
-      const label = `v${v.version} · ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      document.getElementById('app-version-badge').textContent = label;
-    } catch (_) {}
-  }
-
-  init();
-
-  // ── Network Status panel ───────────────────────────────────────────────────
-  let _netStatusInterval = null;
-
-  function formatTs(unix) {
-    if (!unix || unix === 0) return '—';
-    const d = new Date(unix * 1000);
-    const now = Date.now();
-    const diffMs = now - d.getTime();
-    if (diffMs < 60000) return 'just now';
-    if (diffMs < 3600000) return Math.floor(diffMs / 60000) + 'm ago';
-    if (diffMs < 86400000) return Math.floor(diffMs / 3600000) + 'h ago';
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  async function refreshNetStatus() {
-    try {
-      const info = await invoke('get_sync_info_cmd');
-
-      // Peers
-      const peersEl = document.getElementById('net-peers-container');
-      if (info.connected_peers.length === 0) {
-        peersEl.innerHTML = '<span style="color:#555;font-size:12px;">No connected peers</span>';
-      } else {
-        peersEl.innerHTML = info.connected_peers.map(p =>
-          `<span class="net-peer-chip"><span class="net-peer-dot"></span>${p}</span>`
-        ).join('');
-      }
-
-      // Boards
-      const tbody = document.getElementById('net-boards-tbody');
-      tbody.innerHTML = '';
-      if (info.boards.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="color:#444;text-align:center;padding:12px;">No boards</td></tr>';
-      } else {
-        for (const b of info.boards) {
-          const tr = document.createElement('tr');
-          const tdTitle = document.createElement('td');
-          tdTitle.textContent = b.title;
-          const tdId = document.createElement('td');
-          tdId.style.cssText = 'color:#3a3a5a;font-family:monospace;font-size:10px;';
-          tdId.textContent = b.board_id.slice(0, 8);
-          const tdTs = document.createElement('td');
-          tdTs.textContent = formatTs(b.last_modified);
-          tr.appendChild(tdTitle); tr.appendChild(tdId); tr.appendChild(tdTs);
-          tbody.appendChild(tr);
-        }
-      }
-
-      // Local peer ID
-      document.getElementById('net-local-id').textContent = info.local_peer_id || '—';
-
-      // Timestamp
-      document.getElementById('net-status-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
-    } catch (e) {
-      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${e}</span>`;
-    }
-  }
-
-  function openNetStatusPanel() {
-    document.getElementById('net-status-panel').classList.add('open');
-    refreshNetStatus();
-    _netStatusInterval = setInterval(refreshNetStatus, 5000);
-  }
-
-  function closeNetStatusPanel() {
-    document.getElementById('net-status-panel').classList.remove('open');
-    if (_netStatusInterval) { clearInterval(_netStatusInterval); _netStatusInterval = null; }
-  }
-
-  document.getElementById('btn-open-net-status').onclick = openNetStatusPanel;
-  document.getElementById('btn-close-net-status').onclick = closeNetStatusPanel;
-  document.getElementById('btn-net-refresh').onclick = refreshNetStatus;
-  document.getElementById('net-status-panel').onclick = (e) => {
-    if (e.target === document.getElementById('net-status-panel')) closeNetStatusPanel();
-  };
 
   // ── Sync status polling ────────────────────────────────────────────────────
   async function pollSyncStatus() {
