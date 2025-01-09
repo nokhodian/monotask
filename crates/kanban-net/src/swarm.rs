@@ -653,6 +653,10 @@ fn merge_space_doc(space_id: &str, peer_doc_bytes: &[u8], guard: &mut Storage) {
                 pubkey: m.pubkey,
                 display_name: m.display_name,
                 avatar_blob: m.avatar_blob,
+                bio: m.bio,
+                role: m.role,
+                color_accent: m.color_accent,
+                presence: m.presence,
                 kicked: m.kicked,
             });
         }
