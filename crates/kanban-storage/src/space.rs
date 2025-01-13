@@ -338,6 +338,10 @@ mod tests {
             pubkey: "pk1".into(),
             display_name: Some("Alice".into()),
             avatar_blob: None,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             kicked: false,
         };
         upsert_member(&conn, "s1", &member).unwrap();
@@ -375,9 +379,9 @@ mod tests {
     #[test]
     fn profile_upsert_replace() {
         let conn = setup();
-        let p1 = UserProfile { pubkey: "pk1".into(), display_name: Some("Alice".into()), avatar_blob: None, ssh_key_path: None };
+        let p1 = UserProfile { pubkey: "pk1".into(), display_name: Some("Alice".into()), avatar_blob: None, bio: None, role: None, color_accent: None, presence: None, ssh_key_path: None };
         upsert_profile(&conn, &p1).unwrap();
-        let p2 = UserProfile { pubkey: "pk2".into(), display_name: Some("Bob".into()), avatar_blob: None, ssh_key_path: None };
+        let p2 = UserProfile { pubkey: "pk2".into(), display_name: Some("Bob".into()), avatar_blob: None, bio: None, role: None, color_accent: None, presence: None, ssh_key_path: None };
         upsert_profile(&conn, &p2).unwrap(); // replaces
         let loaded = get_profile(&conn).unwrap().unwrap();
         assert_eq!(loaded.pubkey, "pk2");
