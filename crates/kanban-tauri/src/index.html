@@ -457,6 +457,67 @@
     .pubkey-row { display: flex; align-items: center; gap: 8px; }
     .pubkey-display { font-family: monospace; font-size: 12px; color: #888; flex: 1; word-break: break-all; }
 
+    /* ── Modal shared ───────────────────────────────────────────────────── */
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .modal-header span { font-size:16px; color:#eee; font-weight:600; }
+    .modal-close { background:none; border:none; color:#666; font-size:20px; cursor:pointer; padding:0 4px; line-height:1; }
+    .modal-close:hover { color:#aaa; }
+    .modal-label { font-size:11px; color:#aaa; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em; }
+    .modal-input {
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 7px 10px; border-radius: 4px; font-size: 13px; width: 100%;
+      outline: none; box-sizing: border-box; font-family: inherit;
+    }
+    .modal-input:focus { border-color: #2e2e5a; }
+    .btn-cancel { background:#1a1a2e; border:1px solid #2a2a4a; color:#888; border-radius:4px; padding:6px 14px; font-size:13px; cursor:pointer; }
+    .btn-cancel:hover { color:#ccc; }
+
+    /* ── Profile modal extended ──────────────────────────────────────────── */
+    .profile-avatar-wrap {
+      position: relative; width: 72px; height: 72px; flex-shrink: 0;
+    }
+    .profile-avatar-img {
+      width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
+      border: 3px solid var(--profile-accent, #c8962a);
+    }
+    .profile-avatar-initials {
+      width: 72px; height: 72px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; font-weight: 700; color: #000;
+      border: 3px solid var(--profile-accent, #c8962a);
+    }
+    .profile-presence-dot {
+      position: absolute; bottom: 2px; right: 2px;
+      width: 16px; height: 16px; border-radius: 50%; border: 2px solid #0d0d1c;
+    }
+    .profile-avatar-btns { display: flex; gap: 4px; margin-top: 6px; justify-content: center; }
+    .profile-avatar-btns button {
+      background: #1a1a08; border: 1px solid #5a3a0a; color: #c8962a;
+      border-radius: 3px; padding: 3px 8px; font-size: 10px; cursor: pointer;
+    }
+    .profile-avatar-btns button:hover { background: #2a2a10; }
+    .profile-color-swatches { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .profile-swatch {
+      width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+      border: 2px solid transparent; transition: border-color .1s;
+    }
+    .profile-swatch.selected, .profile-swatch:hover { border-color: #fff; }
+    .profile-presence-row { display: flex; gap: 14px; }
+    .profile-presence-opt {
+      display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 11px; color: #aaa;
+    }
+    .profile-presence-dot-sm {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    #camera-preview-wrap {
+      display: none; flex-direction: column; gap: 8px; align-items: center;
+    }
+    #camera-preview { width: 200px; height: 150px; border-radius: 6px; background: #000; }
+    .btn-capture {
+      background: #1a1a08; border: 1px solid #5a3a0a; color: #c8962a;
+      border-radius: 4px; padding: 5px 14px; font-size: 12px; cursor: pointer;
+    }
+
     /* ── Form controls ──────────────────────────────────────────────────── */
     input[type="text"], input:not([type]) {
       background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
@@ -939,29 +1000,87 @@
 
 <!-- ── Profile modal ──────────────────────────────────────────────────────── -->
 <div id="modal-profile" class="modal">
-  <div class="modal-box">
-    <h3>Profile</h3>
-    <div class="profile-field">
-      <label>Public Key</label>
-      <div class="pubkey-row">
-        <span id="profile-pubkey-short" class="pubkey-display"></span>
-        <button id="btn-copy-pubkey" class="btn-small">Copy</button>
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-header">
+      <span>Profile</span>
+      <button id="btn-close-profile" class="modal-close">×</button>
+    </div>
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:14px;">
+      <!-- Avatar column -->
+      <div>
+        <div class="profile-avatar-wrap" id="profile-avatar-wrap">
+          <div class="profile-avatar-initials" id="profile-avatar-el" style="background:#c8962a;">?</div>
+          <div class="profile-presence-dot" id="profile-presence-dot" style="background:#4a9a4a;"></div>
+        </div>
+        <div class="profile-avatar-btns">
+          <button id="btn-avatar-file">📁 File</button>
+          <button id="btn-avatar-camera">📷 Camera</button>
+        </div>
+        <!-- Camera preview (hidden by default) -->
+        <div id="camera-preview-wrap">
+          <video id="camera-preview" autoplay playsinline></video>
+          <button class="btn-capture" id="btn-capture-photo">Capture</button>
+          <button style="background:none;border:none;color:#666;font-size:11px;cursor:pointer;" id="btn-cancel-camera">Cancel</button>
+        </div>
+      </div>
+      <!-- Fields column -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <div class="modal-label">Display Name</div>
+          <input id="profile-name" class="modal-input" placeholder="Your name" />
+        </div>
+        <div>
+          <div class="modal-label">Role / Title</div>
+          <input id="profile-role" class="modal-input" placeholder="e.g. Designer, Dev" />
+        </div>
       </div>
     </div>
-    <div class="profile-field">
-      <label>Display Name</label>
-      <input id="input-display-name" placeholder="Your name" />
+    <!-- Bio -->
+    <div style="margin-bottom:12px;">
+      <div class="modal-label">Status / Bio</div>
+      <textarea id="profile-bio" class="modal-input" maxlength="120" rows="2" placeholder="What are you up to?"></textarea>
     </div>
-    <div class="profile-field">
-      <label>SSH Key Path (optional &#8212; leave blank to use auto-generated key)</label>
-      <div style="display:flex;gap:8px;">
-        <input id="input-ssh-key-path" placeholder="~/.ssh/id_ed25519" />
-        <button id="btn-import-ssh" class="btn-small">Import</button>
+    <!-- Accent color -->
+    <div style="margin-bottom:12px;">
+      <div class="modal-label">Accent Color</div>
+      <div class="profile-color-swatches" id="profile-color-swatches">
+        <div class="profile-swatch" style="background:#c8962a;" data-color="#c8962a"></div>
+        <div class="profile-swatch" style="background:#6a9a6a;" data-color="#6a9a6a"></div>
+        <div class="profile-swatch" style="background:#6a7acc;" data-color="#6a7acc"></div>
+        <div class="profile-swatch" style="background:#c86a6a;" data-color="#c86a6a"></div>
+        <div class="profile-swatch" style="background:#9a6acc;" data-color="#9a6acc"></div>
+        <div class="profile-swatch" style="background:#4a9a9a;" data-color="#4a9a9a"></div>
+        <input type="color" id="profile-color-custom" style="width:24px;height:24px;border-radius:50%;border:none;cursor:pointer;padding:0;" title="Custom color" />
       </div>
     </div>
-    <div class="modal-actions">
-      <button id="btn-close-profile">Close</button>
-      <button id="btn-save-profile" class="btn-primary">Save</button>
+    <!-- Presence -->
+    <div style="margin-bottom:12px;">
+      <div class="modal-label">Presence</div>
+      <div class="profile-presence-row">
+        <label class="profile-presence-opt"><div class="profile-presence-dot-sm" style="background:#4a9a4a;"></div>Online<input type="radio" name="presence" value="online"></label>
+        <label class="profile-presence-opt"><div class="profile-presence-dot-sm" style="background:#c8962a;"></div>Away<input type="radio" name="presence" value="away"></label>
+        <label class="profile-presence-opt"><div class="profile-presence-dot-sm" style="background:#555;"></div>Do Not Disturb<input type="radio" name="presence" value="dnd"></label>
+      </div>
+    </div>
+    <!-- Pubkey -->
+    <div style="margin-bottom:10px;">
+      <div class="modal-label">Public Key</div>
+      <div style="background:#0a0a14;border:1px solid #1a1a2e;border-radius:4px;padding:6px 10px;display:flex;justify-content:space-between;align-items:center;">
+        <span id="profile-pubkey" style="font-size:10px;color:#555;font-family:monospace;"></span>
+        <button id="btn-copy-pubkey" style="background:none;border:none;color:#666;font-size:11px;cursor:pointer;">⎘ Copy</button>
+      </div>
+    </div>
+    <!-- SSH key -->
+    <div style="margin-bottom:14px;">
+      <div class="modal-label">SSH Key Path (optional)</div>
+      <div style="display:flex;gap:6px;">
+        <input id="profile-ssh-path" class="modal-input" style="flex:1;" placeholder="/Users/you/.ssh/id_ed25519" />
+        <button id="btn-import-ssh" style="background:#1a1a08;border:1px solid #5a3a0a;color:#c8962a;border-radius:4px;padding:6px 12px;font-size:12px;cursor:pointer;">Import</button>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn-cancel" id="btn-cancel-profile">Cancel</button>
+      <button class="btn-primary" id="btn-save-profile">Save Profile</button>
     </div>
   </div>
 </div>
@@ -2344,43 +2463,144 @@
   };
 
   // ── Profile modal ──────────────────────────────────────────────────────────
-  document.getElementById('btn-profile').onclick = async () => {
-    try {
-      const profile = await invoke('get_my_profile');
-      window._myPubkey = profile.pubkey;
-      document.getElementById('profile-pubkey-short').textContent = profile.pubkey.slice(0, 32) + '\u2026';
-      document.getElementById('profile-pubkey-short')._fullPubkey = profile.pubkey;
-      document.getElementById('input-display-name').value = profile.display_name || '';
-      document.getElementById('input-ssh-key-path').value = profile.ssh_key_path || '';
-      openModal('modal-profile');
-    } catch (e) { alert('Error loading profile: ' + e); }
-  };
+  async function openProfileModal() {
+    const p = await invoke('get_my_profile').catch(() => null);
+    if (!p) return;
+    window._myPubkey = p.pubkey;
+    window._profileAvatarB64 = p.avatar_b64 || null;
+    window._profileAccentColor = p.color_accent || '#c8962a';
+    document.getElementById('profile-name').value = p.display_name || '';
+    document.getElementById('profile-role').value = p.role || '';
+    document.getElementById('profile-bio').value = p.bio || '';
+    document.getElementById('profile-pubkey').textContent = p.pubkey.slice(0, 20) + '\u2026';
+    document.getElementById('profile-ssh-path').value = p.ssh_key_path || '';
+    // Accent color
+    updateAccentSwatch(p.color_accent || '#c8962a');
+    // Presence radio
+    const presenceVal = p.presence || 'online';
+    document.querySelectorAll('input[name="presence"]').forEach(r => {
+      r.checked = r.value === presenceVal;
+    });
+    // Avatar
+    updateAvatarPreview(p.avatar_b64, p.display_name, p.color_accent);
+    openModal('modal-profile');
+  }
+
+  function updateAvatarPreview(avatarB64, displayName, accentColor) {
+    const el = document.getElementById('profile-avatar-el');
+    const wrap = document.getElementById('profile-avatar-wrap');
+    const color = accentColor || '#c8962a';
+    wrap.style.setProperty('--profile-accent', color);
+    if (avatarB64) {
+      el.style.backgroundImage = `url(data:image/png;base64,${avatarB64})`;
+      el.style.backgroundSize = 'cover';
+      el.textContent = '';
+      el.className = 'profile-avatar-img';
+    } else {
+      el.style.backgroundImage = '';
+      el.style.background = color;
+      el.textContent = (displayName || '?')[0].toUpperCase();
+      el.className = 'profile-avatar-initials';
+    }
+  }
+
+  function updateAccentSwatch(color) {
+    window._profileAccentColor = color;
+    document.querySelectorAll('.profile-swatch').forEach(s => {
+      s.classList.toggle('selected', s.dataset.color === color);
+    });
+    document.getElementById('profile-avatar-wrap').style.setProperty('--profile-accent', color);
+  }
+
+  document.getElementById('btn-profile').onclick = openProfileModal;
+
   document.getElementById('btn-copy-pubkey').onclick = () => {
-    const pk = document.getElementById('profile-pubkey-short')._fullPubkey;
-    if (pk) navigator.clipboard.writeText(pk).catch(() => {});
+    navigator.clipboard.writeText(document.getElementById('profile-pubkey').textContent).catch(() => {});
   };
+
   document.getElementById('btn-import-ssh').onclick = async () => {
-    const path = document.getElementById('input-ssh-key-path').value.trim() || null;
+    const path = document.getElementById('profile-ssh-path').value.trim() || null;
     try {
       const pubkey = await invoke('import_ssh_key', { path });
-      document.getElementById('profile-pubkey-short').textContent = pubkey.slice(0, 32) + '\u2026';
-      document.getElementById('profile-pubkey-short')._fullPubkey = pubkey;
+      document.getElementById('profile-pubkey').textContent = pubkey.slice(0, 20) + '\u2026';
       window._myPubkey = pubkey;
       alert('SSH key imported.');
     } catch (e) { alert('Error importing SSH key: ' + e); }
   };
+
   document.getElementById('btn-save-profile').onclick = async () => {
-    const displayName = document.getElementById('input-display-name').value.trim();
+    const presence = document.querySelector('input[name="presence"]:checked')?.value || 'online';
     try {
-      const existing = await invoke('get_my_profile').catch(() => null);
       await invoke('update_my_profile', {
-        displayName,
-        avatarB64: existing?.avatar_b64 ?? null,
+        displayName: document.getElementById('profile-name').value.trim(),
+        avatarB64: window._profileAvatarB64 || null,
+        bio: document.getElementById('profile-bio').value.trim() || null,
+        role: document.getElementById('profile-role').value.trim() || null,
+        colorAccent: window._profileAccentColor || null,
+        presence,
       });
       closeModal('modal-profile');
+      await loadSpacesSidebar();
     } catch (e) { alert('Error saving profile: ' + e); }
   };
+
   document.getElementById('btn-close-profile').onclick = () => closeModal('modal-profile');
+  document.getElementById('btn-cancel-profile').onclick = () => closeModal('modal-profile');
+
+  // ── Avatar file picker ─────────────────────────────────────────────────────
+  document.getElementById('btn-avatar-file').onclick = async () => {
+    try {
+      const b64 = await invoke('upload_avatar_cmd');
+      window._profileAvatarB64 = b64;
+      updateAvatarPreview(b64, document.getElementById('profile-name').value, window._profileAccentColor);
+    } catch (e) {
+      if (e !== 'cancelled') alert('Error: ' + e);
+    }
+  };
+
+  // ── Camera capture ─────────────────────────────────────────────────────────
+  let _cameraStream = null;
+
+  document.getElementById('btn-avatar-camera').onclick = async () => {
+    document.getElementById('camera-preview-wrap').style.display = 'flex';
+    document.getElementById('btn-avatar-camera').style.display = 'none';
+    document.getElementById('btn-avatar-file').style.display = 'none';
+    _cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    document.getElementById('camera-preview').srcObject = _cameraStream;
+  };
+
+  document.getElementById('btn-capture-photo').onclick = () => {
+    const video = document.getElementById('camera-preview');
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    // Center-crop
+    const s = Math.min(video.videoWidth, video.videoHeight);
+    const x = (video.videoWidth - s) / 2;
+    const y = (video.videoHeight - s) / 2;
+    ctx.drawImage(video, x, y, s, s, 0, 0, 256, 256);
+    const b64 = canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
+    window._profileAvatarB64 = b64;
+    updateAvatarPreview(b64, document.getElementById('profile-name').value, window._profileAccentColor);
+    stopCamera();
+  };
+
+  document.getElementById('btn-cancel-camera').onclick = stopCamera;
+
+  function stopCamera() {
+    if (_cameraStream) { _cameraStream.getTracks().forEach(t => t.stop()); _cameraStream = null; }
+    document.getElementById('camera-preview-wrap').style.display = 'none';
+    document.getElementById('btn-avatar-camera').style.display = '';
+    document.getElementById('btn-avatar-file').style.display = '';
+  }
+
+  // ── Color swatches ─────────────────────────────────────────────────────────
+  document.querySelectorAll('.profile-swatch').forEach(s => {
+    s.onclick = () => updateAccentSwatch(s.dataset.color);
+  });
+  document.getElementById('profile-color-custom').oninput = (e) => {
+    updateAccentSwatch(e.target.value);
+  };
 
   // ── Init ───────────────────────────────────────────────────────────────────
   async function init() {
