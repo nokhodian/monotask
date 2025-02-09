@@ -70,6 +70,7 @@ impl Storage {
         let conn = Connection::open(&db_path)?;
         schema::run_migrations(&conn)?;
         schema::run_migrations_v2(&conn)?;
+        schema::run_migrations_v3(&conn)?;
         Ok(Self { conn })
     }
 
@@ -77,6 +78,7 @@ impl Storage {
         let conn = Connection::open_in_memory()?;
         schema::run_migrations(&conn)?;
         schema::run_migrations_v2(&conn)?;
+        schema::run_migrations_v3(&conn)?;
         Ok(Self { conn })
     }
 

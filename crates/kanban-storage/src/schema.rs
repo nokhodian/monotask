@@ -135,6 +135,30 @@ pub fn run_migrations_v2(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn run_migrations_v3(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if version >= 3 {
+        return Ok(());
+    }
+    conn.execute_batch("
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS card_search_index (
+            card_id     TEXT PRIMARY KEY,
+            board_id    TEXT NOT NULL,
+            space_id    TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            column_name TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_card_search_space
+            ON card_search_index (space_id, title);
+        PRAGMA user_version = 3;
+        COMMIT;
+    ")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod space_schema_tests {
     use super::*;
@@ -200,5 +224,24 @@ mod space_schema_tests {
         assert_eq!(role, "dev");
         // idempotent
         run_migrations_v2(&conn).unwrap();
+    }
+
+    #[test]
+    fn v3_migration_adds_card_search_index() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations_v2(&conn).unwrap();
+        run_migrations_v3(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO card_search_index (card_id, board_id, space_id, title, column_name)
+             VALUES ('c1', 'b1', 's1', 'Fix login bug', 'In Progress')",
+            [],
+        ).unwrap();
+        let title: String = conn.query_row(
+            "SELECT title FROM card_search_index WHERE card_id='c1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(title, "Fix login bug");
+        // idempotent
+        run_migrations_v3(&conn).unwrap();
     }
 }
