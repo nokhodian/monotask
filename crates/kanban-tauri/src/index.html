@@ -1481,6 +1481,10 @@
 
   // ── Space main (boards grid) ───────────────────────────────────────────────
   async function openSpaceMain(spaceId) {
+    stopChatPolling();
+    chatMessages = [];
+    chatUnread = 0;
+    updateChatUnreadBadge();
     currentSpaceId = spaceId;
     currentBoardId = null;
     showView('space-main');
@@ -1951,7 +1955,7 @@
       chip.dataset.pubkey = m.pubkey;
       const av = document.createElement('div');
       av.className = 'assignee-chip-avatar';
-      const color = m.color_accent || '#5a6a9a';
+      const color = safeCssColor(m.color_accent || '#5a6a9a');
       if (m.avatar_b64) {
         av.style.cssText = `background-image:url(data:image/png;base64,${m.avatar_b64});background-size:cover;background-position:center;`;
         av.textContent = '';
@@ -2428,19 +2432,19 @@
       const li = document.createElement('li');
       if (m.kicked) li.classList.add('member-kicked');
 
-      const color = m.color_accent || '#5a6a9a';
+      const color = safeCssColor(m.color_accent || '#5a6a9a');
       const initial = (m.display_name || m.pubkey)[0].toUpperCase();
       const avatarHtml = m.avatar_b64
         ? `<div class="member-avatar" style="background-image:url(data:image/png;base64,${m.avatar_b64});background-size:cover;background-position:center;"></div>`
         : `<div class="member-avatar" style="background:${color};">${initial}</div>`;
-      const roleHtml = m.role ? `<span style="font-size:9px;color:#666;background:#111120;border-radius:2px;padding:1px 5px;margin-left:4px;">${m.role}</span>` : '';
+      const roleHtml = m.role ? `<span style="font-size:9px;color:#666;background:#111120;border-radius:2px;padding:1px 5px;margin-left:4px;">${escapeHtml(m.role)}</span>` : '';
       const presenceDot = m.presence === 'away' ? '\uD83D\uDFE1' : m.presence === 'dnd' ? '\u26AB' : '\uD83D\uDFE2';
       li.innerHTML = `
         ${avatarHtml}
         <div class="member-info" style="flex:1;">
-          <div class="member-name">${m.display_name || '(unnamed)'}${roleHtml}</div>
+          <div class="member-name">${escapeHtml(m.display_name || '(unnamed)')}${roleHtml}</div>
           <div class="member-pubkey">${m.pubkey.slice(0, 16)}\u2026 ${presenceDot}</div>
-          ${m.bio ? `<div style="font-size:10px;color:#666;font-style:italic;margin-top:2px;">${m.bio}</div>` : ''}
+          ${m.bio ? `<div style="font-size:10px;color:#666;font-style:italic;margin-top:2px;">${escapeHtml(m.bio)}</div>` : ''}
         </div>`;
 
       if (isOwner && !m.kicked && m.pubkey !== myPubkey) {
@@ -2975,7 +2979,7 @@
         (info.peer_profiles || []).forEach(p => { profileMap[p.peer_id] = p; });
         peersEl.innerHTML = info.connected_peers.map(peerId => {
           const p = profileMap[peerId];
-          const color = (p && p.color_accent) || '#5a6a9a';
+          const color = safeCssColor((p && p.color_accent) || '#5a6a9a');
           const name = (p && p.display_name) || peerId.slice(0, 12) + '\u2026';
           const role = (p && p.role) || '';
           const presence = (p && p.presence) || 'online';
@@ -2987,8 +2991,8 @@
           return `<span class="peer-identity-chip">
             <span class="peer-avatar-sm" style="${avatarStyle}">${(p && p.avatar_b64) ? '' : initial}<span class="peer-presence-sm" style="background:${presenceColor};"></span></span>
             <span class="peer-info">
-              <span class="peer-name">${name}</span>
-              ${role ? `<span class="peer-role">${role}</span>` : ''}
+              <span class="peer-name">${escapeHtml(name)}</span>
+              ${role ? `<span class="peer-role">${escapeHtml(role)}</span>` : ''}
             </span>
             <span class="peer-status-txt ${presence}">${presence}</span>
           </span>`;
@@ -3100,6 +3104,11 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function safeCssColor(val) {
+    if (!val) return '#4a9a8a';
+    return /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]+$|^rgba?\([^)]{1,40}\)$/.test(val) ? val : '#4a9a8a';
   }
 
   // ——————————————————————————————————
@@ -3234,7 +3243,7 @@
       .filter(m => m.presence !== 'dnd')
       .slice(0, 5)
       .map(m => {
-        const color = m.color_accent || '#4a9a8a';
+        const color = safeCssColor(m.color_accent || '#4a9a8a');
         const isLive = connectedPubkeys.has(m.pubkey_hex);
         const name = m.display_name || m.pubkey_hex.slice(0,8);
         const opacity = isLive ? '1' : '0.5';
@@ -3266,7 +3275,7 @@
       // Use pre-resolved fields from ChatMessageView if available, otherwise fall back to member lookup
       const memberInfo = findMemberByPubkey(msg.author);
       const name = msg.author_name || memberInfo?.display_name || msg.author.slice(0,8);
-      const color = msg.author_color || memberInfo?.color_accent || '#4a9a8a';
+      const color = safeCssColor(msg.author_color || memberInfo?.color_accent || '#4a9a8a');
       const avatarB64 = msg.author_avatar_b64 || memberInfo?.avatar_b64 || null;
       const avatar = avatarB64
         ? `<img src="data:image/png;base64,${avatarB64}" />`
@@ -3298,7 +3307,7 @@
       const escaped = escapeHtml(ref.label);
       if (ref.kind === 'member') {
         const mentionMember = findMemberByPubkey(ref.id);
-        const mentionColor = mentionMember?.color_accent || '#7a8acc';
+        const mentionColor = safeCssColor(mentionMember?.color_accent || '#7a8acc');
         html = html.replace(
           new RegExp('@' + escapeRegex(ref.label), 'g'),
           `<span class="chat-mention-chip" style="color:${mentionColor}" onclick="openMentionProfile('${escapeHtml(ref.id)}')">@${escaped}</span>`
@@ -3451,7 +3460,7 @@
       entries.forEach(({ item, i }) => {
         const selected = i === chatAcIndex ? ' selected' : '';
         if (kind === 'member') {
-          const color = item.color_accent || '#4a9a8a';
+          const color = safeCssColor(item.color_accent || '#4a9a8a');
           const initial = (item.label[0] || '?').toUpperCase();
           const avatarHtml = item.avatar_b64
             ? `<img src="data:image/png;base64,${item.avatar_b64}" style="width:14px;height:14px;border-radius:50%;object-fit:cover">`
