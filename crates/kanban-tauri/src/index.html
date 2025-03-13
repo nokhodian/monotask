@@ -3244,8 +3244,8 @@
       .slice(0, 5)
       .map(m => {
         const color = safeCssColor(m.color_accent || '#4a9a8a');
-        const isLive = connectedPubkeys.has(m.pubkey_hex);
-        const name = m.display_name || m.pubkey_hex.slice(0,8);
+        const isLive = connectedPubkeys.has(m.pubkey);
+        const name = m.display_name || m.pubkey.slice(0,8);
         const opacity = isLive ? '1' : '0.5';
         return `<div class="chat-presence-dot" style="background:${color};opacity:${opacity}" title="${escapeHtml(name)}"></div>`;
       }).join('');
@@ -3328,7 +3328,7 @@
 
   function findMemberByPubkey(pubkey) {
     if (!currentSpaceData || !currentSpaceData.members) return null;
-    return currentSpaceData.members.find(m => m.pubkey_hex === pubkey) || null;
+    return currentSpaceData.members.find(m => m.pubkey === pubkey) || null;
   }
 
   async function navigateToChatRef(kind, id) {
@@ -3345,7 +3345,7 @@
 
   function openMentionProfile(pubkeyHex) {
     if (!currentSpaceData) return;
-    const member = currentSpaceData.members && currentSpaceData.members.find(m => m.pubkey_hex === pubkeyHex);
+    const member = currentSpaceData.members && currentSpaceData.members.find(m => m.pubkey === pubkeyHex);
     if (!member) return;
     showReadOnlyProfile(member);
   }
@@ -3525,7 +3525,7 @@
         const member = currentSpaceData.members.find(mem =>
           (mem.display_name || '').toLowerCase().startsWith(m[1].toLowerCase())
         );
-        if (member) refs.push({ kind: 'member', id: member.pubkey_hex, label: member.display_name || m[1] });
+        if (member) refs.push({ kind: 'member', id: member.pubkey, label: member.display_name || m[1] });
       }
     }
 

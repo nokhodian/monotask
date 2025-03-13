@@ -581,6 +581,18 @@ fn move_card_cmd(
 
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    // Update card_search_index with new column name
+    {
+        let columns = kanban_core::column::list_columns(&doc).unwrap_or_default();
+        let to_col_title = columns.iter()
+            .find(|c| c.id == to_col_id)
+            .map(|c| c.title.clone())
+            .unwrap_or_default();
+        let _ = storage.conn().execute(
+            "UPDATE card_search_index SET column_name = ?1 WHERE card_id = ?2",
+            rusqlite::params![to_col_title, card_id],
+        );
+    }
     trigger_board_sync(&board_id, &state);
     Ok(())
 }
@@ -1640,12 +1652,13 @@ fn get_mention_suggestions_cmd(
 
     if kind == "all" || kind == "board" {
         let mut stmt = storage.conn().prepare(
-            "SELECT board_id FROM space_boards WHERE space_id = ?1"
+            "SELECT sb.board_id FROM space_boards sb
+             JOIN boards b ON b.board_id = sb.board_id
+             WHERE sb.space_id = ?1 AND b.is_system = 0"
         ).map_err(|e| e.to_string())?;
         let board_ids: Vec<String> = stmt.query_map([&space_id], |row| row.get(0))
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
-            .filter(|id: &String| !id.ends_with("-chat"))
             .collect();
         for board_id in board_ids {
             if let Ok(doc) = storage.load_board(&board_id) {
