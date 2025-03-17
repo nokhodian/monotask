@@ -69,12 +69,16 @@ impl Storage {
         let db_path = dir.join("kanban.db");
         let conn = Connection::open(&db_path)?;
         schema::run_migrations(&conn)?;
+        schema::run_migrations_v2(&conn)?;
+        schema::run_migrations_v3(&conn)?;
         Ok(Self { conn })
     }
 
     pub fn open_in_memory() -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
         schema::run_migrations(&conn)?;
+        schema::run_migrations_v2(&conn)?;
+        schema::run_migrations_v3(&conn)?;
         Ok(Self { conn })
     }
 
@@ -111,6 +115,21 @@ impl Storage {
             ).map_err(StorageError::Sqlite)?;
         }
         tx.commit().map_err(StorageError::Sqlite)?;
+        Ok(())
+    }
+
+    /// Save a board doc from raw bytes, setting the is_system flag.
+    /// Used for system docs (e.g., chat docs) that don't need card number indexing.
+    pub fn save_board_bytes(&self, board_id: &str, bytes: &[u8], is_system: bool) -> Result<(), StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO boards (board_id, automerge_doc, last_modified, is_system)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![board_id, bytes, now, is_system as i32],
+        ).map_err(StorageError::Sqlite)?;
         Ok(())
     }
 

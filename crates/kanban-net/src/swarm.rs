@@ -225,6 +225,17 @@ async fn run_inner(
                             .collect();
                         let _ = reply.send(addrs);
                     }
+                    NetCommand::GetPeerPubkeys { reply } => {
+                        let map: std::collections::HashMap<String, String> = pubkey_cache
+                            .iter()
+                            .filter_map(|(peer_id, pk)| {
+                                pk.clone().try_into_ed25519().ok().map(|ed_pk| {
+                                    (peer_id.to_string(), hex::encode(ed_pk.to_bytes()))
+                                })
+                            })
+                            .collect();
+                        let _ = reply.send(map);
+                    }
                 }
             }
 
@@ -653,6 +664,10 @@ fn merge_space_doc(space_id: &str, peer_doc_bytes: &[u8], guard: &mut Storage) {
                 pubkey: m.pubkey,
                 display_name: m.display_name,
                 avatar_blob: m.avatar_blob,
+                bio: m.bio,
+                role: m.role,
+                color_accent: m.color_accent,
+                presence: m.presence,
                 kicked: m.kicked,
             });
         }

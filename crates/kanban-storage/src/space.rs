@@ -35,7 +35,8 @@ pub fn get_space(conn: &Connection, space_id: &str) -> Result<Space, StorageErro
     })?;
 
     let mut stmt = conn.prepare(
-        "SELECT pubkey, display_name, avatar_blob, kicked FROM space_members WHERE space_id = ?1"
+        "SELECT pubkey, display_name, avatar_blob, kicked, bio, role, color_accent, presence
+         FROM space_members WHERE space_id = ?1"
     )?;
     let members: Vec<Member> = stmt.query_map([space_id], |row| {
         let display_name: Option<String> = row.get(1)?;
@@ -46,11 +47,17 @@ pub fn get_space(conn: &Connection, space_id: &str) -> Result<Space, StorageErro
             display_name: display_name.filter(|s| !s.is_empty()),
             avatar_blob,
             kicked,
+            bio: row.get::<_, Option<String>>(4)?.filter(|s| !s.is_empty()),
+            role: row.get::<_, Option<String>>(5)?.filter(|s| !s.is_empty()),
+            color_accent: row.get::<_, Option<String>>(6)?.filter(|s| !s.is_empty()),
+            presence: row.get::<_, Option<String>>(7)?.filter(|s| !s.is_empty()),
         })
     })?.collect::<Result<Vec<_>, _>>()?;
 
     let mut stmt2 = conn.prepare(
-        "SELECT board_id FROM space_boards WHERE space_id = ?1"
+        "SELECT sb.board_id FROM space_boards sb
+         LEFT JOIN boards b ON b.board_id = sb.board_id
+         WHERE sb.space_id = ?1 AND (b.is_system IS NULL OR b.is_system = 0)"
     )?;
     let boards: Vec<String> = stmt2.query_map([space_id], |row| row.get(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -114,14 +121,19 @@ pub fn upsert_member(
     member: &Member,
 ) -> Result<(), StorageError> {
     conn.execute(
-        "INSERT OR REPLACE INTO space_members (space_id, pubkey, display_name, avatar_blob, kicked)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT OR REPLACE INTO space_members
+         (space_id, pubkey, display_name, avatar_blob, kicked, bio, role, color_accent, presence)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             space_id,
             member.pubkey,
             member.display_name,
             member.avatar_blob,
             member.kicked as i32,
+            member.bio,
+            member.role,
+            member.color_accent,
+            member.presence,
         ],
     )?;
     Ok(())
@@ -257,13 +269,19 @@ pub fn is_active_member(conn: &Connection, space_id: &str, pubkey_hex: &str) -> 
 
 pub fn get_profile(conn: &Connection) -> Result<Option<UserProfile>, StorageError> {
     match conn.query_row(
-        "SELECT pubkey, display_name, avatar_blob, ssh_key_path FROM user_profile WHERE pk = 'local'",
+        "SELECT pubkey, display_name, avatar_blob, ssh_key_path,
+                bio, role, color_accent, presence
+         FROM user_profile WHERE pk = 'local'",
         [],
         |row| Ok(UserProfile {
             pubkey: row.get(0)?,
             display_name: row.get(1)?,
             avatar_blob: row.get(2)?,
             ssh_key_path: row.get(3)?,
+            bio: row.get(4)?,
+            role: row.get(5)?,
+            color_accent: row.get(6)?,
+            presence: row.get(7)?,
         }),
     ) {
         Ok(p) => Ok(Some(p)),
@@ -274,9 +292,19 @@ pub fn get_profile(conn: &Connection) -> Result<Option<UserProfile>, StorageErro
 
 pub fn upsert_profile(conn: &Connection, profile: &UserProfile) -> Result<(), StorageError> {
     conn.execute(
-        "INSERT OR REPLACE INTO user_profile (pk, pubkey, display_name, avatar_blob, ssh_key_path)
-         VALUES ('local', ?1, ?2, ?3, ?4)",
-        params![profile.pubkey, profile.display_name, profile.avatar_blob, profile.ssh_key_path],
+        "INSERT OR REPLACE INTO user_profile
+         (pk, pubkey, display_name, avatar_blob, ssh_key_path, bio, role, color_accent, presence)
+         VALUES ('local', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            profile.pubkey,
+            profile.display_name,
+            profile.avatar_blob,
+            profile.ssh_key_path,
+            profile.bio,
+            profile.role,
+            profile.color_accent,
+            profile.presence,
+        ],
     )?;
     Ok(())
 }
@@ -300,6 +328,7 @@ mod tests {
     fn setup() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
+        crate::schema::run_migrations_v2(&conn).unwrap();
         conn
     }
 
@@ -330,6 +359,10 @@ mod tests {
             pubkey: "pk1".into(),
             display_name: Some("Alice".into()),
             avatar_blob: None,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             kicked: false,
         };
         upsert_member(&conn, "s1", &member).unwrap();
@@ -367,9 +400,9 @@ mod tests {
     #[test]
     fn profile_upsert_replace() {
         let conn = setup();
-        let p1 = UserProfile { pubkey: "pk1".into(), display_name: Some("Alice".into()), avatar_blob: None, ssh_key_path: None };
+        let p1 = UserProfile { pubkey: "pk1".into(), display_name: Some("Alice".into()), avatar_blob: None, bio: None, role: None, color_accent: None, presence: None, ssh_key_path: None };
         upsert_profile(&conn, &p1).unwrap();
-        let p2 = UserProfile { pubkey: "pk2".into(), display_name: Some("Bob".into()), avatar_blob: None, ssh_key_path: None };
+        let p2 = UserProfile { pubkey: "pk2".into(), display_name: Some("Bob".into()), avatar_blob: None, bio: None, role: None, color_accent: None, presence: None, ssh_key_path: None };
         upsert_profile(&conn, &p2).unwrap(); // replaces
         let loaded = get_profile(&conn).unwrap().unwrap();
         assert_eq!(loaded.pubkey, "pk2");
@@ -406,5 +439,49 @@ mod tests {
             check_invite_policy(&conn, &meta, "owner-pk"),
             Err(StorageError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn profile_extended_fields_round_trip() {
+        let conn = setup();
+        crate::schema::run_migrations_v2(&conn).unwrap();
+        let profile = UserProfile {
+            pubkey: "pk".into(),
+            display_name: Some("Alice".into()),
+            avatar_blob: None,
+            bio: Some("On vacation".into()),
+            role: Some("Designer".into()),
+            color_accent: Some("#c8962a".into()),
+            presence: Some("away".into()),
+            ssh_key_path: None,
+        };
+        upsert_profile(&conn, &profile).unwrap();
+        let loaded = get_profile(&conn).unwrap().unwrap();
+        assert_eq!(loaded.bio.as_deref(), Some("On vacation"));
+        assert_eq!(loaded.role.as_deref(), Some("Designer"));
+        assert_eq!(loaded.color_accent.as_deref(), Some("#c8962a"));
+        assert_eq!(loaded.presence.as_deref(), Some("away"));
+    }
+
+    #[test]
+    fn upsert_member_extended_fields_round_trip() {
+        let conn = setup();
+        crate::schema::run_migrations_v2(&conn).unwrap();
+        create_space(&conn, "s1", "S", "owner", b"bytes").unwrap();
+        let member = Member {
+            pubkey: "pk1".into(),
+            display_name: Some("Alice".into()),
+            avatar_blob: None,
+            bio: Some("hello".into()),
+            role: Some("Dev".into()),
+            color_accent: Some("#fff".into()),
+            presence: Some("online".into()),
+            kicked: false,
+        };
+        upsert_member(&conn, "s1", &member).unwrap();
+        let space = get_space(&conn, "s1").unwrap();
+        let m = &space.members[0];
+        assert_eq!(m.bio.as_deref(), Some("hello"));
+        assert_eq!(m.role.as_deref(), Some("Dev"));
     }
 }

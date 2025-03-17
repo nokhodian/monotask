@@ -261,6 +261,10 @@ fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) ->
         pubkey: id.public_key_hex(),
         display_name: None,
         avatar_blob: None,
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         ssh_key_path: None,
     };
     space_store::upsert_profile(conn, &new_profile)?;
@@ -574,6 +578,10 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
                 pubkey: owner_pubkey.clone(),
                 display_name: if profile.display_name.is_empty() { None } else { Some(profile.display_name.clone()) },
                 avatar_blob: None,
+                bio: None,
+                role: None,
+                color_accent: None,
+                presence: None,
                 kicked: false,
             };
             ss::upsert_member(storage.conn(), &space_id, &owner_member)?;
@@ -672,12 +680,16 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
                 (doc, members, boards, name)
             } else {
                 let mut doc = cs::create_space_doc("Shared Space", &meta.owner_pubkey)?;
-                let empty = cs::MemberProfile { display_name: String::new(), avatar_b64: String::new(), kicked: false };
+                let empty = cs::MemberProfile { display_name: String::new(), avatar_b64: String::new(), bio: String::new(), role: String::new(), color_accent: String::new(), presence: String::new(), kicked: false };
                 cs::add_member(&mut doc, &meta.owner_pubkey, &empty)?;
                 let stub_owner = cs::Member {
                     pubkey: meta.owner_pubkey.clone(),
                     display_name: None,
                     avatar_blob: None,
+                    bio: None,
+                    role: None,
+                    color_accent: None,
+                    presence: None,
                     kicked: false,
                 };
                 (doc, vec![stub_owner], vec![], "Shared Space".into())
@@ -692,6 +704,10 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
                 pubkey: local_pubkey,
                 display_name: if local_profile.display_name.is_empty() { None } else { Some(local_profile.display_name) },
                 avatar_blob: None,
+                bio: None,
+                role: None,
+                color_accent: None,
+                presence: None,
                 kicked: false,
             };
             ss::upsert_member(storage.conn(), &meta.space_id, &local_sql)?;
@@ -754,6 +770,10 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
                     pubkey: identity.public_key_hex(),
                     display_name: None,
                     avatar_blob: None,
+                    bio: None,
+                    role: None,
+                    color_accent: None,
+                    presence: None,
                     ssh_key_path: None,
                 });
             println!("Pubkey:       {}", profile.pubkey);
@@ -766,6 +786,10 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
                 pubkey: identity.public_key_hex(),
                 display_name: None,
                 avatar_blob: None,
+                bio: None,
+                role: None,
+                color_accent: None,
+                presence: None,
                 ssh_key_path: None,
             });
             ss::upsert_profile(storage.conn(), &kanban_core::space::UserProfile {
@@ -780,6 +804,10 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
                 pubkey: identity.public_key_hex(),
                 display_name: None,
                 avatar_blob: None,
+                bio: None,
+                role: None,
+                color_accent: None,
+                presence: None,
                 ssh_key_path: None,
             });
             ss::upsert_profile(storage.conn(), &kanban_core::space::UserProfile {
@@ -798,7 +826,11 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
             ss::upsert_profile(storage.conn(), &kanban_core::space::UserProfile {
                 pubkey: pubkey.clone(),
                 display_name: existing.as_ref().and_then(|p| p.display_name.clone()),
-                avatar_blob: existing.and_then(|p| p.avatar_blob),
+                avatar_blob: existing.as_ref().and_then(|p| p.avatar_blob.clone()),
+                bio: existing.as_ref().and_then(|p| p.bio.clone()),
+                role: existing.as_ref().and_then(|p| p.role.clone()),
+                color_accent: existing.as_ref().and_then(|p| p.color_accent.clone()),
+                presence: existing.as_ref().and_then(|p| p.presence.clone()),
                 ssh_key_path: path,
             })?;
             println!("Imported SSH key. New pubkey: {}", pubkey);
@@ -818,6 +850,10 @@ fn get_local_member_profile(conn: &rusqlite::Connection) -> kanban_core::space::
             .and_then(|p| p.avatar_blob.as_ref())
             .map(|b| { use base64::Engine; base64::engine::general_purpose::STANDARD.encode(b) })
             .unwrap_or_default(),
+        bio: "".into(),
+        role: "".into(),
+        color_accent: "".into(),
+        presence: "".into(),
         kicked: false,
     }
 }

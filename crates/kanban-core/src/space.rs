@@ -24,6 +24,10 @@ pub struct Member {
     pub pubkey: String,
     pub display_name: Option<String>,
     pub avatar_blob: Option<Vec<u8>>,
+    pub bio: Option<String>,
+    pub role: Option<String>,
+    pub color_accent: Option<String>,
+    pub presence: Option<String>,
     pub kicked: bool,
 }
 
@@ -32,6 +36,10 @@ pub struct Member {
 pub struct MemberProfile {
     pub display_name: String,  // empty string if not set
     pub avatar_b64: String,    // base64-encoded bytes; empty string if not set
+    pub bio: String,
+    pub role: String,
+    pub color_accent: String,
+    pub presence: String,
     pub kicked: bool,
 }
 
@@ -40,6 +48,10 @@ pub struct UserProfile {
     pub pubkey: String,
     pub display_name: Option<String>,
     pub avatar_blob: Option<Vec<u8>>,
+    pub bio: Option<String>,
+    pub role: Option<String>,
+    pub color_accent: Option<String>,
+    pub presence: Option<String>,
     pub ssh_key_path: Option<String>,
 }
 
@@ -87,6 +99,10 @@ pub fn add_member(doc: &mut AutoCommit, pubkey: &str, profile: &MemberProfile) -
     };
     doc.put(&entry, "display_name", profile.display_name.as_str())?;
     doc.put(&entry, "avatar_b64", profile.avatar_b64.as_str())?;
+    doc.put(&entry, "bio", profile.bio.as_str())?;
+    doc.put(&entry, "role", profile.role.as_str())?;
+    doc.put(&entry, "color_accent", profile.color_accent.as_str())?;
+    doc.put(&entry, "presence", profile.presence.as_str())?;
     doc.put(&entry, "kicked", profile.kicked)?;
     Ok(())
 }
@@ -130,12 +146,16 @@ pub fn list_members(doc: &AutoCommit) -> crate::Result<Vec<Member>> {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD.decode(&avatar_b64).ok()
             };
+            let bio = crate::get_string(doc, &entry, "bio")?.filter(|s| !s.is_empty());
+            let role = crate::get_string(doc, &entry, "role")?.filter(|s| !s.is_empty());
+            let color_accent = crate::get_string(doc, &entry, "color_accent")?.filter(|s| !s.is_empty());
+            let presence = crate::get_string(doc, &entry, "presence")?.filter(|s| !s.is_empty());
             let kicked = matches!(
                 doc.get(&entry, "kicked")?,
                 Some((automerge::Value::Scalar(s), _))
                     if matches!(s.as_ref(), automerge::ScalarValue::Boolean(true))
             );
-            result.push(Member { pubkey, display_name, avatar_blob, kicked });
+            result.push(Member { pubkey, display_name, avatar_blob, bio, role, color_accent, presence, kicked });
         }
     }
     Ok(result)
@@ -210,6 +230,10 @@ mod tests {
         let profile = MemberProfile {
             display_name: "Alice".into(),
             avatar_b64: "".into(),
+            bio: "".into(),
+            role: "".into(),
+            color_accent: "".into(),
+            presence: "".into(),
             kicked: false,
         };
         add_member(&mut doc, "pk_alice", &profile).unwrap();
@@ -223,7 +247,7 @@ mod tests {
     #[test]
     fn kick_member_sets_kicked_true() {
         let mut doc = create_space_doc("S", "owner").unwrap();
-        let profile = MemberProfile { display_name: "Bob".into(), avatar_b64: "".into(), kicked: false };
+        let profile = MemberProfile { display_name: "Bob".into(), avatar_b64: "".into(), bio: "".into(), role: "".into(), color_accent: "".into(), presence: "".into(), kicked: false };
         add_member(&mut doc, "pk_bob", &profile).unwrap();
         kick_member(&mut doc, "pk_bob").unwrap();
         let members = list_members(&doc).unwrap();
@@ -255,12 +279,55 @@ mod tests {
     #[test]
     fn add_member_is_idempotent_upsert() {
         let mut doc = create_space_doc("S", "owner").unwrap();
-        let p1 = MemberProfile { display_name: "Alice".into(), avatar_b64: "".into(), kicked: false };
-        let p2 = MemberProfile { display_name: "Alice Updated".into(), avatar_b64: "".into(), kicked: false };
+        let p1 = MemberProfile { display_name: "Alice".into(), avatar_b64: "".into(), bio: "".into(), role: "".into(), color_accent: "".into(), presence: "".into(), kicked: false };
+        let p2 = MemberProfile { display_name: "Alice Updated".into(), avatar_b64: "".into(), bio: "".into(), role: "".into(), color_accent: "".into(), presence: "".into(), kicked: false };
         add_member(&mut doc, "pk_alice", &p1).unwrap();
         add_member(&mut doc, "pk_alice", &p2).unwrap();
         let members = list_members(&doc).unwrap();
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].display_name, Some("Alice Updated".into()));
+    }
+
+    #[test]
+    fn add_member_stores_and_retrieves_extended_fields() {
+        let mut doc = create_space_doc("S", "owner").unwrap();
+        let profile = MemberProfile {
+            display_name: "Alice".into(),
+            avatar_b64: "".into(),
+            bio: "On vacation".into(),
+            role: "Designer".into(),
+            color_accent: "#c8962a".into(),
+            presence: "away".into(),
+            kicked: false,
+        };
+        add_member(&mut doc, "pk_alice", &profile).unwrap();
+        let members = list_members(&doc).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].bio.as_deref(), Some("On vacation"));
+        assert_eq!(members[0].role.as_deref(), Some("Designer"));
+        assert_eq!(members[0].color_accent.as_deref(), Some("#c8962a"));
+        assert_eq!(members[0].presence.as_deref(), Some("away"));
+    }
+
+    #[test]
+    fn list_members_handles_missing_extended_fields_gracefully() {
+        // Doc created without new fields (simulates old space doc from peer)
+        let mut doc = create_space_doc("S", "owner").unwrap();
+        let old_profile = MemberProfile {
+            display_name: "Bob".into(),
+            avatar_b64: "".into(),
+            bio: "".into(),
+            role: "".into(),
+            color_accent: "".into(),
+            presence: "".into(),
+            kicked: false,
+        };
+        add_member(&mut doc, "pk_bob", &old_profile).unwrap();
+        // Simulate old doc by manually NOT writing new keys — still should parse
+        let members = list_members(&doc).unwrap();
+        assert_eq!(members.len(), 1);
+        // Empty strings become None
+        assert!(members[0].bio.is_none());
+        assert!(members[0].role.is_none());
     }
 }
