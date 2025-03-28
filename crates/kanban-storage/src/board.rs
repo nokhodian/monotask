@@ -43,7 +43,7 @@ pub fn list_boards_with_timestamps(conn: &rusqlite::Connection) -> Result<Vec<(S
         "SELECT b.board_id, COALESCE(b.last_modified, 0)
          FROM boards b
          JOIN space_boards sb ON sb.board_id = b.board_id
-         JOIN spaces s ON s.space_id = sb.space_id
+         JOIN spaces s ON s.id = sb.space_id
          WHERE b.is_system = 0
          ORDER BY b.last_modified DESC"
     )?;
