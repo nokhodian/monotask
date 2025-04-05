@@ -140,6 +140,36 @@ cargo tauri build
 
 ---
 
+
+## Update
+
+### Desktop App (Homebrew Cask)
+
+```bash
+brew upgrade --cask monotask
+```
+
+> If you get `Error: Cask 'monotask' is not installed` (e.g. you previously installed via DMG):
+>
+> ```bash
+> brew install --cask monotask --force
+> ```
+>
+> After upgrading, if macOS shows **"Monotask is damaged"**, re-run the Gatekeeper fix once:
+>
+> ```bash
+> find /Applications/Monotask.app -print0 | xargs -0 xattr -c
+> codesign --force --deep --sign - /Applications/Monotask.app
+> ```
+
+### CLI (Homebrew Formula)
+
+```bash
+brew upgrade monotask
+```
+
+---
+
 ## Architecture
 
 ```
