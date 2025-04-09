@@ -920,9 +920,82 @@
       text-align: center;
       display: none;
     }
+
+    /* ── Update banner ─────────────────────────── */
+    #update-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: linear-gradient(90deg, #1a3a1a, #0d2a0d);
+      border-bottom: 1px solid #2a6a2a;
+      padding: 8px 16px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      z-index: 9000;
+      font-size: 12px;
+    }
+    #update-banner.visible { display: flex; }
+    .update-banner-icon { font-size: 16px; }
+    .update-banner-text { flex: 1; color: #8aca8a; }
+    .update-banner-text strong { color: #aafa9a; }
+    .btn-update-now {
+      background: #2a6a2a;
+      border: 1px solid #4a9a4a;
+      color: #aafa9a;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-update-now:hover { background: #3a8a3a; }
+    .btn-update-later {
+      background: none;
+      border: none;
+      color: #4a6a4a;
+      font-size: 11px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+    .btn-update-later:hover { color: #6a9a6a; }
+    #update-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.85);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 9999;
+    }
+    #update-overlay.visible { display: flex; }
+    .update-overlay-spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #2a6a2a;
+      border-top-color: #6aca6a;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .update-overlay-msg { color: #8aca8a; font-size: 14px; }
+    .update-overlay-sub { color: #4a6a4a; font-size: 11px; }
   </style>
 </head>
 <body>
+
+  <!-- Update banner -->
+  <div id="update-banner">
+    <span class="update-banner-icon">🔄</span>
+    <span class="update-banner-text">Update available: <strong id="update-version"></strong> — restart to get the latest fixes and features.</span>
+    <button class="btn-update-now" onclick="doUpdate()">Update Now</button>
+    <button class="btn-update-later" onclick="dismissUpdateBanner()">Later</button>
+  </div>
+  <!-- Update overlay -->
+  <div id="update-overlay">
+    <div class="update-overlay-spinner"></div>
+    <div class="update-overlay-msg">Installing update…</div>
+    <div class="update-overlay-sub">The app will restart automatically.</div>
+  </div>
 
 <!-- ── Spaces sidebar ─────────────────────────────────────────────────────── -->
 <div id="spaces-sidebar">
@@ -3582,6 +3655,38 @@
   }
   setInterval(pollSyncStatus, 4000);
   pollSyncStatus();
+
+  // ── Auto-update ──────────────────────────────────────────────────────────
+  async function checkForUpdate() {
+    try {
+      const newVersion = await invoke('check_for_update_cmd');
+      if (newVersion) {
+        document.getElementById('update-version').textContent = 'v' + newVersion;
+        document.getElementById('update-banner').classList.add('visible');
+      }
+    } catch (e) { /* network unavailable — ignore */ }
+  }
+
+  function dismissUpdateBanner() {
+    document.getElementById('update-banner').classList.remove('visible');
+    // Snooze: re-check in 1h
+    setTimeout(checkForUpdate, 60 * 60 * 1000);
+  }
+
+  async function doUpdate() {
+    document.getElementById('update-banner').classList.remove('visible');
+    document.getElementById('update-overlay').classList.add('visible');
+    try {
+      await invoke('install_update_cmd');
+    } catch (e) {
+      document.getElementById('update-overlay').classList.remove('visible');
+      alert('Update failed: ' + e + '\n\nRun: brew upgrade --cask monotask --force');
+    }
+  }
+
+  // Check on startup (after 3s delay so app is settled), then every hour
+  setTimeout(checkForUpdate, 3000);
+  setInterval(checkForUpdate, 60 * 60 * 1000);
 </script>
 </body>
 </html>

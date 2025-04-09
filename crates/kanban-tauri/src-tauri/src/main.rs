@@ -1823,7 +1823,74 @@ fn main() {
             get_chat_messages_cmd,
             get_mention_suggestions_cmd,
             find_card_board_cmd,
+            check_for_update_cmd,
+            install_update_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ── Auto-update ─────────────────────────────────────────────────────────────
+
+fn version_is_newer(remote: &str, local: &str) -> bool {
+    let parse = |v: &str| -> Vec<u64> {
+        v.split('.').filter_map(|p| p.parse().ok()).collect()
+    };
+    parse(remote) > parse(local)
+}
+
+#[tauri::command]
+async fn check_for_update_cmd() -> Result<Option<String>, String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let output = std::process::Command::new("curl")
+        .args([
+            "-sf", "--max-time", "10",
+            "-H", "User-Agent: monotask-updater",
+            "https://api.github.com/repos/nokhodian/monotask/releases/latest",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() { return Ok(None); }
+
+    let body = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let tag = json["tag_name"].as_str().unwrap_or("").trim_start_matches('v').to_string();
+
+    if tag.is_empty() { return Ok(None); }
+    if version_is_newer(&tag, current) { Ok(Some(tag)) } else { Ok(None) }
+}
+
+#[tauri::command]
+async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
+    // Find brew regardless of shell PATH
+    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .copied()
+        .ok_or("Homebrew not found")?;
+
+    let status = std::process::Command::new(brew)
+        .args(["upgrade", "--cask", "monotask", "--force"])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !status.success() {
+        return Err("brew upgrade failed".into());
+    }
+
+    // Clear Gatekeeper quarantine and self-sign
+    let _ = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("find /Applications/Monotask.app -print0 | xargs -0 xattr -c; codesign --force --deep --sign - /Applications/Monotask.app")
+        .status();
+
+    // Relaunch new version then exit
+    let _ = std::process::Command::new("open")
+        .args(["-n", "/Applications/Monotask.app"])
+        .spawn();
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    app.exit(0);
+    Ok(())
 }
