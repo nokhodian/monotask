@@ -137,7 +137,10 @@ fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
 
 fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
     use kanban_storage::space as sp;
-    let storage = state.storage.lock().unwrap();
+    let storage = match state.storage.lock() {
+        Ok(s) => s,
+        Err(_) => return kanban_core::space::MemberProfile::default(),
+    };
     let profile = sp::get_profile(storage.conn()).ok().flatten();
     kanban_core::space::MemberProfile {
         display_name: profile.as_ref()
@@ -168,20 +171,20 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
 /// Re-announce all spaces to the P2P network. Call after creating or joining a space.
 fn announce_all_spaces(state: &AppState) {
     let space_ids = {
-        let storage = state.storage.lock().unwrap();
+        let storage = match state.storage.lock() { Ok(s) => s, Err(_) => return };
         kanban_storage::space::list_spaces(storage.conn())
             .map(|v| v.into_iter().map(|s| s.id).collect::<Vec<_>>())
             .unwrap_or_default()
     };
     if space_ids.is_empty() { return; }
-    let net = state.net.lock().unwrap();
+    let net = match state.net.lock() { Ok(n) => n, Err(_) => return };
     if let Some(ref handle) = *net {
         handle.announce_spaces_sync(space_ids);
     }
 }
 
 fn trigger_board_sync(board_id: &str, state: &tauri::State<'_, AppState>) {
-    let net = state.net.lock().unwrap();
+    let net = match state.net.lock() { Ok(n) => n, Err(_) => return };
     if let Some(ref handle) = *net {
         handle.trigger_sync_sync(board_id.to_string());
     }
@@ -1353,7 +1356,7 @@ struct SyncPeerView {
 
 #[tauri::command]
 fn get_sync_status_cmd(state: tauri::State<AppState>) -> Vec<SyncPeerView> {
-    let net = state.net.lock().unwrap();
+    let net = match state.net.lock() { Ok(n) => n, Err(_) => return Vec::new() };
     let peers = net.as_ref().map(|h| h.get_peers_sync()).unwrap_or_default();
     peers.into_iter().map(|peer_id| SyncPeerView { peer_id }).collect()
 }
