@@ -159,6 +159,27 @@ pub fn run_migrations_v3(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn run_migrations_v4(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if version >= 4 {
+        return Ok(());
+    }
+    conn.execute_batch("
+        BEGIN;
+        CREATE INDEX IF NOT EXISTS idx_boards_system_modified
+            ON boards (is_system, last_modified DESC);
+        CREATE INDEX IF NOT EXISTS idx_card_search_card_space
+            ON card_search_index (card_id, space_id);
+        CREATE INDEX IF NOT EXISTS idx_space_boards_board_id
+            ON space_boards (board_id);
+        PRAGMA user_version = 4;
+        COMMIT;
+    ")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod space_schema_tests {
     use super::*;

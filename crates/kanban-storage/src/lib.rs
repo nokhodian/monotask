@@ -71,6 +71,7 @@ impl Storage {
         schema::run_migrations(&conn)?;
         schema::run_migrations_v2(&conn)?;
         schema::run_migrations_v3(&conn)?;
+        schema::run_migrations_v4(&conn)?;
         Ok(Self { conn })
     }
 
@@ -79,6 +80,7 @@ impl Storage {
         schema::run_migrations(&conn)?;
         schema::run_migrations_v2(&conn)?;
         schema::run_migrations_v3(&conn)?;
+        schema::run_migrations_v4(&conn)?;
         Ok(Self { conn })
     }
 
@@ -148,6 +150,24 @@ impl Storage {
     /// Resolve a card reference: tries card number index first, falls back to UUID passthrough.
     pub fn resolve_card_ref(&self, board_id: &str, card_ref: &str) -> Result<String, StorageError> {
         card_number::resolve_card_ref(&self.conn, board_id, card_ref)
+    }
+
+    pub fn delete_board(&self, board_id: &str) -> Result<(), StorageError> {
+        let tx = self.conn.unchecked_transaction().map_err(StorageError::Sqlite)?;
+        tx.execute(
+            "DELETE FROM card_search_index WHERE board_id = ?1",
+            rusqlite::params![board_id],
+        ).map_err(StorageError::Sqlite)?;
+        tx.execute(
+            "DELETE FROM card_number_index WHERE board_id = ?1",
+            rusqlite::params![board_id],
+        ).map_err(StorageError::Sqlite)?;
+        tx.execute(
+            "DELETE FROM boards WHERE board_id = ?1",
+            rusqlite::params![board_id],
+        ).map_err(StorageError::Sqlite)?;
+        tx.commit().map_err(StorageError::Sqlite)?;
+        Ok(())
     }
 
 }
