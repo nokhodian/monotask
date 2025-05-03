@@ -1157,6 +1157,8 @@ fn remove_board_from_space(space_id: String, board_id: String, state: tauri::Sta
         .map_err(|e| e.to_string())?;
     kanban_storage::space::remove_board(storage.conn(), &space_id, &board_id)
         .map_err(|e| e.to_string())?;
+    // Clean up the board's data and search index entries
+    storage.delete_board(&board_id).map_err(|e| e.to_string())?;
     drop(storage);
     announce_all_spaces(&state);
     Ok(())
