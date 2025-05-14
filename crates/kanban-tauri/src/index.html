@@ -3686,6 +3686,21 @@
 
   // Check on startup (after 3s delay so app is settled); checkForUpdate reschedules itself every hour
   window._updateCheckTimer = setTimeout(checkForUpdate, 3000);
+
+  // Listen for real-time P2P events from backend
+  if (window.__TAURI__ && window.__TAURI__.event) {
+    const { listen } = window.__TAURI__.event;
+    // On board sync, refresh the current board if it matches
+    listen('board-synced', (e) => {
+      const { board_id } = e.payload;
+      if (board_id === currentBoardId) {
+        loadBoardColumns(board_id).catch(() => {});
+      }
+    }).catch(() => {});
+    // On peer connect/disconnect, refresh sync status display
+    listen('peer-connected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
+    listen('peer-disconnected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
+  }
 </script>
 </body>
 </html>
