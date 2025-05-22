@@ -983,6 +983,26 @@
     }
     .update-overlay-msg { color: #8aca8a; font-size: 14px; }
     .update-overlay-sub { color: #4a6a4a; font-size: 11px; }
+    .search-result-item {
+      padding: 8px 16px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-radius: 4px;
+      margin: 2px 8px;
+    }
+    .search-result-item:hover, .search-result-item.selected {
+      background: #1e1e3a;
+    }
+    .search-result-title {
+      color: #d0d0f0;
+      font-size: 13px;
+    }
+    .search-result-sub {
+      color: #666;
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>
@@ -3799,6 +3819,132 @@
   // Check on startup (after 3s delay so app is settled); checkForUpdate reschedules itself every hour
   window._updateCheckTimer = setTimeout(checkForUpdate, 3000);
 
+  // ── Global Search Panel ──────────────────────────────────────────────────
+
+  function openSearch() {
+    const overlay = document.getElementById('search-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>';
+    document.getElementById('search-input').focus();
+  }
+
+  function closeSearch() {
+    document.getElementById('search-overlay').style.display = 'none';
+  }
+
+  // Close on overlay background click
+  document.getElementById('search-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('search-overlay')) closeSearch();
+  });
+
+  let _searchTimer = null;
+  let _searchSelected = -1;
+
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    clearTimeout(_searchTimer);
+    _searchSelected = -1;
+    _searchTimer = setTimeout(async () => {
+      const q = e.target.value.trim();
+      if (!q) {
+        document.getElementById('search-results').innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>';
+        return;
+      }
+      const results = await invoke('search_cards_cmd', { query: q });
+      const container = document.getElementById('search-results');
+      if (results.length === 0) {
+        container.innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">No cards found</div>';
+        return;
+      }
+      container.innerHTML = '';
+      results.forEach((r, i) => {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.dataset.index = i;
+        item.innerHTML = `<span class="search-result-title">${escapeHtml(r.title)}</span><span class="search-result-sub">${escapeHtml(r.column_name)}</span>`;
+        item.addEventListener('click', () => {
+          closeSearch();
+          if (r.board_id) {
+            navigateToBoard(r.board_id, r.card_id);
+          }
+        });
+        container.appendChild(item);
+      });
+    }, 250);
+  });
+
+  document.getElementById('search-input').addEventListener('keydown', (e) => {
+    const items = document.querySelectorAll('.search-result-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      _searchSelected = Math.min(_searchSelected + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      _searchSelected = Math.max(_searchSelected - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
+    } else if (e.key === 'Enter') {
+      if (_searchSelected >= 0 && items[_searchSelected]) {
+        items[_searchSelected].click();
+      }
+    } else if (e.key === 'Escape') {
+      closeSearch();
+    }
+  });
+
+  // Function to navigate to a board and open a card
+  async function navigateToBoard(boardId, cardId) {
+    await loadBoardColumns(boardId);
+    if (cardId) {
+      setTimeout(() => {
+        const cardEl = document.querySelector(`[data-card-id="${cardId}"]`);
+        if (cardEl) cardEl.click();
+      }, 300);
+    }
+  }
+
+  // ── Global Keyboard Shortcuts ─────────────────────────────────────────────
+
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+    // Cmd+K / Ctrl+K — open global search
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      openSearch();
+      return;
+    }
+
+    // Escape — close any open modal/panel
+    if (e.key === 'Escape' && !isTyping) {
+      // Close search overlay
+      if (document.getElementById('search-overlay').style.display !== 'none') {
+        closeSearch();
+        return;
+      }
+      // Close card detail modal
+      const cardModal = document.getElementById('modal-card-detail');
+      if (cardModal && cardModal.style.display !== 'none') {
+        closeModal('modal-card-detail');
+        return;
+      }
+      // Close net sync panel
+      const syncPanel = document.getElementById('net-sync-panel');
+      if (syncPanel && syncPanel.classList.contains('open')) {
+        closeNetSyncPanel();
+        return;
+      }
+    }
+
+    // N — new card (when a board is active and not typing)
+    if (e.key === 'n' && !isTyping && currentBoardId) {
+      e.preventDefault();
+      const firstAddBtn = document.querySelector('.btn-add-card');
+      if (firstAddBtn) firstAddBtn.click();
+    }
+  });
+
   // Listen for real-time P2P events from backend
   if (window.__TAURI__ && window.__TAURI__.event) {
     const { listen } = window.__TAURI__.event;
@@ -3814,5 +3960,21 @@
     listen('peer-disconnected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
   }
 </script>
+
+<!-- Global Search Panel -->
+<div id="search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:flex-start;justify-content:center;padding-top:80px;">
+  <div id="search-box" style="background:#16162a;border:1px solid #2a2a4a;border-radius:10px;width:560px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    <div style="padding:12px 16px;border-bottom:1px solid #2a2a4a;">
+      <input id="search-input" type="text" placeholder="Search cards..." autocomplete="off"
+        style="width:100%;background:transparent;border:none;outline:none;color:#e0e0f0;font-size:16px;">
+    </div>
+    <div id="search-results" style="max-height:360px;overflow-y:auto;padding:8px 0;">
+      <div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>
+    </div>
+    <div style="padding:8px 16px;border-top:1px solid #1a1a30;font-size:11px;color:#444;">
+      ↑↓ navigate &nbsp;·&nbsp; ↵ open &nbsp;·&nbsp; Esc close
+    </div>
+  </div>
+</div>
 </body>
 </html>

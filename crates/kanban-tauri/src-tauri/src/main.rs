@@ -1821,6 +1821,46 @@ fn get_mention_suggestions_cmd(
     Ok(results)
 }
 
+#[derive(serde::Serialize)]
+struct SearchResult {
+    card_id: String,
+    board_id: String,
+    title: String,
+    column_name: String,
+    space_id: String,
+}
+
+#[tauri::command]
+fn search_cards_cmd(
+    query: String,
+    state: tauri::State<AppState>,
+) -> Result<Vec<SearchResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let like = format!("%{}%", query.trim());
+    let mut stmt = storage.conn().prepare(
+        "SELECT card_id, board_id, title, column_name, space_id
+         FROM card_search_index
+         WHERE title LIKE ?1
+         LIMIT 30"
+    ).map_err(|e| e.to_string())?;
+    let results = stmt.query_map(
+        rusqlite::params![like],
+        |row| Ok(SearchResult {
+            card_id: row.get(0)?,
+            board_id: row.get(1)?,
+            title: row.get(2)?,
+            column_name: row.get(3)?,
+            space_id: row.get(4)?,
+        })
+    ).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(results)
+}
+
 #[tauri::command]
 fn find_card_board_cmd(space_id: String, card_id: String, state: tauri::State<AppState>) -> Result<Option<String>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -1969,6 +2009,7 @@ fn main() {
             edit_comment_cmd,
             get_mention_suggestions_cmd,
             find_card_board_cmd,
+            search_cards_cmd,
             check_for_update_cmd,
             install_update_cmd,
         ])
