@@ -49,7 +49,7 @@ fn build_swarm(identity_bytes: [u8; 32]) -> Result<Swarm<ComposedBehaviour>, Net
                 })
         })
         .map_err(|e| NetError::Libp2p(format!("{e:?}")))?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(24 * 3600)))
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(300)))
         .build();
 
     Ok(swarm)
@@ -324,7 +324,10 @@ async fn handle_swarm_event(
 
         SwarmEvent::ConnectionClosed { peer_id, .. } => {
             connected_peers.remove(&peer_id);
-            let _ = event_tx.send(NetEvent::PeerDisconnected { peer_id: peer_id.to_string() }).await;
+            // Prune sync states for this peer to prevent unbounded growth
+            let peer_str = peer_id.to_string();
+            sync_states.retain(|k, _| !k.contains(&peer_str));
+            let _ = event_tx.send(NetEvent::PeerDisconnected { peer_id: peer_str }).await;
         }
 
         SwarmEvent::Behaviour(ComposedBehaviourEvent::Sync(

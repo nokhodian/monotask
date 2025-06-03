@@ -40,7 +40,8 @@ async fn two_nodes_connect_and_emit_peer_connected() {
     let timeout = Duration::from_secs(10);
     let found = tokio::time::timeout(timeout, async {
         loop {
-            if let Ok(event) = node_a.event_rx.try_recv() {
+            let evt = node_a.event_rx.as_mut().and_then(|rx| rx.try_recv().ok());
+            if let Some(event) = evt {
                 if matches!(event, NetEvent::PeerConnected { .. }) {
                     return true;
                 }

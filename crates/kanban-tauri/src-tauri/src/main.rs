@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 use kanban_storage::Storage;
 use kanban_crypto::Identity;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 struct AppState {
     storage: Mutex<Storage>,
@@ -111,6 +111,17 @@ fn load_identity(
     Ok(id)
 }
 
+/// Validates that a user-supplied string field is non-empty and within reasonable length.
+fn validate_text(s: &str, field: &str, max_len: usize) -> Result<(), String> {
+    if s.trim().is_empty() {
+        return Err(format!("{} cannot be empty", field));
+    }
+    if s.len() > max_len {
+        return Err(format!("{} is too long (max {} bytes)", field, max_len));
+    }
+    Ok(())
+}
+
 // ── Space helpers ─────────────────────────────────────────────────────────────
 
 fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
@@ -137,7 +148,10 @@ fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
 
 fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
     use kanban_storage::space as sp;
-    let storage = state.storage.lock().unwrap();
+    let storage = match state.storage.lock() {
+        Ok(s) => s,
+        Err(_) => return kanban_core::space::MemberProfile::default(),
+    };
     let profile = sp::get_profile(storage.conn()).ok().flatten();
     kanban_core::space::MemberProfile {
         display_name: profile.as_ref()
@@ -168,23 +182,54 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
 /// Re-announce all spaces to the P2P network. Call after creating or joining a space.
 fn announce_all_spaces(state: &AppState) {
     let space_ids = {
-        let storage = state.storage.lock().unwrap();
+        let storage = match state.storage.lock() { Ok(s) => s, Err(_) => return };
         kanban_storage::space::list_spaces(storage.conn())
             .map(|v| v.into_iter().map(|s| s.id).collect::<Vec<_>>())
             .unwrap_or_default()
     };
     if space_ids.is_empty() { return; }
-    let net = state.net.lock().unwrap();
+    let net = match state.net.lock() { Ok(n) => n, Err(_) => return };
     if let Some(ref handle) = *net {
         handle.announce_spaces_sync(space_ids);
     }
 }
 
 fn trigger_board_sync(board_id: &str, state: &tauri::State<'_, AppState>) {
-    let net = state.net.lock().unwrap();
+    let net = match state.net.lock() { Ok(n) => n, Err(_) => return };
     if let Some(ref handle) = *net {
         handle.trigger_sync_sync(board_id.to_string());
     }
+}
+
+/// Push current board state onto undo stack before a mutation.
+/// Clears the redo stack for this board (new action invalidates redo history).
+fn push_undo(conn: &rusqlite::Connection, board_id: &str, actor_key: &str, action_tag: &str, doc_bytes: &[u8]) {
+    // Get next seq (max + 1)
+    let seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+        |r| r.get(0),
+    ).unwrap_or(1);
+    // Keep max 20 undo steps per board per user
+    let _ = conn.execute(
+        "DELETE FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq IN (
+            SELECT seq FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 ORDER BY seq ASC LIMIT MAX(0, (SELECT COUNT(*) FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2) - 19)
+         )",
+        rusqlite::params![board_id, actor_key],
+    );
+    let hlc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+    let _ = conn.execute(
+        "INSERT INTO undo_stack (board_id, actor_key, seq, action_tag, inverse_op, hlc) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![board_id, actor_key, seq, action_tag, doc_bytes, hlc],
+    );
+    // Clear redo for this board (new action invalidates redo history)
+    let _ = conn.execute(
+        "DELETE FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+    );
 }
 
 fn get_or_create_chat_doc(
@@ -216,6 +261,7 @@ fn get_or_create_chat_doc(
 
 #[tauri::command]
 fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView, String> {
+    validate_text(&name, "Space name", 200)?;
     let space_id = uuid::Uuid::new_v4().to_string();
     let owner_pubkey = state.identity.public_key_hex();
     let mut doc = kanban_core::space::create_space_doc(&name, &owner_pubkey)
@@ -269,6 +315,7 @@ struct CardView {
     checklist_total: usize,
     checklist_done: usize,
     cover_color: Option<String>,
+    priority: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -314,6 +361,7 @@ struct CardDetailView {
     history: Vec<MoveEvent>,
     checklists: Vec<ChecklistView>,
     cover_color: Option<String>,
+    priority: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -397,6 +445,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let last_move = history.into_iter().last();
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
+                    let priority = get_card_str_field(&doc, &cid, "priority");
                     let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
@@ -414,6 +463,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         checklist_total,
                         checklist_done,
                         cover_color,
+                        priority,
                     });
                 }
             }
@@ -510,6 +560,7 @@ fn get_column_card_ids(doc: &automerge::AutoCommit, col_id: &str) -> Vec<String>
 
 #[tauri::command]
 fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
+    validate_text(&title, "Column title", 200)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
@@ -599,6 +650,7 @@ fn move_card_cmd(
 
 #[tauri::command]
 fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
+    validate_text(&title, "Card title", 500)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
@@ -638,6 +690,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
     let labels = get_card_labels(&doc, &card_id);
     let assignee = get_card_str_field(&doc, &card_id, "assignee");
     let cover_color = get_card_str_field(&doc, &card_id, "cover_color");
+    let priority = get_card_str_field(&doc, &card_id, "priority");
     let history = get_card_history(&doc, &card_id);
     let comments = kanban_core::comment::list_comments(&doc, &card_id)
         .unwrap_or_default()
@@ -668,6 +721,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         history,
         checklists,
         cover_color,
+        priority,
     })
 }
 
@@ -681,12 +735,14 @@ fn update_card_cmd(
     due_date: Option<String>,
     assignee: Option<String>,
     cover_color: Option<String>,
+    priority: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     use automerge::{ReadDoc, ObjType, transaction::Transactable};
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
+    let pre_bytes = doc.save();
     let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
     doc.put(&card_obj, "title", title.as_str()).map_err(|e| e.to_string())?;
     doc.put(&card_obj, "description", description.as_str()).map_err(|e| e.to_string())?;
@@ -696,6 +752,8 @@ fn update_card_cmd(
     doc.put(&card_obj, "assignee", assignee_val).map_err(|e| e.to_string())?;
     let cover = cover_color.as_deref().unwrap_or("");
     doc.put(&card_obj, "cover_color", cover).map_err(|e| e.to_string())?;
+    let priority_val = priority.as_deref().unwrap_or("");
+    doc.put(&card_obj, "priority", priority_val).map_err(|e| e.to_string())?;
     // Replace labels list
     let labels_obj = match doc.get(&card_obj, "labels").map_err(|e| e.to_string())? {
         Some((_, id)) => id,
@@ -710,6 +768,7 @@ fn update_card_cmd(
     }
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "update_card", &pre_bytes);
     // Update card search index title
     let _ = storage.conn().execute(
         "UPDATE card_search_index SET title = ?1 WHERE card_id = ?2",
@@ -721,6 +780,7 @@ fn update_card_cmd(
 
 #[tauri::command]
 fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri::State<AppState>) -> Result<CommentView, String> {
+    validate_text(&text, "Comment", 10_000)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
@@ -747,13 +807,53 @@ fn delete_comment_cmd(board_id: String, card_id: String, comment_id: String, sta
 }
 
 #[tauri::command]
+fn edit_comment_cmd(
+    board_id: String,
+    card_id: String,
+    comment_id: String,
+    text: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    validate_text(&text, "Comment", 10_000)?;
+    use automerge::transaction::Transactable;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+    let comments = kanban_core::comment::get_comments_list(&doc, &card_obj).map_err(|e| e.to_string())?;
+    use automerge::ReadDoc;
+    let len = doc.length(&comments);
+    let mut found = false;
+    for i in 0..len {
+        if let Ok(Some((_, c_obj))) = doc.get(&comments, i) {
+            if let Ok(Some(id)) = kanban_core::get_string(&doc, &c_obj, "id") {
+                if id == comment_id {
+                    doc.put(&c_obj, "text", text.as_str()).map_err(|e| e.to_string())?;
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !found {
+        return Err(format!("Comment not found: {comment_id}"));
+    }
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
+}
+
+#[tauri::command]
 fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
+    let pre_bytes = doc.save();
     kanban_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "delete_card", &pre_bytes);
     // Remove from card search index
     let _ = storage.conn().execute(
         "DELETE FROM card_search_index WHERE card_id = ?1",
@@ -840,6 +940,7 @@ fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppSt
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
+    let pre_bytes = doc.save();
     let cols = match doc.get(automerge::ROOT, "columns").map_err(|e| e.to_string())? {
         Some((_, id)) => id,
         None => return Err("board has no columns".into()),
@@ -854,8 +955,106 @@ fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppSt
     doc.delete(&cols, idx).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "delete_column", &pre_bytes);
     trigger_board_sync(&board_id, &state);
     Ok(())
+}
+
+#[tauri::command]
+fn undo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, String> {
+    let actor_key = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let conn = storage.conn();
+
+    // Get most recent undo entry
+    let row: Option<(i64, String, Vec<u8>)> = conn.query_row(
+        "SELECT seq, action_tag, inverse_op FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 ORDER BY seq DESC LIMIT 1",
+        rusqlite::params![board_id, actor_key],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).ok();
+
+    let (seq, action_tag, prev_bytes) = match row {
+        None => return Ok(false), // nothing to undo
+        Some(r) => r,
+    };
+
+    // Save current board state to redo stack
+    let mut current_doc = kanban_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
+    let current_bytes = current_doc.save();
+    let redo_seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+        |r| r.get(0),
+    ).unwrap_or(1);
+    let hlc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+    let _ = conn.execute(
+        "INSERT INTO redo_stack (board_id, actor_key, seq, action_tag, forward_op, hlc) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![board_id, actor_key, redo_seq, action_tag, &current_bytes, hlc],
+    );
+
+    // Restore previous state
+    let mut prev_doc = automerge::AutoCommit::load(&prev_bytes).map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(conn, &board_id, &mut prev_doc).map_err(|e| e.to_string())?;
+
+    // Remove the undo entry
+    let _ = conn.execute(
+        "DELETE FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq = ?3",
+        rusqlite::params![board_id, actor_key, seq],
+    );
+
+    drop(storage);
+    trigger_board_sync(&board_id, &state);
+    Ok(true)
+}
+
+#[tauri::command]
+fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, String> {
+    let actor_key = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let conn = storage.conn();
+
+    let row: Option<(i64, String, Vec<u8>)> = conn.query_row(
+        "SELECT seq, action_tag, forward_op FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2 ORDER BY seq DESC LIMIT 1",
+        rusqlite::params![board_id, actor_key],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).ok();
+
+    let (seq, action_tag, forward_bytes) = match row {
+        None => return Ok(false),
+        Some(r) => r,
+    };
+
+    // Save current state back to undo stack
+    let mut current_doc = kanban_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
+    let current_bytes = current_doc.save();
+    let undo_seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+        |r| r.get(0),
+    ).unwrap_or(1);
+    let hlc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+    let _ = conn.execute(
+        "INSERT INTO undo_stack (board_id, actor_key, seq, action_tag, inverse_op, hlc) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![board_id, actor_key, undo_seq, "redo", &current_bytes, hlc],
+    );
+
+    let mut forward_doc = automerge::AutoCommit::load(&forward_bytes).map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(conn, &board_id, &mut forward_doc).map_err(|e| e.to_string())?;
+
+    let _ = conn.execute(
+        "DELETE FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq = ?3",
+        rusqlite::params![board_id, actor_key, seq],
+    );
+
+    drop(storage);
+    trigger_board_sync(&board_id, &state);
+    Ok(true)
 }
 
 #[tauri::command]
@@ -1154,6 +1353,8 @@ fn remove_board_from_space(space_id: String, board_id: String, state: tauri::Sta
         .map_err(|e| e.to_string())?;
     kanban_storage::space::remove_board(storage.conn(), &space_id, &board_id)
         .map_err(|e| e.to_string())?;
+    // Clean up the board's data and search index entries
+    storage.delete_board(&board_id).map_err(|e| e.to_string())?;
     drop(storage);
     announce_all_spaces(&state);
     Ok(())
@@ -1240,10 +1441,19 @@ fn update_my_profile(
     presence: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
+    if !display_name.is_empty() {
+        validate_text(&display_name, "Display name", 100)?;
+    }
     use base64::Engine;
-    let avatar_blob = avatar_b64.as_deref()
-        .filter(|s| !s.is_empty())
-        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok());
+    let avatar_blob = if let Some(b64) = avatar_b64.as_deref().filter(|s| !s.is_empty()) {
+        // base64 string for 512KB decoded = ~700KB encoded
+        if b64.len() > 700_000 {
+            return Err("Avatar is too large (max 512 KB)".into());
+        }
+        base64::engine::general_purpose::STANDARD.decode(b64).ok()
+    } else {
+        None
+    };
     let pubkey = state.identity.public_key_hex();
     let new_profile = kanban_core::space::UserProfile {
         pubkey: pubkey.clone(),
@@ -1353,7 +1563,7 @@ struct SyncPeerView {
 
 #[tauri::command]
 fn get_sync_status_cmd(state: tauri::State<AppState>) -> Vec<SyncPeerView> {
-    let net = state.net.lock().unwrap();
+    let net = match state.net.lock() { Ok(n) => n, Err(_) => return Vec::new() };
     let peers = net.as_ref().map(|h| h.get_peers_sync()).unwrap_or_default();
     peers.into_iter().map(|peer_id| SyncPeerView { peer_id }).collect()
 }
@@ -1608,6 +1818,45 @@ fn get_chat_messages_cmd(
     Ok(views)
 }
 
+#[tauri::command]
+fn delete_chat_message_cmd(
+    space_id: String,
+    message_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    use automerge::{ReadDoc, transaction::Transactable};
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = get_or_create_chat_doc(&storage, &space_id)?;
+    let (_, list_id) = doc.get(automerge::ROOT, "messages")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "chat missing messages list".to_string())?;
+    let len = doc.length(&list_id);
+    let mut found = false;
+    for i in 0..len {
+        if let Ok(Some((_, entry))) = doc.get(&list_id, i) {
+            if let Ok(Some(id)) = kanban_core::get_string(&doc, &entry, "id") {
+                if id == message_id {
+                    doc.put(&entry, "deleted", true).map_err(|e| e.to_string())?;
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !found {
+        return Err(format!("Message not found: {message_id}"));
+    }
+    let bytes = doc.save();
+    storage.save_board_bytes(&format!("{space_id}-chat"), &bytes, true)
+        .map_err(|e| e.to_string())?;
+    drop(storage);
+    let net = state.net.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = *net {
+        handle.trigger_sync_sync(format!("{space_id}-chat"));
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 struct MentionSuggestion {
     kind: String,     // "member" | "card" | "board"
@@ -1706,6 +1955,46 @@ fn get_mention_suggestions_cmd(
     Ok(results)
 }
 
+#[derive(serde::Serialize)]
+struct SearchResult {
+    card_id: String,
+    board_id: String,
+    title: String,
+    column_name: String,
+    space_id: String,
+}
+
+#[tauri::command]
+fn search_cards_cmd(
+    query: String,
+    state: tauri::State<AppState>,
+) -> Result<Vec<SearchResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let like = format!("%{}%", query.trim());
+    let mut stmt = storage.conn().prepare(
+        "SELECT card_id, board_id, title, column_name, space_id
+         FROM card_search_index
+         WHERE title LIKE ?1
+         LIMIT 30"
+    ).map_err(|e| e.to_string())?;
+    let results = stmt.query_map(
+        rusqlite::params![like],
+        |row| Ok(SearchResult {
+            card_id: row.get(0)?,
+            board_id: row.get(1)?,
+            title: row.get(2)?,
+            column_name: row.get(3)?,
+            space_id: row.get(4)?,
+        })
+    ).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(results)
+}
+
 #[tauri::command]
 fn find_card_board_cmd(space_id: String, card_id: String, state: tauri::State<AppState>) -> Result<Option<String>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -1755,9 +2044,38 @@ fn main() {
                 data_dir: data_dir.clone(),
                 bootstrap_peers: load_saved_peers(&data_dir),
             };
-            let net_handle = tauri::async_runtime::block_on(
+            let mut net_handle = tauri::async_runtime::block_on(
                 kanban_net::NetworkHandle::start(net_config, net_storage, identity_bytes)
             ).ok();
+
+            // Drain P2P network events and emit to frontend as Tauri events
+            let app_handle_for_events = app.app_handle().clone();
+            if let Some(ref mut handle) = net_handle {
+                if let Some(mut event_rx) = handle.take_event_rx() {
+                    tauri::async_runtime::spawn(async move {
+                        while let Some(event) = event_rx.recv().await {
+                            match event {
+                                kanban_net::NetEvent::BoardSynced { board_id, peer_id } => {
+                                    let _ = app_handle_for_events.emit("board-synced",
+                                        serde_json::json!({"board_id": board_id, "peer_id": peer_id}));
+                                }
+                                kanban_net::NetEvent::PeerConnected { peer_id } => {
+                                    let _ = app_handle_for_events.emit("peer-connected",
+                                        serde_json::json!({"peer_id": peer_id}));
+                                }
+                                kanban_net::NetEvent::PeerDisconnected { peer_id } => {
+                                    let _ = app_handle_for_events.emit("peer-disconnected",
+                                        serde_json::json!({"peer_id": peer_id}));
+                                }
+                                kanban_net::NetEvent::SyncError { board_id, error } => {
+                                    let _ = app_handle_for_events.emit("sync-error",
+                                        serde_json::json!({"board_id": board_id, "error": error}));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
 
             // Announce existing spaces so peers can find us immediately on startup.
             if let Some(ref handle) = net_handle {
@@ -1821,10 +2139,15 @@ fn main() {
             get_sync_info_cmd,
             send_chat_message_cmd,
             get_chat_messages_cmd,
+            delete_chat_message_cmd,
+            edit_comment_cmd,
             get_mention_suggestions_cmd,
             find_card_board_cmd,
+            search_cards_cmd,
             check_for_update_cmd,
             install_update_cmd,
+            undo_cmd,
+            redo_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
