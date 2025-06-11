@@ -578,7 +578,7 @@ fn process_incoming_sync(
     storage: &Arc<Mutex<Storage>>,
     sync_state: &mut automerge::sync::State,
 ) -> Result<Option<Vec<u8>>, crate::NetError> {
-    use automerge::{AutoCommit, ReadDoc, sync as am_sync};
+    use automerge::{AutoCommit, sync as am_sync};
     use am_sync::SyncDoc;
 
     let msg = am_sync::Message::decode(sync_message)
