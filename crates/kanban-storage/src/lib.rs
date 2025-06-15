@@ -72,6 +72,7 @@ impl Storage {
         schema::run_migrations_v2(&conn)?;
         schema::run_migrations_v3(&conn)?;
         schema::run_migrations_v4(&conn)?;
+        schema::run_migrations_v5(&conn)?;
         Ok(Self { conn })
     }
 
@@ -81,6 +82,7 @@ impl Storage {
         schema::run_migrations_v2(&conn)?;
         schema::run_migrations_v3(&conn)?;
         schema::run_migrations_v4(&conn)?;
+        schema::run_migrations_v5(&conn)?;
         Ok(Self { conn })
     }
 
