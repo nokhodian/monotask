@@ -199,6 +199,22 @@ pub fn run_migrations_v5(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn run_migrations_v6(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if version >= 6 {
+        return Ok(());
+    }
+    conn.execute_batch("
+        BEGIN;
+        ALTER TABLE boards ADD COLUMN cached_title TEXT;
+        PRAGMA user_version = 6;
+        COMMIT;
+    ")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod space_schema_tests {
     use super::*;
