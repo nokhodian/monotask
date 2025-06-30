@@ -983,6 +983,16 @@
     }
     .update-overlay-msg { color: #8aca8a; font-size: 14px; }
     .update-overlay-sub { color: #4a6a4a; font-size: 11px; }
+    .loading-spinner {
+      display: flex; align-items: center; justify-content: center;
+      padding: 40px; color: var(--text-muted, #888); font-size: 13px; gap: 10px;
+    }
+    .loading-spinner::before {
+      content: ''; width: 18px; height: 18px; border: 2px solid currentColor;
+      border-top-color: transparent; border-radius: 50%;
+      animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .search-result-item {
       padding: 8px 16px;
       cursor: pointer;
@@ -1525,6 +1535,30 @@
     okBtn.onclick = () => { cleanup(); if (onOk) onOk(); };
   }
 
+  function showLoading(container, msg) {
+    if (!container) return;
+    container.innerHTML = '<div class="loading-spinner">' + (msg || 'Loading\u2026') + '</div>';
+  }
+  function hideLoading(container) {
+    const el = container && container.querySelector('.loading-spinner');
+    if (el) el.remove();
+  }
+
+  function showToast(message, duration) {
+    duration = duration || 2000;
+    let toast = document.getElementById('toast-notification');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast-notification';
+      toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card-bg,#2a2a2a);color:var(--text,#eee);padding:10px 20px;border-radius:6px;font-size:13px;z-index:9999;box-shadow:0 2px 12px rgba(0,0,0,0.4);pointer-events:none;transition:opacity 0.3s;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+  }
+
   // ── Sidebar ────────────────────────────────────────────────────────────────
   // Track which spaces are expanded in the sidebar
   const expandedSpaces = new Set();
@@ -1644,6 +1678,8 @@
 
   async function refreshSpaceMain() {
     const spaceId = currentSpaceId;
+    const grid = document.getElementById('boards-grid');
+    showLoading(grid, 'Loading space\u2026');
     try {
       const space = await invoke('get_space_cmd', { spaceId });
       if (spaceId !== currentSpaceId) return;
@@ -1652,6 +1688,7 @@
       document.getElementById('space-main-name').textContent = space.name;
       renderBoardsGrid(space);
     } catch (e) {
+      hideLoading(grid);
       console.error('Failed to load space:', e);
     }
   }
@@ -1696,7 +1733,34 @@
   // ── Board view ─────────────────────────────────────────────────────────────
   async function openBoardView(boardId, title) {
     currentBoardId = boardId;
-    document.getElementById('board-view-title').textContent = title;
+    const boardTitleEl = document.getElementById('board-view-title');
+    boardTitleEl.textContent = title;
+    boardTitleEl.title = 'Double-click to rename';
+    boardTitleEl.style.cursor = 'pointer';
+    boardTitleEl.ondblclick = () => {
+      const currentTitle = boardTitleEl.textContent;
+      const input = document.createElement('input');
+      input.value = currentTitle;
+      input.style.cssText = 'font-size:inherit;font-weight:inherit;background:transparent;border:none;border-bottom:1px solid var(--accent);outline:none;width:240px;color:inherit;';
+      boardTitleEl.replaceWith(input);
+      input.focus();
+      input.select();
+      const save = async () => {
+        const v = input.value.trim();
+        if (v && v !== currentTitle) {
+          try {
+            await invoke('rename_board_cmd', { boardId: currentBoardId, newTitle: v });
+            allBoards[currentBoardId] = v;
+          } catch (err) { showAlert('Error renaming board: ' + err); }
+        }
+        openBoardView(currentBoardId, allBoards[currentBoardId] || currentTitle);
+      };
+      input.onblur = save;
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { openBoardView(currentBoardId, allBoards[currentBoardId] || currentTitle); }
+      };
+    };
     showView('board-view');
     // Highlight in sidebar
     document.querySelectorAll('.space-boards-sub li').forEach(li => {
@@ -1707,9 +1771,10 @@
 
   async function loadBoardColumns(boardId) {
     const area = document.getElementById('board-columns-area');
-    area.innerHTML = '';
+    showLoading(area, 'Loading board\u2026');
     try {
       const detail = await invoke('get_board_detail', { boardId });
+      area.innerHTML = '';
       for (const col of detail.columns) {
         area.appendChild(buildColumnEl(detail.id, col));
       }
@@ -3804,6 +3869,8 @@
   })();
 
   // ── Sync status polling ────────────────────────────────────────────────────
+  // Board view refresh is event-driven (board-synced) — poll only updates peer
+  // indicator and space/sidebar metadata (5s matches the net-sync panel interval).
   async function pollSyncStatus() {
     try {
       const peers = await invoke('get_sync_status_cmd');
@@ -3813,11 +3880,6 @@
       });
     } catch (e) { /* ignore */ }
 
-    // Auto-refresh current board view (picks up peer-synced cards/columns)
-    if (currentBoardId) {
-      try { await loadBoardColumns(currentBoardId); } catch (e) { /* ignore */ }
-    }
-
     // Auto-refresh space boards list + sidebar (picks up new/removed boards)
     if (currentSpaceId) {
       try { await refreshSpaceMain(); } catch (e) { /* ignore */ }
@@ -3825,7 +3887,7 @@
       if (sub) { try { await populateSpaceBoardsSub(sub, currentSpaceId); } catch (e) { /* ignore */ } }
     }
   }
-  window._syncStatusInterval = setInterval(pollSyncStatus, 4000);
+  window._syncStatusInterval = setInterval(pollSyncStatus, 5000);
   pollSyncStatus();
 
   // ── Auto-update ──────────────────────────────────────────────────────────
@@ -3965,7 +4027,7 @@
     if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey && currentBoardId) {
       e.preventDefault();
       invoke('undo_cmd', { boardId: currentBoardId }).then(success => {
-        if (success) loadBoardColumns(currentBoardId);
+        if (success) { loadBoardColumns(currentBoardId); showToast('Undone'); }
       }).catch(() => {});
       return;
     }
@@ -3976,7 +4038,7 @@
       if (!currentBoardId) return;
       e.preventDefault();
       invoke('redo_cmd', { boardId: currentBoardId }).then(success => {
-        if (success) loadBoardColumns(currentBoardId);
+        if (success) { loadBoardColumns(currentBoardId); showToast('Redone'); }
       }).catch(() => {});
       return;
     }
