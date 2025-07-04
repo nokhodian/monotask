@@ -583,6 +583,45 @@ fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppSta
 }
 
 #[tauri::command]
+fn rename_board_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    new_title: String,
+) -> Result<(), String> {
+    validate_text(&new_title, "Board title", 200)?;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::board::set_board_title(&mut doc, &new_title)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::set_cached_title(storage.conn(), &board_id, &new_title)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
+}
+
+#[tauri::command]
+fn rename_column_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    column_id: String,
+    new_title: String,
+) -> Result<(), String> {
+    validate_text(&new_title, "Column title", 200)?;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::column::rename_column_by_id(&mut doc, &column_id, &new_title)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
+}
+
+#[tauri::command]
 fn move_card_cmd(
     board_id: String,
     card_id: String,
@@ -2113,6 +2152,8 @@ fn main() {
             reorder_card_cmd,
             get_board_detail,
             create_column_cmd,
+            rename_board_cmd,
+            rename_column_cmd,
             create_card_cmd,
             get_card_cmd,
             update_card_cmd,

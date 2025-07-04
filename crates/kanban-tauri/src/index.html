@@ -1829,6 +1829,32 @@
     header.className = 'board-col-header';
     const titleSpan = document.createElement('span');
     titleSpan.textContent = col.title;
+    titleSpan.title = 'Double-click to rename';
+    titleSpan.style.cursor = 'pointer';
+    titleSpan.ondblclick = (e) => {
+      e.stopPropagation();
+      const currentName = titleSpan.textContent;
+      const input = document.createElement('input');
+      input.value = currentName;
+      input.style.cssText = 'font-size:inherit;font-weight:inherit;background:transparent;border:none;border-bottom:1px solid var(--accent);outline:none;width:140px;color:inherit;';
+      titleSpan.replaceWith(input);
+      input.focus();
+      input.select();
+      const save = async () => {
+        const v = input.value.trim();
+        if (v && v !== currentName) {
+          try {
+            await invoke('rename_column_cmd', { boardId, columnId: col.id, newTitle: v });
+          } catch (err) { showAlert('Error renaming column: ' + err); }
+        }
+        loadBoardColumns(boardId);
+      };
+      input.onblur = save;
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { loadBoardColumns(boardId); }
+      };
+    };
     const rightGroup = document.createElement('div');
     rightGroup.style.cssText = 'display:flex;align-items:center;gap:6px;';
     const countBadge = document.createElement('span');

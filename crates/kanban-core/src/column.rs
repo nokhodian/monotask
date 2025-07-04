@@ -40,6 +40,13 @@ pub fn rename_column(doc: &mut AutoCommit, col_obj: &automerge::ObjId, new_title
     Ok(())
 }
 
+pub fn rename_column_by_id(doc: &mut AutoCommit, col_id: &str, new_title: &str) -> Result<()> {
+    let col_obj = find_column_obj(doc, col_id)?
+        .ok_or_else(|| crate::Error::NotFound(format!("column {col_id}")))?;
+    doc.put(&col_obj, "title", new_title)?;
+    Ok(())
+}
+
 pub fn find_column_obj(doc: &AutoCommit, col_id: &str) -> Result<Option<automerge::ObjId>> {
     let cols = match doc.get(automerge::ROOT, "columns")? {
         Some((_, id)) => id,
