@@ -1177,6 +1177,11 @@
 
     <!-- Members tab -->
     <div id="tab-members" class="space-tab-content active">
+      <div id="space-rename-row" style="display:none;align-items:center;gap:10px;margin-bottom:16px;">
+        <label style="color:var(--text-muted,#888);min-width:90px;font-size:13px;">Space name:</label>
+        <input id="space-rename-input" type="text" maxlength="100" style="flex:1;background:var(--input-bg,#1a1a1a);border:1px solid var(--border,#333);color:var(--text,#eee);padding:6px 10px;border-radius:4px;font-size:13px;" />
+        <button id="btn-rename-space" class="btn btn-primary" style="padding:6px 14px;">Save</button>
+      </div>
       <ul id="space-members-list"></ul>
       <div id="space-danger-zone" style="display:none;" class="danger-zone">
         <div class="danger-zone-title">&#9888; Danger Zone</div>
@@ -2711,6 +2716,22 @@
     const isOwner = space.owner_pubkey === myPubkey;
     const ul = document.getElementById('space-members-list');
     ul.innerHTML = '';
+    // Show/hide rename row for owner only
+    const renameRow = document.getElementById('space-rename-row');
+    renameRow.style.display = isOwner ? 'flex' : 'none';
+    if (isOwner) {
+      const renameInput = document.getElementById('space-rename-input');
+      renameInput.value = space.name;
+      document.getElementById('btn-rename-space').onclick = async () => {
+        const v = renameInput.value.trim();
+        if (!v) return;
+        try {
+          await invoke('rename_space_cmd', { spaceId: currentSpaceId, newName: v });
+          document.getElementById('space-panel-name').textContent = v;
+          await loadSpacesSidebar();
+        } catch (e) { showAlert('Failed to rename space: ' + e); }
+      };
+    }
     // Show/hide danger zone for owner only
     const dangerZone = document.getElementById('space-danger-zone');
     dangerZone.style.display = isOwner ? 'block' : 'none';
