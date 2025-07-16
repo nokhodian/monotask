@@ -259,6 +259,8 @@ async fn run_inner(
                     identity_bytes,
                     event_tx,
                     &mut sync_states,
+                    &mut bootstrap_peer_addrs,
+                    &config.data_dir,
                 ).await;
             }
 
@@ -301,6 +303,8 @@ async fn handle_swarm_event(
     identity_bytes: [u8; 32],
     event_tx: &mpsc::Sender<NetEvent>,
     sync_states: &mut HashMap<String, automerge::sync::State>,
+    bootstrap_peer_addrs: &mut Vec<String>,
+    data_dir: &std::path::Path,
 ) {
     use libp2p::{identify, mdns, kad, request_response};
     match event {
@@ -329,7 +333,7 @@ async fn handle_swarm_event(
             }
         }
 
-        SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+        SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
             connected_peers.insert(peer_id);
             let _ = event_tx.send(NetEvent::PeerConnected { peer_id: peer_id.to_string() }).await;
             // H7: If we already know our spaces and haven't said hello to this peer yet,
@@ -339,6 +343,26 @@ async fn handle_swarm_event(
             if !my_spaces.is_empty() && !hello_sent_peers.contains(&peer_id) {
                 hello_sent_peers.insert(peer_id);
                 initiate_hello(swarm, storage, my_spaces, identity_bytes, peer_id);
+            }
+            // M8: Persist newly discovered peer addresses so they survive restarts.
+            let addr = match &endpoint {
+                libp2p::core::ConnectedPoint::Dialer { address, .. } => Some(address.clone()),
+                libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => Some(send_back_addr.clone()),
+            };
+            if let Some(addr) = addr {
+                let addr_str = addr.to_string();
+                if !bootstrap_peer_addrs.contains(&addr_str) {
+                    bootstrap_peer_addrs.push(addr_str.clone());
+                    let peers_file = data_dir.join("saved_peers.txt");
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(&peers_file)
+                    {
+                        use std::io::Write;
+                        let _ = writeln!(f, "{}", addr_str);
+                    }
+                }
             }
         }
 
@@ -478,6 +502,16 @@ async fn handle_swarm_event(
                 if provider != *swarm.local_peer_id() {
                     tracing::debug!("net: DHT found provider {provider}, dialing");
                     let _ = swarm.dial(provider);
+                }
+            }
+        }
+
+        // M9: Re-dial all known peers when a new listen address appears (network change).
+        SwarmEvent::NewListenAddr { address, .. } => {
+            eprintln!("NET: new listen addr {address}");
+            for addr_str in bootstrap_peer_addrs.iter() {
+                if let Ok(addr) = addr_str.parse::<libp2p::Multiaddr>() {
+                    let _ = swarm.dial(addr);
                 }
             }
         }
