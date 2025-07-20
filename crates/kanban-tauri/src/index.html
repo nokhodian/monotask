@@ -1013,6 +1013,18 @@
       color: #666;
       font-size: 11px;
     }
+    /* ── Board filter bar ──────────────────────────────────────────────── */
+    #board-filter-bar {
+      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+      background: var(--bg-secondary, #1e1e1e); border-bottom: 1px solid var(--border, #333);
+      flex-wrap: wrap;
+    }
+    #board-filter-bar label { color: var(--text-muted, #888); font-size: 12px; }
+    .filter-btn {
+      padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border, #333);
+      background: transparent; color: var(--text, #eee); font-size: 12px; cursor: pointer;
+    }
+    .filter-btn.active { background: var(--accent, #c8962a); border-color: var(--accent, #c8962a); color: #000; }
   </style>
 </head>
 <body>
@@ -1158,6 +1170,14 @@
         <button id="btn-back-to-space">&#8592;</button>
         <h2 id="board-view-title"></h2>
         <button id="btn-add-column">+ Column</button>
+      </div>
+      <div id="board-filter-bar" style="display:none;">
+        <label>Priority:</label>
+        <button class="filter-btn" data-filter="priority" data-value="high">🔴 High</button>
+        <button class="filter-btn" data-filter="priority" data-value="medium">🟡 Medium</button>
+        <button class="filter-btn" data-filter="priority" data-value="low">🟢 Low</button>
+        <button class="filter-btn" data-filter="priority" data-value="none" style="margin-left:8px;">None</button>
+        <button id="btn-clear-filter" class="filter-btn" style="margin-left:auto;display:none;">✕ Clear filter</button>
       </div>
       <div id="board-columns-area"></div>
     </div>
@@ -1767,6 +1787,12 @@
       };
     };
     showView('board-view');
+    // Show filter bar and reset filters on board open
+    document.getElementById('board-filter-bar').style.display = '';
+    _activeFilters = { priority: null };
+    document.querySelectorAll('.filter-btn.active').forEach(b => b.classList.remove('active'));
+    const clearBtn = document.getElementById('btn-clear-filter');
+    if (clearBtn) clearBtn.style.display = 'none';
     // Highlight in sidebar
     document.querySelectorAll('.space-boards-sub li').forEach(li => {
       li.classList.toggle('active', li.dataset.boardId === boardId);
@@ -1783,6 +1809,7 @@
       for (const col of detail.columns) {
         area.appendChild(buildColumnEl(detail.id, col));
       }
+      applyBoardFilters();
     } catch (e) {
       const isNotFound = String(e).includes('not found') || String(e).includes('NotFound');
       const wrap = document.createElement('div');
@@ -2010,6 +2037,7 @@
     li.className = 'kanban-card';
     li.dataset.cardId = card.id;
     li.dataset.colId = colId;
+    li.dataset.priority = card.priority || 'none';
 
     // Cover color stripe
     if (card.cover_color) {
@@ -4127,6 +4155,51 @@
   });
 
   // Listen for real-time P2P events from backend
+  // ── Board filter bar ──────────────────────────────────────────────────────
+  let _activeFilters = { priority: null }; // null = no filter
+
+  function applyBoardFilters() {
+    const cards = document.querySelectorAll('#board-columns-area .kanban-card');
+    cards.forEach(card => {
+      let show = true;
+      if (_activeFilters.priority) {
+        const cardPriority = card.dataset.priority || 'none';
+        show = cardPriority === _activeFilters.priority;
+      }
+      card.style.display = show ? '' : 'none';
+    });
+    const hasFilter = Object.values(_activeFilters).some(v => v !== null);
+    const clearBtn = document.getElementById('btn-clear-filter');
+    if (clearBtn) clearBtn.style.display = hasFilter ? '' : 'none';
+  }
+
+  function initBoardFilterBar() {
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+      btn.onclick = () => {
+        const filter = btn.dataset.filter;
+        const value = btn.dataset.value;
+        if (_activeFilters[filter] === value) {
+          _activeFilters[filter] = null; // toggle off
+          btn.classList.remove('active');
+        } else {
+          document.querySelectorAll('.filter-btn[data-filter="' + filter + '"]')
+            .forEach(b => b.classList.remove('active'));
+          _activeFilters[filter] = value;
+          btn.classList.add('active');
+        }
+        applyBoardFilters();
+      };
+    });
+    const clearBtn = document.getElementById('btn-clear-filter');
+    if (clearBtn) clearBtn.onclick = () => {
+      _activeFilters = { priority: null };
+      document.querySelectorAll('.filter-btn.active').forEach(b => b.classList.remove('active'));
+      applyBoardFilters();
+    };
+  }
+
+  initBoardFilterBar();
+
   if (window.__TAURI__ && window.__TAURI__.event) {
     const { listen } = window.__TAURI__.event;
     // On board sync, refresh the current board if it matches
