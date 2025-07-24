@@ -1056,7 +1056,7 @@
   </div>
   <div class="sidebar-header">
     <span>Spaces</span>
-    <button id="btn-new-space" title="New Space">+</button>
+    <button id="btn-new-space" title="New Space" aria-label="New Space">+</button>
   </div>
   <ul id="spaces-list"></ul>
   <div class="sidebar-footer">
@@ -1076,7 +1076,7 @@
   <div class="net-sync-box">
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <h3>&#128246; Network &amp; Sync</h3>
-      <button style="background:none;border:none;color:#555;cursor:pointer;font-size:12px;" id="btn-close-net-sync">Close &#215;</button>
+      <button style="background:none;border:none;color:#555;cursor:pointer;font-size:12px;" id="btn-close-net-sync" aria-label="Close Network &amp; Sync panel">Close &#215;</button>
     </div>
 
     <!-- Connected Peers -->
@@ -1167,9 +1167,10 @@
     <!-- Board view (columns) -->
     <div id="board-view">
       <div class="board-view-topbar">
-        <button id="btn-back-to-space">&#8592;</button>
+        <button id="btn-back-to-space" aria-label="Back to space">&#8592;</button>
         <h2 id="board-view-title"></h2>
         <button id="btn-add-column">+ Column</button>
+        <button id="btn-export-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Export board as JSON">&#8595; Export</button>
       </div>
       <div id="board-filter-bar" style="display:none;">
         <label>Priority:</label>
@@ -1394,7 +1395,7 @@
   <div class="modal-box" style="max-width:480px;">
     <div class="modal-header">
       <span>Profile</span>
-      <button id="btn-close-profile" class="modal-close">×</button>
+      <button id="btn-close-profile" class="modal-close" aria-label="Close">×</button>
     </div>
     <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:14px;">
       <!-- Avatar column -->
@@ -1492,7 +1493,7 @@
   <div class="chat-header">
     <span class="chat-header-title" id="chat-panel-title">Chat</span>
     <div class="chat-presence-dots" id="chat-presence-dots"></div>
-    <button class="chat-close-btn" onclick="toggleChatPanel()">×</button>
+    <button class="chat-close-btn" onclick="toggleChatPanel()" aria-label="Close chat">×</button>
   </div>
   <div class="chat-messages" id="chat-messages">
     <div class="chat-empty">No messages yet — send one to start the conversation.</div>
@@ -1800,6 +1801,21 @@
     await loadBoardColumns(boardId);
   }
 
+  async function exportBoard() {
+    try {
+      const json = await invoke('export_board_cmd', { boardId: currentBoardId });
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'board-export.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      showAlert('Export failed: ' + e);
+    }
+  }
+
   async function loadBoardColumns(boardId) {
     const area = document.getElementById('board-columns-area');
     showLoading(area, 'Loading board\u2026');
@@ -1895,6 +1911,7 @@
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-delete-col';
     delBtn.title = 'Delete column';
+    delBtn.setAttribute('aria-label', 'Delete column');
     delBtn.textContent = '×';
     delBtn.onclick = (e) => {
       e.stopPropagation();
@@ -2389,6 +2406,7 @@
         const delBtn = document.createElement('button');
         delBtn.className = 'btn-del-comment';
         delBtn.title = 'Delete comment';
+        delBtn.setAttribute('aria-label', 'Delete comment');
         delBtn.textContent = '×';
         delBtn.dataset.commentId = item.data.id;
         delBtn.onclick = async () => {
@@ -2405,6 +2423,7 @@
           const editBtn = document.createElement('button');
           editBtn.className = 'btn-del-comment';
           editBtn.title = 'Edit comment';
+          editBtn.setAttribute('aria-label', 'Edit comment');
           editBtn.textContent = '✎';
           editBtn.style.marginRight = '4px';
           editBtn.onclick = () => {
@@ -2581,6 +2600,7 @@
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-del-cl-item';
     delBtn.title = 'Delete item';
+    delBtn.setAttribute('aria-label', 'Delete checklist item');
     delBtn.textContent = '×';
     delBtn.onclick = async () => {
       try {
@@ -2932,6 +2952,8 @@
     if (e.key === 'Enter') document.getElementById('btn-add-column-confirm').click();
     if (e.key === 'Escape') closeModal('modal-add-column');
   };
+
+  document.getElementById('btn-export-board').onclick = () => exportBoard();
 
   // ── New Space modal ────────────────────────────────────────────────────────
   document.getElementById('btn-new-space').onclick = () => {
@@ -3289,6 +3311,7 @@
       const rm = document.createElement('button');
       rm.className = 'sync-peer-rm';
       rm.title = 'Remove';
+      rm.setAttribute('aria-label', 'Remove saved peer');
       rm.textContent = '×';
       rm.onclick = async () => {
         await invoke('remove_saved_peer_cmd', { addr });
@@ -3653,6 +3676,7 @@
         const delMsgBtn = document.createElement('button');
         delMsgBtn.className = 'btn-del-comment';
         delMsgBtn.title = 'Delete message';
+        delMsgBtn.setAttribute('aria-label', 'Delete message');
         delMsgBtn.textContent = '×';
         delMsgBtn.style.cssText = 'margin-left:auto;opacity:0.5;';
         delMsgBtn.onmouseenter = () => { delMsgBtn.style.opacity = '1'; };
