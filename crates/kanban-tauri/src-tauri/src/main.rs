@@ -388,6 +388,8 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
+    kanban_storage::board::set_cached_title(storage.conn(), &board.id, &title)
+        .map_err(|e| e.to_string())?;
     trigger_board_sync(&board.id, &state);
     drop(storage);
     announce_all_spaces(&state);
@@ -397,16 +399,12 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
 #[tauri::command]
 fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let ids = kanban_storage::board::list_board_ids(storage.conn())
+    let rows = kanban_storage::board::list_boards_with_titles(storage.conn())
         .map_err(|e| e.to_string())?;
-    let mut boards = Vec::with_capacity(ids.len());
-    for id in ids {
-        let title = kanban_storage::board::load_board(storage.conn(), &id)
-            .ok()
-            .and_then(|doc| kanban_core::board::get_board_title(&doc).ok())
-            .unwrap_or_else(|| id.clone());
-        boards.push(BoardSummary { id, title });
-    }
+    let boards = rows.into_iter().map(|(id, cached_title)| {
+        let title = cached_title.unwrap_or_else(|| id.clone());
+        BoardSummary { id, title }
+    }).collect();
     Ok(boards)
 }
 
@@ -441,7 +439,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
             if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
                 if !card.deleted && !card.archived {
                     let labels = get_card_labels(&doc, &cid);
-                    let history = get_card_history(&doc, &cid);
+                    let history: Vec<MoveEvent> = vec![];
                     let last_move = history.into_iter().last();
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
@@ -495,6 +493,72 @@ fn get_card_history(doc: &automerge::AutoCommit, card_id: &str) -> Vec<MoveEvent
             })
         })
         .collect()
+}
+
+#[tauri::command]
+fn get_card_history_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    card_id: String,
+) -> Result<Vec<MoveEvent>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    Ok(get_card_history(&doc, &card_id))
+}
+
+#[tauri::command]
+fn export_board_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+) -> Result<String, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let title = kanban_core::board::get_board_title(&doc)
+        .unwrap_or_else(|_| board_id.clone());
+    let columns = kanban_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let mut col_views = Vec::with_capacity(columns.len());
+    for col in &columns {
+        let card_ids = get_column_card_ids(&doc, &col.id);
+        let mut cards = Vec::new();
+        for cid in card_ids {
+            if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
+                if !card.deleted && !card.archived {
+                    let labels = get_card_labels(&doc, &cid);
+                    let history: Vec<MoveEvent> = vec![];
+                    let last_move = history.into_iter().last();
+                    let assignee = get_card_str_field(&doc, &cid, "assignee");
+                    let cover_color = get_card_str_field(&doc, &cid, "cover_color");
+                    let priority = get_card_str_field(&doc, &cid, "priority");
+                    let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
+                        .unwrap_or_default()
+                        .iter()
+                        .flat_map(|cl| cl.items.iter())
+                        .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
+                    cards.push(CardView {
+                        id: card.id.clone(),
+                        title: card.title,
+                        number: card.number.map(|n| n.to_display()),
+                        has_description: !card.description.is_empty(),
+                        due_date: card.due_date,
+                        assignee,
+                        labels,
+                        last_move,
+                        checklist_total,
+                        checklist_done,
+                        cover_color,
+                        priority,
+                    });
+                }
+            }
+        }
+        col_views.push(ColumnView { id: col.id.clone(), title: col.title.clone(), cards });
+    }
+    let detail = BoardDetail { id: board_id, title, columns: col_views };
+    // suppress unused mut warning — doc may be mutated by auto-column init in get_board_detail
+    let _ = &mut doc;
+    serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
 }
 
 fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<String> {
@@ -570,6 +634,45 @@ fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppSta
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(col_id)
+}
+
+#[tauri::command]
+fn rename_board_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    new_title: String,
+) -> Result<(), String> {
+    validate_text(&new_title, "Board title", 200)?;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::board::set_board_title(&mut doc, &new_title)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::set_cached_title(storage.conn(), &board_id, &new_title)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
+}
+
+#[tauri::command]
+fn rename_column_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    column_id: String,
+    new_title: String,
+) -> Result<(), String> {
+    validate_text(&new_title, "Column title", 200)?;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::column::rename_column_by_id(&mut doc, &column_id, &new_title)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1022,7 +1125,7 @@ fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
     ).ok();
 
-    let (seq, action_tag, forward_bytes) = match row {
+    let (seq, _action_tag, forward_bytes) = match row {
         None => return Ok(false),
         Some(r) => r,
     };
@@ -1396,6 +1499,24 @@ fn leave_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<()
         return Err("You are the owner — use Delete Space instead".to_string());
     }
     kanban_storage::space::delete_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_space_cmd(
+    space_id: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    validate_text(&new_name, "Space name", 100)?;
+    let my_pubkey = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())?;
+    if space.owner_pubkey != my_pubkey {
+        return Err("Only the space owner can rename the space".into());
+    }
+    kanban_storage::space::rename_space(storage.conn(), &space_id, &new_name)
         .map_err(|e| e.to_string())
 }
 
@@ -2103,6 +2224,8 @@ fn main() {
             reorder_card_cmd,
             get_board_detail,
             create_column_cmd,
+            rename_board_cmd,
+            rename_column_cmd,
             create_card_cmd,
             get_card_cmd,
             update_card_cmd,
@@ -2127,6 +2250,7 @@ fn main() {
             kick_member_cmd,
             delete_space_cmd,
             leave_space_cmd,
+            rename_space_cmd,
             get_my_profile,
             update_my_profile,
             import_ssh_key,
@@ -2148,6 +2272,8 @@ fn main() {
             install_update_cmd,
             undo_cmd,
             redo_cmd,
+            get_card_history_cmd,
+            export_board_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
