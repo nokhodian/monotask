@@ -2380,7 +2380,8 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
 
         if !mount_out.status.success() {
             let _ = tokio::fs::remove_file(&tmp_dmg).await;
-            return Err("Failed to mount DMG".into());
+            let stderr = String::from_utf8_lossy(&mount_out.stderr).to_string();
+            return Err(format!("Failed to mount DMG: {}", stderr.trim()));
         }
 
         let mount_point = String::from_utf8_lossy(&mount_out.stdout)
@@ -2390,9 +2391,14 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
             .ok_or("Could not determine DMG mount point")?
             .to_string();
 
-        // Step 4: Copy app to /Applications
+        // Step 4: Remove old bundle then copy new one.
+        // Removing first avoids permission issues with cp overwriting a locked bundle.
+        let _ = tokio::process::Command::new("rm")
+            .args(["-rf", "/Applications/Monotask.app"])
+            .status().await;
+
         let cp = tokio::process::Command::new("cp")
-            .args(["-rf", &format!("{}/Monotask.app", mount_point), "/Applications/"])
+            .args(["-r", &format!("{}/Monotask.app", mount_point), "/Applications/Monotask.app"])
             .status().await
             .map_err(|e| format!("cp failed: {e}"))?;
 
@@ -2403,7 +2409,7 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
         let _ = tokio::fs::remove_file(&tmp_dmg).await;
 
         if !cp.success() {
-            return Err("Failed to copy Monotask.app to /Applications".into());
+            return Err("Failed to copy Monotask.app to /Applications — you may need to drag-install manually from the DMG on the releases page.".into());
         }
 
         // Step 6: Clear Gatekeeper quarantine and ad-hoc sign
