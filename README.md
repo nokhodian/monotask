@@ -130,13 +130,29 @@ Grab the DMG from the [Releases page](https://github.com/nokhodian/monotask/rele
 | macOS Apple Silicon | `monotask-<version>-aarch64-apple-darwin.tar.gz` |
 | macOS Intel | `monotask-<version>-x86_64-apple-darwin.tar.gz` |
 | Linux x86_64 (musl) | `monotask-<version>-x86_64-linux.tar.gz` |
+| Windows x64 | `monotask-<version>-x86_64-windows.zip` |
 
 ```bash
-# Example: macOS Apple Silicon CLI
-curl -L https://github.com/nokhodian/monotask/releases/latest/download/monotask-v0.1.0-aarch64-apple-darwin.tar.gz | tar xz
+# macOS / Linux
+curl -L https://github.com/nokhodian/monotask/releases/latest/download/monotask-<version>-aarch64-apple-darwin.tar.gz | tar xz
 mv monotask /usr/local/bin/
 monotask --help
 ```
+
+```powershell
+# Windows (PowerShell)
+$ver = (Invoke-RestMethod https://api.github.com/repos/nokhodian/monotask/releases/latest).tag_name
+Invoke-WebRequest "https://github.com/nokhodian/monotask/releases/download/$ver/monotask-$ver-x86_64-windows.zip" -OutFile monotask.zip
+Expand-Archive monotask.zip -DestinationPath .
+# Move monotask.exe to a folder in your PATH, e.g.:
+Move-Item monotask.exe "$env:USERPROFILE\bin\monotask.exe"
+monotask --help
+```
+
+> **Windows PATH tip:** If `%USERPROFILE%\bin` isn't in your PATH yet, add it:
+> ```powershell
+> [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\bin", "User")
+> ```
 
 SHA-256 checksums are provided as `.sha256` sidecar files next to each download.
 
