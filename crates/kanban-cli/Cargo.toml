@@ -24,11 +24,10 @@ uuid           = { workspace = true }
 base64         = { workspace = true }
 rusqlite       = { workspace = true }
 tokio          = { workspace = true }
-libc           = { version = "0.2", optional = true }
+kanban-net     = { path = "../kanban-net" }
 
 [target.'cfg(unix)'.dependencies]
 libc           = "0.2"
-kanban-net     = { path = "../kanban-net" }
 
 [dev-dependencies]
 tempfile   = { workspace = true }
