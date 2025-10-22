@@ -1211,19 +1211,44 @@ fn embed_listen_addrs_in_doc(state: &AppState, space_id: &str) -> Result<Vec<u8>
     Ok(updated)
 }
 
-#[tauri::command]
-fn generate_invite(space_id: String, state: tauri::State<AppState>) -> Result<String, String> {
-    let doc_bytes = embed_listen_addrs_in_doc(&state, &space_id)?;
+/// Shared invite generation: builds a minimal doc (name + peer addrs only), signs the token.
+fn generate_invite_inner(space_id: &str, state: &AppState) -> Result<String, String> {
+    // Build a minimal doc with just the space name + peer addrs — NOT the full space doc.
+    // The rest syncs over P2P once connected. This keeps the token small enough for QR.
+    let listen_addrs = {
+        let net = state.net.lock().map_err(|e| e.to_string())?;
+        net.as_ref().map(|h| h.get_listen_addrs_sync()).unwrap_or_default()
+    };
+    let addrs: Vec<String> = listen_addrs.into_iter()
+        .filter(|a| !a.contains("/127.0.0.1/") && !a.contains("/::1/"))
+        .collect();
+    let space_name = {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+            .map_err(|e| e.to_string())?;
+        space.name
+    };
+    let mut mini_doc = kanban_core::space::create_space_doc(&space_name, &state.identity.public_key_hex())
+        .map_err(|e| e.to_string())?;
+    kanban_core::space::set_owner_peer_addrs(&mut mini_doc, &addrs)
+        .map_err(|e| e.to_string())?;
+    let mini_bytes = mini_doc.save();
+
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
-    let token = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&doc_bytes))
+    let token = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&mini_bytes))
         .map_err(|e| e.to_string())?;
     let meta = kanban_crypto::verify_invite_token_signature(&token)
         .map_err(|e| e.to_string())?;
     kanban_storage::space::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)
         .map_err(|e| e.to_string())?;
     Ok(token)
+}
+
+#[tauri::command]
+fn generate_invite(space_id: String, state: tauri::State<AppState>) -> Result<String, String> {
+    generate_invite_inner(&space_id, &state)
 }
 
 #[tauri::command]
@@ -1235,32 +1260,17 @@ fn revoke_invite(space_id: String, state: tauri::State<AppState>) -> Result<(), 
 
 #[tauri::command]
 fn export_invite_file(space_id: String, path: String, state: tauri::State<AppState>) -> Result<(), String> {
-    // Embed listen addrs before generating the token
-    let _ = embed_listen_addrs_in_doc(&state, &space_id)?;
-    // Inline token generation (State<AppState> does not implement Clone, so we can't call generate_invite())
-    let (token, space_name, doc_bytes) = {
+    // The .space file contains the token + space name. No full doc needed — data syncs via P2P.
+    let token = generate_invite_inner(&space_id, &state)?;
+    let space_name = {
         let storage = state.storage.lock().map_err(|e| e.to_string())?;
-        // Revoke existing + generate fresh token
-        kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
-            .map_err(|e| e.to_string())?;
-        let bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
-            .map_err(|e| e.to_string())?;
-        let tok = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&bytes))
-            .map_err(|e| e.to_string())?;
-        let meta = kanban_crypto::verify_invite_token_signature(&tok)
-            .map_err(|e| e.to_string())?;
-        kanban_storage::space::insert_invite(storage.conn(), &meta.token_hash, &tok, &space_id, None)
-            .map_err(|e| e.to_string())?;
         let space = kanban_storage::space::get_space(storage.conn(), &space_id)
             .map_err(|e| e.to_string())?;
-        (tok, space.name, bytes)
+        space.name
     };
-    use base64::Engine;
-    let space_doc_b64 = base64::engine::general_purpose::STANDARD.encode(&doc_bytes);
     let payload = serde_json::json!({
         "token": token,
         "space_name": space_name,
-        "space_doc": space_doc_b64,
     });
     std::fs::write(&path, serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
