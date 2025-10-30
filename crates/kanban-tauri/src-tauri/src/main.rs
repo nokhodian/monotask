@@ -2384,7 +2384,7 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
 
         // Step 3: Mount the DMG
         let mount_out = tokio::process::Command::new("hdiutil")
-            .args(["attach", "-nobrowse", "-quiet", &tmp_dmg])
+            .args(["attach", "-nobrowse", &tmp_dmg])
             .output().await
             .map_err(|e| format!("hdiutil attach failed: {e}"))?;
 
