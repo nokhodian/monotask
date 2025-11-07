@@ -1025,6 +1025,7 @@
       background: transparent; color: var(--text, #eee); font-size: 12px; cursor: pointer;
     }
     .filter-btn.active { background: var(--accent, #c8962a); border-color: var(--accent, #c8962a); color: #000; }
+    .kanban-card.filtered-out { display: none !important; }
   </style>
 </head>
 <body>
@@ -4191,6 +4192,7 @@
   function applyBoardFilters() {
     const cards = document.querySelectorAll('#board-columns-area .kanban-card');
     const hasFilter = Object.values(_activeFilters).some(v => v !== null);
+    let total = cards.length;
     let visibleCount = 0;
     cards.forEach(card => {
       let show = true;
@@ -4198,15 +4200,28 @@
         const cardPriority = card.dataset.priority || 'none';
         show = cardPriority === _activeFilters.priority;
       }
-      card.style.display = show ? '' : 'none';
-      if (show) visibleCount++;
+      // Use CSS class with !important instead of inline display — more reliable in flex/WebView
+      if (show) {
+        card.classList.remove('filtered-out');
+        visibleCount++;
+      } else {
+        card.classList.add('filtered-out');
+      }
     });
+    // Show/hide clear button + count
     const clearBtn = document.getElementById('btn-clear-filter');
-    if (clearBtn) clearBtn.style.display = hasFilter ? '' : 'none';
+    if (clearBtn) {
+      if (hasFilter) {
+        clearBtn.style.display = '';
+        clearBtn.textContent = 'Clear (' + visibleCount + '/' + total + ')';
+      } else {
+        clearBtn.style.display = 'none';
+      }
+    }
     // Show "no cards match" hint per column when filter active
     document.querySelectorAll('#board-columns-area .board-col-cards').forEach(ul => {
       let hint = ul.querySelector('.filter-empty-hint');
-      const visibleInCol = ul.querySelectorAll('.kanban-card:not([style*="display: none"])').length;
+      const visibleInCol = ul.querySelectorAll('.kanban-card:not(.filtered-out)').length;
       if (hasFilter && visibleInCol === 0) {
         if (!hint) {
           hint = document.createElement('li');
