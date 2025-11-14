@@ -4236,32 +4236,39 @@
     });
   }
 
-  function initBoardFilterBar() {
-    document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
-      btn.onclick = () => {
-        const filter = btn.dataset.filter;
-        const value = btn.dataset.value;
-        if (_activeFilters[filter] === value) {
-          _activeFilters[filter] = null; // toggle off
-          btn.classList.remove('active');
-        } else {
-          document.querySelectorAll('.filter-btn[data-filter="' + filter + '"]')
-            .forEach(b => b.classList.remove('active'));
-          _activeFilters[filter] = value;
-          btn.classList.add('active');
-        }
-        applyBoardFilters();
-      };
-    });
-    const clearBtn = document.getElementById('btn-clear-filter');
-    if (clearBtn) clearBtn.onclick = () => {
-      _activeFilters = { priority: null };
-      document.querySelectorAll('.filter-btn.active').forEach(b => b.classList.remove('active'));
-      applyBoardFilters();
-    };
-  }
+  // Use event delegation on the filter bar — more reliable than .onclick in WKWebView
+  (function initBoardFilterBar() {
+    const bar = document.getElementById('board-filter-bar');
+    if (!bar) return;
+    bar.addEventListener('click', function(e) {
+      const btn = e.target.closest('.filter-btn');
+      if (!btn) return;
 
-  initBoardFilterBar();
+      // Clear button
+      if (btn.id === 'btn-clear-filter') {
+        _activeFilters = { priority: null };
+        bar.querySelectorAll('.filter-btn.active').forEach(b => b.classList.remove('active'));
+        applyBoardFilters();
+        return;
+      }
+
+      // Filter toggle
+      const filter = btn.dataset.filter;
+      const value = btn.dataset.value;
+      if (!filter || !value) return;
+
+      if (_activeFilters[filter] === value) {
+        _activeFilters[filter] = null;
+        btn.classList.remove('active');
+      } else {
+        bar.querySelectorAll('.filter-btn[data-filter="' + filter + '"]')
+          .forEach(b => b.classList.remove('active'));
+        _activeFilters[filter] = value;
+        btn.classList.add('active');
+      }
+      applyBoardFilters();
+    });
+  })();
 
   if (window.__TAURI__ && window.__TAURI__.event) {
     const { listen } = window.__TAURI__.event;
