@@ -1013,19 +1013,6 @@
       color: #666;
       font-size: 11px;
     }
-    /* ── Board filter bar ──────────────────────────────────────────────── */
-    #board-filter-bar {
-      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
-      background: var(--bg-secondary, #1e1e1e); border-bottom: 1px solid var(--border, #333);
-      flex-wrap: wrap;
-    }
-    #board-filter-bar label { color: var(--text-muted, #888); font-size: 12px; }
-    .filter-btn {
-      padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border, #333);
-      background: transparent; color: var(--text, #eee); font-size: 12px; cursor: pointer;
-    }
-    .filter-btn.active { background: var(--accent, #c8962a); border-color: var(--accent, #c8962a); color: #000; }
-    .kanban-card.filtered-out { display: none !important; }
   </style>
 </head>
 <body>
@@ -1173,14 +1160,7 @@
         <button id="btn-add-column">+ Column</button>
         <button id="btn-export-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Export board as JSON">&#8595; Export</button>
       </div>
-      <div id="board-filter-bar" style="display:none;">
-        <label>Priority:</label>
-        <button class="filter-btn" onclick="togglePriorityFilter('high', this)">🔴 High</button>
-        <button class="filter-btn" onclick="togglePriorityFilter('medium', this)">🟡 Medium</button>
-        <button class="filter-btn" onclick="togglePriorityFilter('low', this)">🟢 Low</button>
-        <button class="filter-btn" onclick="togglePriorityFilter('none', this)" style="margin-left:8px;">None</button>
-        <button id="btn-clear-filter" class="filter-btn" onclick="clearPriorityFilter()" style="margin-left:auto;display:none;">✕ Clear filter</button>
-      </div>
+      <!-- priority filter bar removed -->
       <div id="board-columns-area"></div>
     </div>
   </div>
@@ -1516,7 +1496,6 @@
   let allBoards = {};
   let currentSpaceName = '';
   let lastSyncInfo = null;
-  let _activeFilters = { priority: null };
 
   // ── View switcher ──────────────────────────────────────────────────────────
   // views: 'dashboard' | 'space-main' | 'board-view' | 'space-settings'
@@ -1790,10 +1769,6 @@
       };
     };
     showView('board-view');
-    // Show filter bar and reset filters on board open
-    document.getElementById('board-filter-bar').style.display = '';
-    _activeFilters = { priority: null };
-    document.querySelectorAll('.filter-btn.active').forEach(b => b.classList.remove('active'));
     const clearBtn = document.getElementById('btn-clear-filter');
     if (clearBtn) clearBtn.style.display = 'none';
     // Highlight in sidebar
@@ -1827,7 +1802,6 @@
       for (const col of detail.columns) {
         area.appendChild(buildColumnEl(detail.id, col));
       }
-      applyBoardFilters();
     } catch (e) {
       const isNotFound = String(e).includes('not found') || String(e).includes('NotFound');
       const wrap = document.createElement('div');
@@ -4189,73 +4163,6 @@
   // Listen for real-time P2P events from backend
   // ── Board filter bar ──────────────────────────────────────────────────────
 
-  function applyBoardFilters() {
-    const cards = document.querySelectorAll('#board-columns-area .kanban-card');
-    const hasFilter = Object.values(_activeFilters).some(v => v !== null);
-    let total = cards.length;
-    let visibleCount = 0;
-    cards.forEach(card => {
-      let show = true;
-      if (_activeFilters.priority) {
-        const cardPriority = card.dataset.priority || 'none';
-        show = cardPriority === _activeFilters.priority;
-      }
-      // Use CSS class with !important instead of inline display — more reliable in flex/WebView
-      if (show) {
-        card.classList.remove('filtered-out');
-        visibleCount++;
-      } else {
-        card.classList.add('filtered-out');
-      }
-    });
-    // Show/hide clear button + count
-    const clearBtn = document.getElementById('btn-clear-filter');
-    if (clearBtn) {
-      if (hasFilter) {
-        clearBtn.style.display = '';
-        clearBtn.textContent = 'Clear (' + visibleCount + '/' + total + ')';
-      } else {
-        clearBtn.style.display = 'none';
-      }
-    }
-    // Show "no cards match" hint per column when filter active
-    document.querySelectorAll('#board-columns-area .board-col-cards').forEach(ul => {
-      let hint = ul.querySelector('.filter-empty-hint');
-      const visibleInCol = ul.querySelectorAll('.kanban-card:not(.filtered-out)').length;
-      if (hasFilter && visibleInCol === 0) {
-        if (!hint) {
-          hint = document.createElement('li');
-          hint.className = 'filter-empty-hint';
-          hint.style.cssText = 'color:#666;font-size:11px;padding:12px 8px;text-align:center;list-style:none;';
-          hint.textContent = 'No cards match filter';
-          ul.appendChild(hint);
-        }
-      } else if (hint) {
-        hint.remove();
-      }
-    });
-  }
-
-  // Global functions for inline onclick — WKWebView handles these reliably
-  window.togglePriorityFilter = function(value, btn) {
-    if (_activeFilters.priority === value) {
-      _activeFilters.priority = null;
-      btn.classList.remove('active');
-    } else {
-      document.querySelectorAll('#board-filter-bar .filter-btn.active')
-        .forEach(b => b.classList.remove('active'));
-      _activeFilters.priority = value;
-      btn.classList.add('active');
-    }
-    applyBoardFilters();
-  };
-
-  window.clearPriorityFilter = function() {
-    _activeFilters = { priority: null };
-    document.querySelectorAll('#board-filter-bar .filter-btn.active')
-      .forEach(b => b.classList.remove('active'));
-    applyBoardFilters();
-  };
 
   if (window.__TAURI__ && window.__TAURI__.event) {
     const { listen } = window.__TAURI__.event;
