@@ -9,6 +9,9 @@ pub mod comment;
 pub mod migration;
 pub mod space;
 
+pub use board::rename_board;
+pub use column::{delete_column, rename_column_by_id};
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]

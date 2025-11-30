@@ -80,6 +80,31 @@ pub fn append_card_to_column(doc: &mut AutoCommit, col_id: &str, card_id: &str) 
     Ok(())
 }
 
+pub fn delete_column(doc: &mut AutoCommit, col_id: &str) -> Result<()> {
+    // Set tombstone on the column object
+    let col_obj = find_column_obj(doc, col_id)?
+        .ok_or_else(|| crate::Error::NotFound(format!("column {col_id}")))?;
+    doc.put(&col_obj, "deleted", true)?;
+
+    // Remove the column entry from the root "columns" list
+    let cols = match doc.get(automerge::ROOT, "columns")? {
+        Some((_, id)) => id,
+        None => return Ok(()),
+    };
+    let len = doc.length(&cols);
+    for i in 0..len {
+        if let Some((_, obj)) = doc.get(&cols, i)? {
+            if let Ok(Some(id)) = crate::get_string(doc, &obj, "id") {
+                if id == col_id {
+                    doc.delete(&cols, i)?;
+                    break;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn reorder_card_in_column(doc: &mut AutoCommit, col_id: &str, card_id: &str, new_index: usize) -> Result<()> {
     let col_obj = find_column_obj(doc, col_id)?
         .ok_or_else(|| crate::Error::NotFound(format!("column {col_id}")))?;
@@ -96,6 +121,30 @@ pub fn reorder_card_in_column(doc: &mut AutoCommit, col_id: &str, card_id: &str,
     doc.delete(&card_ids, old_idx)?;
     let insert_idx = new_index.min(doc.length(&card_ids));
     doc.insert(&card_ids, insert_idx, card_id)?;
+    Ok(())
+}
+
+pub fn move_card(doc: &mut AutoCommit, card_id: &str, from_col_id: &str, to_col_id: &str) -> Result<()> {
+    // Remove from source column
+    let from_col_obj = find_column_obj(doc, from_col_id)?
+        .ok_or_else(|| crate::Error::NotFound(format!("column {from_col_id}")))?;
+    let from_card_ids = get_card_ids_list(doc, &from_col_obj)?;
+    let len = doc.length(&from_card_ids);
+    let old_idx = (0..len).find(|&i| {
+        doc.get(&from_card_ids, i).ok().flatten()
+            .and_then(|(v, _)| if let automerge::Value::Scalar(s) = v {
+                if let automerge::ScalarValue::Str(t) = s.as_ref() { Some(t.to_string()) } else { None }
+            } else { None })
+            .as_deref() == Some(card_id)
+    }).ok_or_else(|| crate::Error::NotFound(format!("card {card_id} in column {from_col_id}")))?;
+    doc.delete(&from_card_ids, old_idx)?;
+
+    // Append to destination column
+    let to_col_obj = find_column_obj(doc, to_col_id)?
+        .ok_or_else(|| crate::Error::NotFound(format!("column {to_col_id}")))?;
+    let to_card_ids = get_card_ids_list(doc, &to_col_obj)?;
+    let idx = doc.length(&to_card_ids);
+    doc.insert(&to_card_ids, idx, card_id)?;
     Ok(())
 }
 

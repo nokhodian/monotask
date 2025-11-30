@@ -8,6 +8,8 @@ pub struct Card {
     pub number: Option<crate::card_number::CardNumber>,
     pub title: String,
     pub description: String,
+    pub cover_color: Option<String>,
+    pub priority: String,
     pub assignees: Vec<String>,
     pub labels: Vec<String>,
     pub due_date: Option<String>,
@@ -104,6 +106,9 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
     let created_at = crate::get_string(doc, &card_obj, "created_at")?.unwrap_or_default();
     let created_by = crate::get_string(doc, &card_obj, "created_by")?.unwrap_or_default();
     let due_date = crate::get_string(doc, &card_obj, "due_date")?;
+    let cover_color = crate::get_string(doc, &card_obj, "cover_color")?
+        .and_then(|s| if s.is_empty() { None } else { Some(s) });
+    let priority = crate::get_string(doc, &card_obj, "priority")?.unwrap_or_default();
     let number_str = crate::get_string(doc, &card_obj, "number")?;
     let number = number_str.and_then(|s| s.parse::<crate::card_number::CardNumber>().ok());
     let deleted = match doc.get(&card_obj, "deleted")? {
@@ -114,16 +119,50 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         Some((automerge::Value::Scalar(s), _)) => matches!(s.as_ref(), automerge::ScalarValue::Boolean(true)),
         _ => false,
     };
+    // Read assignees list
+    let assignees = match doc.get(&card_obj, "assignees")? {
+        Some((_, list_id)) => {
+            let mut v = Vec::new();
+            for i in 0..doc.length(&list_id) {
+                if let Some((automerge::Value::Scalar(s), _)) = doc.get(&list_id, i)? {
+                    if let automerge::ScalarValue::Str(text) = s.as_ref() {
+                        v.push(text.to_string());
+                    }
+                }
+            }
+            v
+        }
+        None => vec![],
+    };
+    // Read labels list
+    let labels = match doc.get(&card_obj, "labels")? {
+        Some((_, list_id)) => {
+            let mut v = Vec::new();
+            for i in 0..doc.length(&list_id) {
+                if let Some((automerge::Value::Scalar(s), _)) = doc.get(&list_id, i)? {
+                    if let automerge::ScalarValue::Str(text) = s.as_ref() {
+                        v.push(text.to_string());
+                    }
+                }
+            }
+            v
+        }
+        None => vec![],
+    };
     Ok(Card {
         id: card_id.to_string(),
         title,
         description,
+        cover_color,
+        priority,
         created_at,
         created_by,
         due_date,
         deleted,
         archived,
         number,
+        assignees,
+        labels,
         ..Default::default()
     })
 }
@@ -266,6 +305,110 @@ pub fn copy_card(
         created_by: hex::encode(actor_pk),
         ..Default::default()
     })
+}
+
+pub fn set_description(doc: &mut AutoCommit, card_id: &str, text: &str) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "description", text)?;
+    Ok(())
+}
+
+pub fn set_cover_color(doc: &mut AutoCommit, card_id: &str, color: &str) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "cover_color", color)?;
+    Ok(())
+}
+
+pub fn set_due_date(doc: &mut AutoCommit, card_id: &str, due_date: Option<&str>) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "due_date", due_date.unwrap_or(""))?;
+    Ok(())
+}
+
+pub fn set_priority(doc: &mut AutoCommit, card_id: &str, priority: &str) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "priority", priority)?;
+    Ok(())
+}
+
+pub fn add_label(doc: &mut AutoCommit, card_id: &str, label: &str) -> Result<()> {
+    let card_obj = crate::card::get_card_obj(doc, card_id)?;
+    let labels = match doc.get(&card_obj, "labels")? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::InvalidDocument("card missing labels list".into())),
+    };
+    // Check if already present
+    for i in 0..doc.length(&labels) {
+        if let Some((automerge::Value::Scalar(s), _)) = doc.get(&labels, i)? {
+            if let automerge::ScalarValue::Str(text) = s.as_ref() {
+                if text.as_str() == label {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    let idx = doc.length(&labels);
+    doc.insert(&labels, idx, label)?;
+    Ok(())
+}
+
+pub fn remove_label(doc: &mut AutoCommit, card_id: &str, label: &str) -> Result<()> {
+    let card_obj = crate::card::get_card_obj(doc, card_id)?;
+    let labels = match doc.get(&card_obj, "labels")? {
+        Some((_, id)) => id,
+        None => return Ok(()),
+    };
+    let mut to_delete: Vec<usize> = Vec::new();
+    for i in 0..doc.length(&labels) {
+        if let Some((automerge::Value::Scalar(s), _)) = doc.get(&labels, i)? {
+            if let automerge::ScalarValue::Str(text) = s.as_ref() {
+                if text.as_str() == label {
+                    to_delete.push(i);
+                }
+            }
+        }
+    }
+    // Delete in reverse order to preserve indices
+    for i in to_delete.into_iter().rev() {
+        doc.delete(&labels, i)?;
+    }
+    Ok(())
+}
+
+pub fn archive_card(doc: &mut AutoCommit, card_id: &str) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "archived", true)?;
+    Ok(())
+}
+
+pub fn set_assignee(doc: &mut AutoCommit, card_id: &str, pubkey_hex: &str) -> Result<()> {
+    let card_obj = crate::card::get_card_obj(doc, card_id)?;
+    // Replace assignees list entirely
+    let assignees = doc.put_object(&card_obj, "assignees", ObjType::List)?;
+    if !pubkey_hex.is_empty() {
+        doc.insert(&assignees, 0, pubkey_hex)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

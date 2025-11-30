@@ -72,23 +72,48 @@ enum Commands {
 enum BoardCommands {
     Create { title: String, #[arg(long)] json: bool },
     List { #[arg(long)] json: bool },
+    Rename { board_id: String, new_title: String, #[arg(long)] json: bool },
 }
 
 #[derive(Subcommand)]
 enum ColumnCommands {
     Create { board_id: String, title: String, #[arg(long)] json: bool },
     List { board_id: String, #[arg(long)] json: bool },
+    Rename { board_id: String, col_id: String, new_title: String, #[arg(long)] json: bool },
+    Delete { board_id: String, col_id: String, #[arg(long)] json: bool },
 }
 
 #[derive(Subcommand)]
 enum CardCommands {
     Create { board_id: String, col_id: String, title: String, #[arg(long)] json: bool },
     View { board_id: String, card_id: String, #[arg(long)] json: bool },
+    Rename { board_id: String, card_id: String, new_title: String, #[arg(long)] json: bool },
+    Delete { board_id: String, card_id: String, #[arg(long)] json: bool },
+    Archive { board_id: String, card_id: String, #[arg(long)] json: bool },
+    Copy { board_id: String, card_id: String, col_id: String, #[arg(long)] json: bool },
+    Move { board_id: String, card_id: String, to_col_id: String, #[arg(long)] json: bool },
+    SetDescription { board_id: String, card_id: String, text: String, #[arg(long)] json: bool },
+    SetCover { board_id: String, card_id: String, color: String, #[arg(long)] json: bool },
+    SetDueDate { board_id: String, card_id: String, date: String, #[arg(long)] json: bool },
+    SetPriority { board_id: String, card_id: String, priority: String, #[arg(long)] json: bool },
+    SetAssignee { board_id: String, card_id: String, pubkey: String, #[arg(long)] json: bool },
+    /// Label management
+    Label {
+        #[command(subcommand)]
+        cmd: LabelCommands,
+    },
     /// Comment management
     Comment {
         #[command(subcommand)]
         cmd: CommentCommands,
     },
+}
+
+#[derive(Subcommand)]
+enum LabelCommands {
+    Add { board_id: String, card_id: String, label: String, #[arg(long)] json: bool },
+    Remove { board_id: String, card_id: String, label: String, #[arg(long)] json: bool },
+    List { board_id: String, card_id: String, #[arg(long)] json: bool },
 }
 
 #[derive(Subcommand)]
@@ -111,6 +136,14 @@ enum CommentCommands {
         board_id: String,
         card_id: String,
         comment_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// Edit a comment
+    Edit {
+        board_id: String,
+        card_id: String,
+        comment_id: String,
+        new_text: String,
         #[arg(long)] json: bool,
     },
 }
@@ -146,6 +179,21 @@ enum ChecklistCommands {
         card_id: String,
         checklist_id: String,
         item_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// Delete a checklist item
+    ItemDelete {
+        board_id: String,
+        card_id: String,
+        checklist_id: String,
+        item_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// Delete a checklist
+    Delete {
+        board_id: String,
+        card_id: String,
+        checklist_id: String,
         #[arg(long)] json: bool,
     },
 }
@@ -299,6 +347,13 @@ async fn main() -> anyhow::Result<()> {
                 if json { println!("{}", serde_json::to_string_pretty(&ids)?); }
                 else { for id in &ids { println!("{id}"); } }
             }
+            BoardCommands::Rename { board_id, new_title, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::rename_board(&mut doc, &new_title)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"board_id": board_id, "title": new_title})); }
+                else { println!("Renamed board {} to: {}", board_id, new_title); }
+            }
         },
         Commands::Column { cmd } => match cmd {
             ColumnCommands::Create { board_id, title, json } => {
@@ -318,6 +373,20 @@ async fn main() -> anyhow::Result<()> {
                         println!("{}: {}", col.id, col.title);
                     }
                 }
+            }
+            ColumnCommands::Rename { board_id, col_id, new_title, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::rename_column_by_id(&mut doc, &col_id, &new_title)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"col_id": col_id, "title": new_title})); }
+                else { println!("Renamed column {} to: {}", col_id, new_title); }
+            }
+            ColumnCommands::Delete { board_id, col_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::delete_column(&mut doc, &col_id)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"deleted": col_id})); }
+                else { println!("Deleted column {col_id}"); }
             }
         },
         Commands::Card { cmd } => match cmd {
@@ -351,6 +420,134 @@ async fn main() -> anyhow::Result<()> {
                     if let Some(due) = &card.due_date { println!("Due:         {due}"); }
                 }
             }
+            CardCommands::Rename { board_id, card_id, new_title, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::rename_card(&mut doc, &card_id, &new_title)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "title": new_title})); }
+                else { println!("Renamed card {} to: {}", card_id, new_title); }
+            }
+            CardCommands::Delete { board_id, card_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::delete_card(&mut doc, &card_id)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"deleted": card_id})); }
+                else { println!("Deleted card {card_id}"); }
+            }
+            CardCommands::Archive { board_id, card_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::archive_card(&mut doc, &card_id)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"archived": card_id})); }
+                else { println!("Archived card {card_id}"); }
+            }
+            CardCommands::Copy { board_id, card_id, col_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                let actor_pk = identity.to_secret_bytes().to_vec();
+                let members = vec![actor_pk.clone()];
+                let new_card = kanban_core::card::copy_card(&mut doc, &card_id, &col_id, &actor_pk, &members)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"id": new_card.id, "title": new_card.title})); }
+                else { println!("Copied card to: {} ({})", new_card.title, new_card.id); }
+            }
+            CardCommands::Move { board_id, card_id, to_col_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                // Find which column currently contains the card
+                let cols = kanban_core::column::list_columns(&doc)?;
+                let from_col_id = {
+                    use automerge::ReadDoc;
+                    let mut found = None;
+                    'outer: for col in &cols {
+                        let col_obj = match kanban_core::column::find_column_obj(&doc, &col.id)? {
+                            Some(o) => o,
+                            None => continue,
+                        };
+                        let card_ids = match kanban_core::column::get_card_ids_list(&doc, &col_obj) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        };
+                        for i in 0..doc.length(&card_ids) {
+                            if let Some((automerge::Value::Scalar(s), _)) = doc.get(&card_ids, i)? {
+                                if let automerge::ScalarValue::Str(text) = s.as_ref() {
+                                    if text.as_str() == card_id {
+                                        found = Some(col.id.clone());
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    found.ok_or_else(|| anyhow::anyhow!("card {} not found in any column", card_id))?
+                };
+                kanban_core::column::move_card(&mut doc, &card_id, &from_col_id, &to_col_id)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "to_col_id": to_col_id})); }
+                else { println!("Moved card {} to column {}", card_id, to_col_id); }
+            }
+            CardCommands::SetDescription { board_id, card_id, text, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::set_description(&mut doc, &card_id, &text)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "description": text})); }
+                else { println!("Updated description for card {card_id}"); }
+            }
+            CardCommands::SetCover { board_id, card_id, color, json } => {
+                let color_arg = if color == "none" { "" } else { &color };
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::set_cover_color(&mut doc, &card_id, color_arg)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "color": color_arg})); }
+                else { println!("Set cover color for card {card_id}"); }
+            }
+            CardCommands::SetDueDate { board_id, card_id, date, json } => {
+                let due: Option<&str> = if date == "none" { None } else { Some(&date) };
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::set_due_date(&mut doc, &card_id, due)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "due_date": due})); }
+                else { println!("Set due date for card {card_id}"); }
+            }
+            CardCommands::SetPriority { board_id, card_id, priority, json } => {
+                let pri = if priority == "none" { "" } else { &priority };
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::set_priority(&mut doc, &card_id, pri)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "priority": pri})); }
+                else { println!("Set priority for card {card_id}"); }
+            }
+            CardCommands::SetAssignee { board_id, card_id, pubkey, json } => {
+                let pk = if pubkey == "none" { "" } else { &pubkey };
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::card::set_assignee(&mut doc, &card_id, pk)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "assignee": pk})); }
+                else { println!("Set assignee for card {card_id}"); }
+            }
+            CardCommands::Label { cmd } => match cmd {
+                LabelCommands::Add { board_id, card_id, label, json } => {
+                    let mut doc = storage.load_board(&board_id)?;
+                    kanban_core::card::add_label(&mut doc, &card_id, &label)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json { println!("{}", serde_json::json!({"card_id": card_id, "label": label})); }
+                    else { println!("Added label '{}' to card {}", label, card_id); }
+                }
+                LabelCommands::Remove { board_id, card_id, label, json } => {
+                    let mut doc = storage.load_board(&board_id)?;
+                    kanban_core::card::remove_label(&mut doc, &card_id, &label)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json { println!("{}", serde_json::json!({"card_id": card_id, "removed_label": label})); }
+                    else { println!("Removed label '{}' from card {}", label, card_id); }
+                }
+                LabelCommands::List { board_id, card_id, json } => {
+                    let doc = storage.load_board(&board_id)?;
+                    let card = kanban_core::card::read_card(&doc, &card_id)?;
+                    if json { println!("{}", serde_json::to_string_pretty(&card.labels)?); }
+                    else {
+                        if card.labels.is_empty() { println!("No labels."); }
+                        else { for l in &card.labels { println!("{l}"); } }
+                    }
+                }
+            },
             CardCommands::Comment { cmd } => match cmd {
                 CommentCommands::Add { board_id, card_id, text, json } => {
                     let mut doc = storage.load_board(&board_id)?;
@@ -383,6 +580,16 @@ async fn main() -> anyhow::Result<()> {
                         println!("{}", serde_json::json!({"deleted": comment_id}));
                     } else {
                         println!("Deleted comment {comment_id}");
+                    }
+                }
+                CommentCommands::Edit { board_id, card_id, comment_id, new_text, json } => {
+                    let mut doc = storage.load_board(&board_id)?;
+                    kanban_core::comment::edit_comment(&mut doc, &card_id, &comment_id, &new_text)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json {
+                        println!("{}", serde_json::json!({"edited": comment_id}));
+                    } else {
+                        println!("Edited comment {comment_id}");
                     }
                 }
             },
@@ -426,6 +633,26 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", serde_json::json!({"checked": false, "item_id": item_id}));
                 } else {
                     println!("Unchecked item {item_id}");
+                }
+            }
+            ChecklistCommands::ItemDelete { board_id, card_id, checklist_id, item_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::checklist::delete_checklist_item(&mut doc, &card_id, &checklist_id, &item_id)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::json!({"deleted_item": item_id}));
+                } else {
+                    println!("Deleted checklist item {item_id}");
+                }
+            }
+            ChecklistCommands::Delete { board_id, card_id, checklist_id, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                kanban_core::checklist::delete_checklist(&mut doc, &card_id, &checklist_id)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::json!({"deleted_checklist": checklist_id}));
+                } else {
+                    println!("Deleted checklist {checklist_id}");
                 }
             }
         },

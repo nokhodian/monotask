@@ -49,6 +49,23 @@ pub fn delete_comment(doc: &mut AutoCommit, card_id: &str, comment_id: &str) -> 
     Err(crate::Error::NotFound(comment_id.into()))
 }
 
+pub fn edit_comment(doc: &mut AutoCommit, card_id: &str, comment_id: &str, new_text: &str) -> Result<()> {
+    let card_obj = crate::card::get_card_obj(doc, card_id)?;
+    let comments = get_comments_list(doc, &card_obj)?;
+    for i in 0..doc.length(&comments) {
+        if let Some((_, c_obj)) = doc.get(&comments, i)? {
+            if let Ok(Some(id)) = crate::get_string(doc, &c_obj, "id") {
+                if id == comment_id {
+                    doc.put(&c_obj, "text", new_text)?;
+                    doc.put(&c_obj, "edited_at", crate::clock::now().as_str())?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err(crate::Error::NotFound(comment_id.into()))
+}
+
 pub fn list_comments(doc: &AutoCommit, card_id: &str) -> Result<Vec<Comment>> {
     let card_obj = crate::card::get_card_obj(doc, card_id)?;
     let comments = get_comments_list(doc, &card_obj)?;
