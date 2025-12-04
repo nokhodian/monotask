@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "crates/kanban-core",
-    "crates/kanban-crypto",
-    "crates/kanban-net",
-    "crates/kanban-storage",
-    "crates/kanban-cli",
-    "crates/kanban-tauri/src-tauri",
+    "crates/monotask-core",
+    "crates/monotask-crypto",
+    "crates/monotask-net",
+    "crates/monotask-storage",
+    "crates/monotask-cli",
+    "crates/monotask-tauri/src-tauri",
 ]
 resolver = "2"
 
