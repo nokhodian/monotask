@@ -1,6 +1,6 @@
 [package]
-name = "kanban-net"
-version = "0.3.8"
+name = "monotask-net"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
@@ -10,9 +10,9 @@ libp2p = { version = "0.53", features = [
     "request-response", "identify",
     "tokio", "macros",
 ] }
-kanban-core    = { path = "../kanban-core" }
-kanban-crypto  = { path = "../kanban-crypto" }
-kanban-storage = { path = "../kanban-storage" }
+monotask-core    = { path = "../monotask-core" }
+monotask-crypto  = { path = "../monotask-crypto" }
+monotask-storage = { path = "../monotask-storage" }
 automerge   = { workspace = true }
 sha2        = { workspace = true }
 hex         = { workspace = true }
