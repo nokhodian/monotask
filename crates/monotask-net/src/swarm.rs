@@ -7,7 +7,7 @@ use libp2p::{
     swarm::SwarmEvent,
     futures::StreamExt,
 };
-use kanban_storage::Storage;
+use monotask_storage::Storage;
 use crate::{NetCommand, NetConfig, NetError, NetEvent};
 use crate::behaviour::{ComposedBehaviour, ComposedBehaviourEvent};
 
@@ -407,7 +407,7 @@ async fn handle_swarm_event(
                     }
                     // Register any boards the peer has but we don't yet know about.
                     for board_id in &their_board_ids {
-                        let _ = kanban_storage::space::add_board(guard.conn(), &space_id, board_id);
+                        let _ = monotask_storage::space::add_board(guard.conn(), &space_id, board_id);
                     }
                     guard.list_board_ids().unwrap_or_default()
                 };
@@ -528,14 +528,14 @@ fn initiate_hello(
     peer_id: PeerId,
 ) {
     use crate::sync_protocol::SyncRequest;
-    use kanban_crypto::Identity;
+    use monotask_crypto::Identity;
 
     for space_id in my_spaces {
         let (board_ids, space_doc_bytes) = {
             let guard = storage.lock().unwrap();
-            let boards = kanban_storage::space::get_space_boards(guard.conn(), space_id)
+            let boards = monotask_storage::space::get_space_boards(guard.conn(), space_id)
                 .unwrap_or_default();
-            let doc_bytes = kanban_storage::space::load_space_doc(guard.conn(), space_id)
+            let doc_bytes = monotask_storage::space::load_space_doc(guard.conn(), space_id)
                 .unwrap_or_default();
             (boards, doc_bytes)
         };
@@ -564,7 +564,7 @@ fn handle_sync_request(
     sync_states: &mut HashMap<String, automerge::sync::State>,
 ) -> crate::sync_protocol::SyncResponse {
     use crate::sync_protocol::{SyncRequest, SyncResponse};
-    use kanban_crypto::Identity;
+    use monotask_crypto::Identity;
 
     match request {
         SyncRequest::Hello { space_id, board_ids: _their_board_ids, signature, space_doc_bytes } => {
@@ -584,7 +584,7 @@ fn handle_sync_request(
             let pubkey_hex = hex::encode(pubkey_32);
             let is_member = {
                 let guard = storage.lock().unwrap();
-                kanban_storage::space::is_active_member(guard.conn(), &space_id, &pubkey_hex)
+                monotask_storage::space::is_active_member(guard.conn(), &space_id, &pubkey_hex)
                     .unwrap_or(false)
             };
             if !is_member {
@@ -597,9 +597,9 @@ fn handle_sync_request(
                 if !space_doc_bytes.is_empty() {
                     merge_space_doc(&space_id, &space_doc_bytes, &mut guard);
                 }
-                let boards = kanban_storage::space::get_space_boards(guard.conn(), &space_id)
+                let boards = monotask_storage::space::get_space_boards(guard.conn(), &space_id)
                     .unwrap_or_default();
-                let doc_bytes = kanban_storage::space::load_space_doc(guard.conn(), &space_id)
+                let doc_bytes = monotask_storage::space::load_space_doc(guard.conn(), &space_id)
                     .unwrap_or_default();
                 (boards, doc_bytes)
             };
@@ -681,8 +681,8 @@ fn process_incoming_sync(
 /// tables (name, space_members, space_boards) to reflect the merged state.
 fn merge_space_doc(space_id: &str, peer_doc_bytes: &[u8], guard: &mut Storage) {
     use automerge::AutoCommit;
-    use kanban_storage::space as ss;
-    use kanban_core::space as cs;
+    use monotask_storage::space as ss;
+    use monotask_core::space as cs;
 
     let our_bytes = match ss::load_space_doc(guard.conn(), space_id) {
         Ok(b) => b,
@@ -719,7 +719,7 @@ fn merge_space_doc(space_id: &str, peer_doc_bytes: &[u8], guard: &mut Storage) {
     // Sync members.
     if let Ok(members) = cs::list_members(&our_doc) {
         for m in members {
-            let _ = ss::upsert_member(guard.conn(), space_id, &kanban_core::space::Member {
+            let _ = ss::upsert_member(guard.conn(), space_id, &monotask_core::space::Member {
                 pubkey: m.pubkey,
                 display_name: m.display_name,
                 avatar_blob: m.avatar_blob,

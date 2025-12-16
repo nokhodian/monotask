@@ -2,15 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::{Arc, Mutex};
-use kanban_storage::Storage;
-use kanban_crypto::Identity;
+use monotask_storage::Storage;
+use monotask_crypto::Identity;
 use tauri::{Emitter, Manager};
 
 struct AppState {
     storage: Mutex<Storage>,
     identity: Identity,
     data_dir: std::path::PathBuf,
-    net: Mutex<Option<kanban_net::NetworkHandle>>,
+    net: Mutex<Option<monotask_net::NetworkHandle>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -67,9 +67,9 @@ struct PeerIdentityView {
 fn load_identity(
     data_dir: &std::path::Path,
     conn: &rusqlite::Connection,
-) -> Result<kanban_crypto::Identity, Box<dyn std::error::Error>> {
-    use kanban_crypto::Identity;
-    use kanban_storage::space as space_store;
+) -> Result<monotask_crypto::Identity, Box<dyn std::error::Error>> {
+    use monotask_crypto::Identity;
+    use monotask_storage::space as space_store;
 
     let key_path = data_dir.join("identity.key");
 
@@ -78,7 +78,7 @@ fn load_identity(
         if let Some(ssh_path) = &profile.ssh_key_path {
             let p = std::path::Path::new(ssh_path);
             if p.exists() {
-                if let Ok(id) = kanban_crypto::import_ssh_identity(Some(p)) {
+                if let Ok(id) = monotask_crypto::import_ssh_identity(Some(p)) {
                     return Ok(id);
                 }
             }
@@ -97,7 +97,7 @@ fn load_identity(
     // Step 4: Generate new identity
     let id = Identity::generate();
     std::fs::write(&key_path, id.to_secret_bytes())?;
-    let new_profile = kanban_core::space::UserProfile {
+    let new_profile = monotask_core::space::UserProfile {
         pubkey: id.public_key_hex(),
         display_name: None,
         avatar_blob: None,
@@ -124,7 +124,7 @@ fn validate_text(s: &str, field: &str, max_len: usize) -> Result<(), String> {
 
 // ── Space helpers ─────────────────────────────────────────────────────────────
 
-fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
+fn space_to_view(space: monotask_core::space::Space) -> SpaceView {
     SpaceView {
         id: space.id,
         name: space.name,
@@ -146,14 +146,14 @@ fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
     }
 }
 
-fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
-    use kanban_storage::space as sp;
+fn local_member_profile(state: &AppState) -> monotask_core::space::MemberProfile {
+    use monotask_storage::space as sp;
     let storage = match state.storage.lock() {
         Ok(s) => s,
-        Err(_) => return kanban_core::space::MemberProfile::default(),
+        Err(_) => return monotask_core::space::MemberProfile::default(),
     };
     let profile = sp::get_profile(storage.conn()).ok().flatten();
-    kanban_core::space::MemberProfile {
+    monotask_core::space::MemberProfile {
         display_name: profile.as_ref()
             .and_then(|p| p.display_name.clone())
             .unwrap_or_default(),
@@ -183,7 +183,7 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
 fn announce_all_spaces(state: &AppState) {
     let space_ids = {
         let storage = match state.storage.lock() { Ok(s) => s, Err(_) => return };
-        kanban_storage::space::list_spaces(storage.conn())
+        monotask_storage::space::list_spaces(storage.conn())
             .map(|v| v.into_iter().map(|s| s.id).collect::<Vec<_>>())
             .unwrap_or_default()
     };
@@ -233,7 +233,7 @@ fn push_undo(conn: &rusqlite::Connection, board_id: &str, actor_key: &str, actio
 }
 
 fn get_or_create_chat_doc(
-    storage: &kanban_storage::Storage,
+    storage: &monotask_storage::Storage,
     space_id: &str,
 ) -> Result<automerge::AutoCommit, String> {
     let chat_doc_id = format!("{space_id}-chat");
@@ -241,17 +241,17 @@ fn get_or_create_chat_doc(
         Ok(doc) => Ok(doc),
         Err(_) => {
             // Bootstrap: create empty chat doc
-            let mut doc = kanban_core::chat::create_chat_doc().map_err(|e| e.to_string())?;
+            let mut doc = monotask_core::chat::create_chat_doc().map_err(|e| e.to_string())?;
             let bytes = doc.save();
             storage.save_board_bytes(&chat_doc_id, &bytes, true)
                 .map_err(|e| e.to_string())?;
             // Register chat doc in space board refs
-            let doc_bytes = kanban_storage::space::load_space_doc(storage.conn(), space_id)
+            let doc_bytes = monotask_storage::space::load_space_doc(storage.conn(), space_id)
                 .map_err(|e| e.to_string())?;
             let mut space_doc = automerge::AutoCommit::load(&doc_bytes).map_err(|e| e.to_string())?;
-            let _ = kanban_core::space::add_board_ref(&mut space_doc, &chat_doc_id);
-            let _ = kanban_storage::space::update_space_doc(storage.conn(), space_id, &space_doc.save());
-            let _ = kanban_storage::space::add_board(storage.conn(), space_id, &chat_doc_id);
+            let _ = monotask_core::space::add_board_ref(&mut space_doc, &chat_doc_id);
+            let _ = monotask_storage::space::update_space_doc(storage.conn(), space_id, &space_doc.save());
+            let _ = monotask_storage::space::add_board(storage.conn(), space_id, &chat_doc_id);
             Ok(doc)
         }
     }
@@ -264,17 +264,17 @@ fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView
     validate_text(&name, "Space name", 200)?;
     let space_id = uuid::Uuid::new_v4().to_string();
     let owner_pubkey = state.identity.public_key_hex();
-    let mut doc = kanban_core::space::create_space_doc(&name, &owner_pubkey)
+    let mut doc = monotask_core::space::create_space_doc(&name, &owner_pubkey)
         .map_err(|e| e.to_string())?;
     let profile = local_member_profile(&state);
-    kanban_core::space::add_member(&mut doc, &owner_pubkey, &profile)
+    monotask_core::space::add_member(&mut doc, &owner_pubkey, &profile)
         .map_err(|e| e.to_string())?;
     let bytes = doc.save();
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    kanban_storage::space::create_space(storage.conn(), &space_id, &name, &owner_pubkey, &bytes)
+    monotask_storage::space::create_space(storage.conn(), &space_id, &name, &owner_pubkey, &bytes)
         .map_err(|e| e.to_string())?;
     // Add owner as SQL member
-    let owner_member = kanban_core::space::Member {
+    let owner_member = monotask_core::space::Member {
         pubkey: owner_pubkey.clone(),
         display_name: if profile.display_name.is_empty() { None } else { Some(profile.display_name.clone()) },
         avatar_blob: if profile.avatar_b64.is_empty() { None } else {
@@ -287,9 +287,9 @@ fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView
         presence: None,
         kicked: false,
     };
-    kanban_storage::space::upsert_member(storage.conn(), &space_id, &owner_member)
+    monotask_storage::space::upsert_member(storage.conn(), &space_id, &owner_member)
         .map_err(|e| e.to_string())?;
-    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+    let space = monotask_storage::space::get_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     drop(storage);
     announce_all_spaces(&state);
@@ -384,11 +384,11 @@ const DEFAULT_COLUMNS: &[&str] = &["Todo", "In Progress", "Review", "Done"];
 fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<BoardSummary, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let pk = state.identity.public_key_hex();
-    let (mut doc, board) = kanban_core::board::create_board(&title, &pk)
+    let (mut doc, board) = monotask_core::board::create_board(&title, &pk)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board.id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::set_cached_title(storage.conn(), &board.id, &title)
+    monotask_storage::board::set_cached_title(storage.conn(), &board.id, &title)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board.id, &state);
     drop(storage);
@@ -399,7 +399,7 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
 #[tauri::command]
 fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let rows = kanban_storage::board::list_boards_with_titles(storage.conn())
+    let rows = monotask_storage::board::list_boards_with_titles(storage.conn())
         .map_err(|e| e.to_string())?;
     let mut boards = Vec::with_capacity(rows.len());
     for (id, cached_title) in rows {
@@ -407,11 +407,11 @@ fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, Strin
             Some(t) => t,
             None => {
                 // Board predates the cached_title column — load the doc once to backfill.
-                let title = kanban_storage::board::load_board(storage.conn(), &id)
+                let title = monotask_storage::board::load_board(storage.conn(), &id)
                     .ok()
-                    .and_then(|doc| kanban_core::board::get_board_title(&doc).ok())
+                    .and_then(|doc| monotask_core::board::get_board_title(&doc).ok())
                     .unwrap_or_else(|| id.clone());
-                let _ = kanban_storage::board::set_cached_title(storage.conn(), &id, &title);
+                let _ = monotask_storage::board::set_cached_title(storage.conn(), &id, &title);
                 title
             }
         };
@@ -423,32 +423,32 @@ fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, Strin
 #[tauri::command]
 fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<BoardDetail, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let title = kanban_core::board::get_board_title(&doc)
+    let title = monotask_core::board::get_board_title(&doc)
         .unwrap_or_else(|_| board_id.clone());
 
     // Auto-create default columns if board has none
-    let existing = kanban_core::column::list_columns(&doc).unwrap_or_default();
+    let existing = monotask_core::column::list_columns(&doc).unwrap_or_default();
     if existing.is_empty() {
         drop(existing);
-        kanban_core::init_doc(&mut doc).map_err(|e| e.to_string())?;
+        monotask_core::init_doc(&mut doc).map_err(|e| e.to_string())?;
         for col_title in DEFAULT_COLUMNS {
-            kanban_core::column::create_column(&mut doc, col_title)
+            monotask_core::column::create_column(&mut doc, col_title)
                 .map_err(|e| e.to_string())?;
         }
-        kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
             .map_err(|e| e.to_string())?;
         trigger_board_sync(&board_id, &state);
     }
 
-    let columns = kanban_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let columns = monotask_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
     let mut col_views = Vec::with_capacity(columns.len());
     for col in &columns {
         let card_ids = get_column_card_ids(&doc, &col.id);
         let mut cards = Vec::new();
         for cid in card_ids {
-            if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
+            if let Ok(card) = monotask_core::card::read_card(&doc, &cid) {
                 if !card.deleted && !card.archived {
                     let labels = get_card_labels(&doc, &cid);
                     let history: Vec<MoveEvent> = vec![];
@@ -456,7 +456,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
                     let priority = get_card_str_field(&doc, &cid, "priority");
-                    let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
+                    let (checklist_total, checklist_done) = monotask_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
                         .flat_map(|cl| cl.items.iter())
@@ -485,7 +485,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
 
 fn get_card_history(doc: &automerge::AutoCommit, card_id: &str) -> Vec<MoveEvent> {
     use automerge::ReadDoc;
-    let card_obj = match kanban_core::card::get_card_obj(doc, card_id) {
+    let card_obj = match monotask_core::card::get_card_obj(doc, card_id) {
         Ok(o) => o,
         Err(e) => { eprintln!("[get_card_history] get_card_obj failed: {e}"); return vec![]; }
     };
@@ -498,9 +498,9 @@ fn get_card_history(doc: &automerge::AutoCommit, card_id: &str) -> Vec<MoveEvent
     (0..doc.length(&hist_obj))
         .filter_map(|i| {
             doc.get(&hist_obj, i).ok().flatten().and_then(|(_, obj)| {
-                let from_col = kanban_core::get_string(doc, &obj, "from_col").ok().flatten().unwrap_or_default();
-                let to_col   = kanban_core::get_string(doc, &obj, "to_col").ok().flatten().unwrap_or_default();
-                let timestamp = kanban_core::get_string(doc, &obj, "timestamp").ok().flatten().unwrap_or_default();
+                let from_col = monotask_core::get_string(doc, &obj, "from_col").ok().flatten().unwrap_or_default();
+                let to_col   = monotask_core::get_string(doc, &obj, "to_col").ok().flatten().unwrap_or_default();
+                let timestamp = monotask_core::get_string(doc, &obj, "timestamp").ok().flatten().unwrap_or_default();
                 Some(MoveEvent { from_col, to_col, timestamp })
             })
         })
@@ -514,7 +514,7 @@ fn get_card_history_cmd(
     card_id: String,
 ) -> Result<Vec<MoveEvent>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
     Ok(get_card_history(&doc, &card_id))
 }
@@ -525,17 +525,17 @@ fn export_board_cmd(
     board_id: String,
 ) -> Result<String, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let title = kanban_core::board::get_board_title(&doc)
+    let title = monotask_core::board::get_board_title(&doc)
         .unwrap_or_else(|_| board_id.clone());
-    let columns = kanban_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let columns = monotask_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
     let mut col_views = Vec::with_capacity(columns.len());
     for col in &columns {
         let card_ids = get_column_card_ids(&doc, &col.id);
         let mut cards = Vec::new();
         for cid in card_ids {
-            if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
+            if let Ok(card) = monotask_core::card::read_card(&doc, &cid) {
                 if !card.deleted && !card.archived {
                     let labels = get_card_labels(&doc, &cid);
                     let history: Vec<MoveEvent> = vec![];
@@ -543,7 +543,7 @@ fn export_board_cmd(
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
                     let priority = get_card_str_field(&doc, &cid, "priority");
-                    let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
+                    let (checklist_total, checklist_done) = monotask_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
                         .flat_map(|cl| cl.items.iter())
@@ -575,7 +575,7 @@ fn export_board_cmd(
 
 fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<String> {
     use automerge::ReadDoc;
-    let card_obj = kanban_core::card::get_card_obj(doc, card_id).ok()?;
+    let card_obj = monotask_core::card::get_card_obj(doc, card_id).ok()?;
     let (v, _) = doc.get(&card_obj, field).ok()??;
     if let automerge::Value::Scalar(s) = v {
         if let automerge::ScalarValue::Str(t) = s.as_ref() {
@@ -588,7 +588,7 @@ fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -
 
 fn get_card_labels(doc: &automerge::AutoCommit, card_id: &str) -> Vec<String> {
     use automerge::ReadDoc;
-    let card_obj = match kanban_core::card::get_card_obj(doc, card_id) {
+    let card_obj = match monotask_core::card::get_card_obj(doc, card_id) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -612,11 +612,11 @@ fn get_card_labels(doc: &automerge::AutoCommit, card_id: &str) -> Vec<String> {
 
 fn get_column_card_ids(doc: &automerge::AutoCommit, col_id: &str) -> Vec<String> {
     use automerge::ReadDoc;
-    let col_obj = match kanban_core::column::find_column_obj(doc, col_id) {
+    let col_obj = match monotask_core::column::find_column_obj(doc, col_id) {
         Ok(Some(o)) => o,
         _ => return vec![],
     };
-    let card_ids_list = match kanban_core::column::get_card_ids_list(doc, &col_obj) {
+    let card_ids_list = match monotask_core::column::get_card_ids_list(doc, &col_obj) {
         Ok(o) => o,
         _ => return vec![],
     };
@@ -638,11 +638,11 @@ fn get_column_card_ids(doc: &automerge::AutoCommit, col_id: &str) -> Vec<String>
 fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
     validate_text(&title, "Column title", 200)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let col_id = kanban_core::column::create_column(&mut doc, &title)
+    let col_id = monotask_core::column::create_column(&mut doc, &title)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(col_id)
@@ -656,13 +656,13 @@ fn rename_board_cmd(
 ) -> Result<(), String> {
     validate_text(&new_title, "Board title", 200)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    kanban_core::board::set_board_title(&mut doc, &new_title)
+    monotask_core::board::set_board_title(&mut doc, &new_title)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::set_cached_title(storage.conn(), &board_id, &new_title)
+    monotask_storage::board::set_cached_title(storage.conn(), &board_id, &new_title)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -677,11 +677,11 @@ fn rename_column_cmd(
 ) -> Result<(), String> {
     validate_text(&new_title, "Column title", 200)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    kanban_core::column::rename_column_by_id(&mut doc, &column_id, &new_title)
+    monotask_core::column::rename_column_by_id(&mut doc, &column_id, &new_title)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -697,15 +697,15 @@ fn move_card_cmd(
 ) -> Result<(), String> {
     use automerge::{ReadDoc, transaction::Transactable};
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
 
     // Remove from source column
     {
-        let from_obj = kanban_core::column::find_column_obj(&doc, &from_col_id)
+        let from_obj = monotask_core::column::find_column_obj(&doc, &from_col_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("column not found: {from_col_id}"))?;
-        let card_ids = kanban_core::column::get_card_ids_list(&doc, &from_obj)
+        let card_ids = monotask_core::column::get_card_ids_list(&doc, &from_obj)
             .map_err(|e| e.to_string())?;
         let len = doc.length(&card_ids);
         let idx = (0..len).find(|&i| {
@@ -719,25 +719,25 @@ fn move_card_cmd(
     }
 
     // Append to destination column
-    kanban_core::column::append_card_to_column(&mut doc, &to_col_id, &card_id)
+    monotask_core::column::append_card_to_column(&mut doc, &to_col_id, &card_id)
         .map_err(|e| e.to_string())?;
 
     // Record movement history on the card
     {
         use automerge::{ObjType, transaction::Transactable};
-        let columns = kanban_core::column::list_columns(&doc).unwrap_or_default();
+        let columns = monotask_core::column::list_columns(&doc).unwrap_or_default();
         eprintln!("[move_card_cmd] card={card_id} columns_found={}", columns.len());
         let from_title = columns.iter().find(|c| c.id == from_col_id).map(|c| c.title.clone()).unwrap_or_else(|| from_col_id.clone());
         let to_title   = columns.iter().find(|c| c.id == to_col_id).map(|c| c.title.clone()).unwrap_or_else(|| to_col_id.clone());
         eprintln!("[move_card_cmd] from={from_title:?} to={to_title:?}");
-        let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+        let card_obj = monotask_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
         let hist_obj = match doc.get(&card_obj, "history").map_err(|e| e.to_string())? {
             Some((_, id)) => { eprintln!("[move_card_cmd] history list exists"); id }
             None => { eprintln!("[move_card_cmd] creating history list"); doc.put_object(&card_obj, "history", ObjType::List).map_err(|e| e.to_string())? }
         };
         let idx = doc.length(&hist_obj);
         eprintln!("[move_card_cmd] inserting history event at idx={idx}");
-        let ts = kanban_core::clock::now();
+        let ts = monotask_core::clock::now();
         let ev = doc.insert_object(&hist_obj, idx, ObjType::Map).map_err(|e| e.to_string())?;
         doc.put(&ev, "from_col",  from_title.as_str()).map_err(|e| e.to_string())?;
         doc.put(&ev, "to_col",    to_title.as_str()).map_err(|e| e.to_string())?;
@@ -745,11 +745,11 @@ fn move_card_cmd(
         eprintln!("[move_card_cmd] history recorded OK");
     }
 
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     // Update card_search_index with new column name
     {
-        let columns = kanban_core::column::list_columns(&doc).unwrap_or_default();
+        let columns = monotask_core::column::list_columns(&doc).unwrap_or_default();
         let to_col_title = columns.iter()
             .find(|c| c.id == to_col_id)
             .map(|c| c.title.clone())
@@ -767,16 +767,16 @@ fn move_card_cmd(
 fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
     validate_text(&title, "Card title", 500)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
     let pk = state.identity.public_key_bytes();
-    let card = kanban_core::card::create_card(&mut doc, &col_id, &title, &pk, &[pk.to_vec()])
+    let card = monotask_core::card::create_card(&mut doc, &col_id, &title, &pk, &[pk.to_vec()])
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     // Update card search index
     let card_id = card.id.clone();
-    let column_name = kanban_core::column::list_columns(&doc)
+    let column_name = monotask_core::column::list_columns(&doc)
         .ok()
         .and_then(|cols| cols.into_iter().find(|c| c.id == col_id).map(|c| c.title))
         .unwrap_or_else(|| col_id.clone());
@@ -799,20 +799,20 @@ fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri
 #[tauri::command]
 fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>) -> Result<CardDetailView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let card = kanban_core::card::read_card(&doc, &card_id).map_err(|e| e.to_string())?;
+    let card = monotask_core::card::read_card(&doc, &card_id).map_err(|e| e.to_string())?;
     let labels = get_card_labels(&doc, &card_id);
     let assignee = get_card_str_field(&doc, &card_id, "assignee");
     let cover_color = get_card_str_field(&doc, &card_id, "cover_color");
     let priority = get_card_str_field(&doc, &card_id, "priority");
     let history = get_card_history(&doc, &card_id);
-    let comments = kanban_core::comment::list_comments(&doc, &card_id)
+    let comments = monotask_core::comment::list_comments(&doc, &card_id)
         .unwrap_or_default()
         .into_iter()
         .map(|c| CommentView { id: c.id, author: c.author, text: c.text, created_at: c.created_at })
         .collect();
-    let checklists = kanban_core::checklist::list_checklists(&doc, &card_id)
+    let checklists = monotask_core::checklist::list_checklists(&doc, &card_id)
         .unwrap_or_default()
         .into_iter()
         .map(|cl| ChecklistView {
@@ -855,10 +855,10 @@ fn update_card_cmd(
 ) -> Result<(), String> {
     use automerge::{ReadDoc, ObjType, transaction::Transactable};
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
     let pre_bytes = doc.save();
-    let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+    let card_obj = monotask_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
     doc.put(&card_obj, "title", title.as_str()).map_err(|e| e.to_string())?;
     doc.put(&card_obj, "description", description.as_str()).map_err(|e| e.to_string())?;
     let due = due_date.as_deref().unwrap_or("");
@@ -881,7 +881,7 @@ fn update_card_cmd(
     for (i, label) in labels.iter().enumerate() {
         doc.insert(&labels_obj, i, label.as_str()).map_err(|e| e.to_string())?;
     }
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "update_card", &pre_bytes);
     // Update card search index title
@@ -897,12 +897,12 @@ fn update_card_cmd(
 fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri::State<AppState>) -> Result<CommentView, String> {
     validate_text(&text, "Comment", 10_000)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
     let author = state.identity.public_key_hex();
-    let comment = kanban_core::comment::add_comment(&mut doc, &card_id, &text, &author)
+    let comment = monotask_core::comment::add_comment(&mut doc, &card_id, &text, &author)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(CommentView { id: comment.id, author: comment.author, text: comment.text, created_at: comment.created_at })
@@ -911,11 +911,11 @@ fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri
 #[tauri::command]
 fn delete_comment_cmd(board_id: String, card_id: String, comment_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    kanban_core::comment::delete_comment(&mut doc, &card_id, &comment_id)
+    monotask_core::comment::delete_comment(&mut doc, &card_id, &comment_id)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -932,16 +932,16 @@ fn edit_comment_cmd(
     validate_text(&text, "Comment", 10_000)?;
     use automerge::transaction::Transactable;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
-    let comments = kanban_core::comment::get_comments_list(&doc, &card_obj).map_err(|e| e.to_string())?;
+    let card_obj = monotask_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+    let comments = monotask_core::comment::get_comments_list(&doc, &card_obj).map_err(|e| e.to_string())?;
     use automerge::ReadDoc;
     let len = doc.length(&comments);
     let mut found = false;
     for i in 0..len {
         if let Ok(Some((_, c_obj))) = doc.get(&comments, i) {
-            if let Ok(Some(id)) = kanban_core::get_string(&doc, &c_obj, "id") {
+            if let Ok(Some(id)) = monotask_core::get_string(&doc, &c_obj, "id") {
                 if id == comment_id {
                     doc.put(&c_obj, "text", text.as_str()).map_err(|e| e.to_string())?;
                     found = true;
@@ -953,7 +953,7 @@ fn edit_comment_cmd(
     if !found {
         return Err(format!("Comment not found: {comment_id}"));
     }
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -962,11 +962,11 @@ fn edit_comment_cmd(
 #[tauri::command]
 fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
     let pre_bytes = doc.save();
-    kanban_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "delete_card", &pre_bytes);
     // Remove from card search index
@@ -987,11 +987,11 @@ fn reorder_card_cmd(
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    kanban_core::column::reorder_card_in_column(&mut doc, &col_id, &card_id, new_index)
+    monotask_core::column::reorder_card_in_column(&mut doc, &col_id, &card_id, new_index)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -1000,11 +1000,11 @@ fn reorder_card_cmd(
 #[tauri::command]
 fn add_checklist_cmd(board_id: String, card_id: String, title: String, state: tauri::State<AppState>) -> Result<ChecklistView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let cl = kanban_core::checklist::add_checklist(&mut doc, &card_id, &title)
+    let cl = monotask_core::checklist::add_checklist(&mut doc, &card_id, &title)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(ChecklistView { id: cl.id, title: cl.title, items: vec![] })
@@ -1013,11 +1013,11 @@ fn add_checklist_cmd(board_id: String, card_id: String, title: String, state: ta
 #[tauri::command]
 fn add_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, text: String, state: tauri::State<AppState>) -> Result<ChecklistItemView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    let item = kanban_core::checklist::add_checklist_item(&mut doc, &card_id, &cl_id, &text)
+    let item = monotask_core::checklist::add_checklist_item(&mut doc, &card_id, &cl_id, &text)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(ChecklistItemView { id: item.id, text: item.text, checked: item.checked })
@@ -1026,11 +1026,11 @@ fn add_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, text
 #[tauri::command]
 fn toggle_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, item_id: String, checked: bool, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    kanban_core::checklist::set_item_checked(&mut doc, &card_id, &cl_id, &item_id, checked)
+    monotask_core::checklist::set_item_checked(&mut doc, &card_id, &cl_id, &item_id, checked)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -1039,11 +1039,11 @@ fn toggle_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, i
 #[tauri::command]
 fn delete_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, item_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
-    kanban_core::checklist::delete_checklist_item(&mut doc, &card_id, &cl_id, &item_id)
+    monotask_core::checklist::delete_checklist_item(&mut doc, &card_id, &cl_id, &item_id)
         .map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
@@ -1053,7 +1053,7 @@ fn delete_checklist_item_cmd(board_id: String, card_id: String, cl_id: String, i
 fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     use automerge::{ReadDoc, transaction::Transactable};
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
     let pre_bytes = doc.save();
     let cols = match doc.get(automerge::ROOT, "columns").map_err(|e| e.to_string())? {
@@ -1063,12 +1063,12 @@ fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppSt
     let len = doc.length(&cols);
     let idx = (0..len).find(|&i| {
         doc.get(&cols, i).ok().flatten()
-            .and_then(|(_, obj)| kanban_core::get_string(&doc, &obj, "id").ok().flatten())
+            .and_then(|(_, obj)| monotask_core::get_string(&doc, &obj, "id").ok().flatten())
             .map(|s| s == col_id)
             .unwrap_or(false)
     }).ok_or_else(|| format!("column not found: {col_id}"))?;
     doc.delete(&cols, idx).map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "delete_column", &pre_bytes);
     trigger_board_sync(&board_id, &state);
@@ -1094,7 +1094,7 @@ fn undo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
     };
 
     // Save current board state to redo stack
-    let mut current_doc = kanban_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
+    let mut current_doc = monotask_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
     let current_bytes = current_doc.save();
     let redo_seq: i64 = conn.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2",
@@ -1112,7 +1112,7 @@ fn undo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
 
     // Restore previous state
     let mut prev_doc = automerge::AutoCommit::load(&prev_bytes).map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(conn, &board_id, &mut prev_doc).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(conn, &board_id, &mut prev_doc).map_err(|e| e.to_string())?;
 
     // Remove the undo entry
     let _ = conn.execute(
@@ -1143,7 +1143,7 @@ fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
     };
 
     // Save current state back to undo stack
-    let mut current_doc = kanban_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
+    let mut current_doc = monotask_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
     let current_bytes = current_doc.save();
     let undo_seq: i64 = conn.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2",
@@ -1160,7 +1160,7 @@ fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
     );
 
     let mut forward_doc = automerge::AutoCommit::load(&forward_bytes).map_err(|e| e.to_string())?;
-    kanban_storage::board::save_board(conn, &board_id, &mut forward_doc).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(conn, &board_id, &mut forward_doc).map_err(|e| e.to_string())?;
 
     let _ = conn.execute(
         "DELETE FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq = ?3",
@@ -1175,7 +1175,7 @@ fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
 #[tauri::command]
 fn list_spaces(state: tauri::State<AppState>) -> Result<Vec<SpaceSummaryView>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let summaries = kanban_storage::space::list_spaces(storage.conn())
+    let summaries = monotask_storage::space::list_spaces(storage.conn())
         .map_err(|e| e.to_string())?;
     Ok(summaries.into_iter().map(|s| SpaceSummaryView {
         id: s.id, name: s.name, member_count: s.member_count,
@@ -1185,7 +1185,7 @@ fn list_spaces(state: tauri::State<AppState>) -> Result<Vec<SpaceSummaryView>, S
 #[tauri::command]
 fn get_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<SpaceView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+    let space = monotask_storage::space::get_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     Ok(space_to_view(space))
 }
@@ -1197,16 +1197,16 @@ fn embed_listen_addrs_in_doc(state: &AppState, space_id: &str) -> Result<Vec<u8>
         net.as_ref().map(|h| h.get_listen_addrs_sync()).unwrap_or_default()
     };
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let doc_bytes = kanban_storage::space::load_space_doc(storage.conn(), space_id)
+    let doc_bytes = monotask_storage::space::load_space_doc(storage.conn(), space_id)
         .map_err(|e| e.to_string())?;
     let mut doc = automerge::AutoCommit::load(&doc_bytes).map_err(|e| e.to_string())?;
     // Only embed non-loopback addresses that look usable
     let addrs: Vec<String> = listen_addrs.into_iter()
         .filter(|a| !a.contains("/127.0.0.1/") && !a.contains("/::1/"))
         .collect();
-    kanban_core::space::set_owner_peer_addrs(&mut doc, &addrs).map_err(|e| e.to_string())?;
+    monotask_core::space::set_owner_peer_addrs(&mut doc, &addrs).map_err(|e| e.to_string())?;
     let updated = doc.save();
-    kanban_storage::space::update_space_doc(storage.conn(), space_id, &updated)
+    monotask_storage::space::update_space_doc(storage.conn(), space_id, &updated)
         .map_err(|e| e.to_string())?;
     Ok(updated)
 }
@@ -1224,24 +1224,24 @@ fn generate_invite_inner(space_id: &str, state: &AppState) -> Result<String, Str
         .collect();
     let space_name = {
         let storage = state.storage.lock().map_err(|e| e.to_string())?;
-        let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+        let space = monotask_storage::space::get_space(storage.conn(), &space_id)
             .map_err(|e| e.to_string())?;
         space.name
     };
-    let mut mini_doc = kanban_core::space::create_space_doc(&space_name, &state.identity.public_key_hex())
+    let mut mini_doc = monotask_core::space::create_space_doc(&space_name, &state.identity.public_key_hex())
         .map_err(|e| e.to_string())?;
-    kanban_core::space::set_owner_peer_addrs(&mut mini_doc, &addrs)
+    monotask_core::space::set_owner_peer_addrs(&mut mini_doc, &addrs)
         .map_err(|e| e.to_string())?;
     let mini_bytes = mini_doc.save();
 
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
+    monotask_storage::space::revoke_all_invites(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
-    let token = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&mini_bytes))
+    let token = monotask_crypto::generate_invite_token(&space_id, &state.identity, Some(&mini_bytes))
         .map_err(|e| e.to_string())?;
-    let meta = kanban_crypto::verify_invite_token_signature(&token)
+    let meta = monotask_crypto::verify_invite_token_signature(&token)
         .map_err(|e| e.to_string())?;
-    kanban_storage::space::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)
+    monotask_storage::space::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)
         .map_err(|e| e.to_string())?;
     Ok(token)
 }
@@ -1254,7 +1254,7 @@ fn generate_invite(space_id: String, state: tauri::State<AppState>) -> Result<St
 #[tauri::command]
 fn revoke_invite(space_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
+    monotask_storage::space::revoke_all_invites(storage.conn(), &space_id)
         .map_err(|e| e.to_string())
 }
 
@@ -1264,7 +1264,7 @@ fn export_invite_file(space_id: String, path: String, state: tauri::State<AppSta
     let token = generate_invite_inner(&space_id, &state)?;
     let space_name = {
         let storage = state.storage.lock().map_err(|e| e.to_string())?;
-        let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+        let space = monotask_storage::space::get_space(storage.conn(), &space_id)
             .map_err(|e| e.to_string())?;
         space.name
     };
@@ -1283,7 +1283,7 @@ fn export_invite_file(space_id: String, path: String, state: tauri::State<AppSta
 fn get_invite_qr(space_id: String, state: tauri::State<AppState>) -> Result<String, String> {
     // Returns the active token string; UI renders QR via qrcode.js
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    kanban_storage::space::get_active_invite_token(storage.conn(), &space_id)
+    monotask_storage::space::get_active_invite_token(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No active invite token".into())
 }
@@ -1313,7 +1313,7 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
     };
 
     // 2. Verify signature
-    let meta = kanban_crypto::verify_invite_token_signature(&token)
+    let meta = monotask_crypto::verify_invite_token_signature(&token)
         .map_err(|e| e.to_string())?;
 
     // For plain token strings the space_doc_bytes was set to None above; fall back to
@@ -1323,30 +1323,30 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
     // 3. Check policy (owner-side only)
     {
         let storage = state.storage.lock().map_err(|e| e.to_string())?;
-        kanban_storage::space::check_invite_policy(storage.conn(), &meta, &local_pubkey)
+        monotask_storage::space::check_invite_policy(storage.conn(), &meta, &local_pubkey)
             .map_err(|e| e.to_string())?;
 
         // 4. Idempotency check — already a member, but still sync boards from the token
         // in case the previous import happened before board refs were embedded in the token.
-        let already = kanban_storage::space::get_space(storage.conn(), &meta.space_id);
+        let already = monotask_storage::space::get_space(storage.conn(), &meta.space_id);
         if let Ok(existing) = already {
             if existing.members.iter().any(|m| m.pubkey == local_pubkey) {
                 if let Some(ref doc_bytes) = space_doc_bytes {
                     if let Ok(doc) = automerge::AutoCommit::load(doc_bytes) {
-                        if let Ok(board_refs) = kanban_core::space::list_board_refs(&doc) {
+                        if let Ok(board_refs) = monotask_core::space::list_board_refs(&doc) {
                             for board_id in &board_refs {
-                                let _ = kanban_storage::space::add_board(
+                                let _ = monotask_storage::space::add_board(
                                     storage.conn(), &meta.space_id, board_id,
                                 );
                             }
                         }
-                        let _ = kanban_storage::space::update_space_doc(
+                        let _ = monotask_storage::space::update_space_doc(
                             storage.conn(), &meta.space_id, doc_bytes,
                         );
                         // Auto-dial owner peer addrs embedded in the token
                         if let Ok(net) = state.net.lock() {
                             if let Some(handle) = net.as_ref() {
-                                for addr in kanban_core::space::get_owner_peer_addrs(&doc) {
+                                for addr in monotask_core::space::get_owner_peer_addrs(&doc) {
                                     save_peer_addr(&state.data_dir, &addr);
                                     handle.add_peer_sync(addr);
                                 }
@@ -1354,7 +1354,7 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
                         }
                     }
                 }
-                let space = kanban_storage::space::get_space(storage.conn(), &meta.space_id)
+                let space = monotask_storage::space::get_space(storage.conn(), &meta.space_id)
                     .map_err(|e| e.to_string())?;
                 drop(storage);
                 announce_all_spaces(&state);
@@ -1366,28 +1366,28 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
     // Extract owner peer addrs before consuming space_doc_bytes
     let owner_peer_addrs: Vec<String> = space_doc_bytes.as_ref()
         .and_then(|b| automerge::AutoCommit::load(b).ok())
-        .map(|d| kanban_core::space::get_owner_peer_addrs(&d))
+        .map(|d| monotask_core::space::get_owner_peer_addrs(&d))
         .unwrap_or_default();
 
     // 5–8. Create or merge space
     let (mut doc, members_to_insert, boards_to_insert, space_name) = if let Some(bytes) = space_doc_bytes {
         let doc = automerge::AutoCommit::load(&bytes).map_err(|e| e.to_string())?;
-        let members = kanban_core::space::list_members(&doc).map_err(|e| e.to_string())?;
-        let boards = kanban_core::space::list_board_refs(&doc).map_err(|e| e.to_string())?;
+        let members = monotask_core::space::list_members(&doc).map_err(|e| e.to_string())?;
+        let boards = monotask_core::space::list_board_refs(&doc).map_err(|e| e.to_string())?;
         // Use the name embedded in the space doc; fall back to the hint from the file
-        let name = kanban_core::space::get_space_name(&doc)
+        let name = monotask_core::space::get_space_name(&doc)
             .unwrap_or(space_name_hint);
         (doc, members, boards, name)
     } else {
-        let mut doc = kanban_core::space::create_space_doc(&space_name_hint, &meta.owner_pubkey)
+        let mut doc = monotask_core::space::create_space_doc(&space_name_hint, &meta.owner_pubkey)
             .map_err(|e| e.to_string())?;
-        let empty = kanban_core::space::MemberProfile {
+        let empty = monotask_core::space::MemberProfile {
             display_name: String::new(), avatar_b64: String::new(), bio: String::new(), role: String::new(), color_accent: String::new(), presence: String::new(), kicked: false,
         };
-        kanban_core::space::add_member(&mut doc, &meta.owner_pubkey, &empty)
+        monotask_core::space::add_member(&mut doc, &meta.owner_pubkey, &empty)
             .map_err(|e| e.to_string())?;
         // Include stub owner so SQL space_members row is created for them
-        let stub_owner = kanban_core::space::Member {
+        let stub_owner = monotask_core::space::Member {
             pubkey: meta.owner_pubkey.clone(),
             display_name: None,
             avatar_blob: None,
@@ -1402,21 +1402,21 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
 
     // Add local user to SpaceDoc
     let local_profile = local_member_profile(&state);
-    kanban_core::space::add_member(&mut doc, &local_pubkey, &local_profile)
+    monotask_core::space::add_member(&mut doc, &local_pubkey, &local_profile)
         .map_err(|e| e.to_string())?;
     let doc_bytes = doc.save();
 
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     // Create space row (or skip if already exists from idempotency path)
-    let _ = kanban_storage::space::create_space(
+    let _ = monotask_storage::space::create_space(
         storage.conn(), &meta.space_id, &space_name, &meta.owner_pubkey, &doc_bytes,
     );
     // Insert members from snapshot
     for m in &members_to_insert {
-        let _ = kanban_storage::space::upsert_member(storage.conn(), &meta.space_id, m);
+        let _ = monotask_storage::space::upsert_member(storage.conn(), &meta.space_id, m);
     }
     // Add local user SQL row
-    let local_sql_member = kanban_core::space::Member {
+    let local_sql_member = monotask_core::space::Member {
         pubkey: local_pubkey,
         display_name: if local_profile.display_name.is_empty() { None } else { Some(local_profile.display_name.clone()) },
         avatar_blob: if local_profile.avatar_b64.is_empty() { None } else {
@@ -1429,12 +1429,12 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
         presence: None,
         kicked: false,
     };
-    let _ = kanban_storage::space::upsert_member(storage.conn(), &meta.space_id, &local_sql_member);
+    let _ = monotask_storage::space::upsert_member(storage.conn(), &meta.space_id, &local_sql_member);
     // Insert boards (no FK check needed)
     for board_id in &boards_to_insert {
-        let _ = kanban_storage::space::add_board(storage.conn(), &meta.space_id, board_id);
+        let _ = monotask_storage::space::add_board(storage.conn(), &meta.space_id, board_id);
     }
-    let space = kanban_storage::space::get_space(storage.conn(), &meta.space_id)
+    let space = monotask_storage::space::get_space(storage.conn(), &meta.space_id)
         .map_err(|e| e.to_string())?;
     // Auto-dial owner peer addrs embedded in the token so boards sync immediately
     if let Ok(net) = state.net.lock() {
@@ -1454,13 +1454,13 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
 fn add_board_to_space(space_id: String, board_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     // Update SpaceDoc
-    let bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
+    let bytes = monotask_storage::space::load_space_doc(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     let mut doc = automerge::AutoCommit::load(&bytes).map_err(|e| e.to_string())?;
-    kanban_core::space::add_board_ref(&mut doc, &board_id).map_err(|e| e.to_string())?;
-    kanban_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
+    monotask_core::space::add_board_ref(&mut doc, &board_id).map_err(|e| e.to_string())?;
+    monotask_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
         .map_err(|e| e.to_string())?;
-    kanban_storage::space::add_board(storage.conn(), &space_id, &board_id)
+    monotask_storage::space::add_board(storage.conn(), &space_id, &board_id)
         .map_err(|e| e.to_string())?;
     drop(storage);
     announce_all_spaces(&state);
@@ -1470,13 +1470,13 @@ fn add_board_to_space(space_id: String, board_id: String, state: tauri::State<Ap
 #[tauri::command]
 fn remove_board_from_space(space_id: String, board_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
+    let bytes = monotask_storage::space::load_space_doc(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     let mut doc = automerge::AutoCommit::load(&bytes).map_err(|e| e.to_string())?;
-    kanban_core::space::remove_board_ref(&mut doc, &board_id).map_err(|e| e.to_string())?;
-    kanban_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
+    monotask_core::space::remove_board_ref(&mut doc, &board_id).map_err(|e| e.to_string())?;
+    monotask_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
         .map_err(|e| e.to_string())?;
-    kanban_storage::space::remove_board(storage.conn(), &space_id, &board_id)
+    monotask_storage::space::remove_board(storage.conn(), &space_id, &board_id)
         .map_err(|e| e.to_string())?;
     // Clean up the board's data and search index entries
     storage.delete_board(&board_id).map_err(|e| e.to_string())?;
@@ -1488,13 +1488,13 @@ fn remove_board_from_space(space_id: String, board_id: String, state: tauri::Sta
 #[tauri::command]
 fn kick_member_cmd(space_id: String, pubkey: String, state: tauri::State<AppState>) -> Result<(), String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
+    let bytes = monotask_storage::space::load_space_doc(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     let mut doc = automerge::AutoCommit::load(&bytes).map_err(|e| e.to_string())?;
-    kanban_core::space::kick_member(&mut doc, &pubkey).map_err(|e| e.to_string())?;
-    kanban_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
+    monotask_core::space::kick_member(&mut doc, &pubkey).map_err(|e| e.to_string())?;
+    monotask_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
         .map_err(|e| e.to_string())?;
-    kanban_storage::space::set_member_kicked(storage.conn(), &space_id, &pubkey, true)
+    monotask_storage::space::set_member_kicked(storage.conn(), &space_id, &pubkey, true)
         .map_err(|e| e.to_string())
 }
 
@@ -1502,12 +1502,12 @@ fn kick_member_cmd(space_id: String, pubkey: String, state: tauri::State<AppStat
 fn delete_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let my_pubkey = state.identity.public_key_hex();
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+    let space = monotask_storage::space::get_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     if space.owner_pubkey != my_pubkey {
         return Err("Only the space creator can delete this space".to_string());
     }
-    kanban_storage::space::delete_space(storage.conn(), &space_id)
+    monotask_storage::space::delete_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())
 }
 
@@ -1515,12 +1515,12 @@ fn delete_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<(
 fn leave_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<(), String> {
     let my_pubkey = state.identity.public_key_hex();
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+    let space = monotask_storage::space::get_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     if space.owner_pubkey == my_pubkey {
         return Err("You are the owner — use Delete Space instead".to_string());
     }
-    kanban_storage::space::delete_space(storage.conn(), &space_id)
+    monotask_storage::space::delete_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())
 }
 
@@ -1533,21 +1533,21 @@ fn rename_space_cmd(
     validate_text(&new_name, "Space name", 100)?;
     let my_pubkey = state.identity.public_key_hex();
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+    let space = monotask_storage::space::get_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     if space.owner_pubkey != my_pubkey {
         return Err("Only the space owner can rename the space".into());
     }
-    kanban_storage::space::rename_space(storage.conn(), &space_id, &new_name)
+    monotask_storage::space::rename_space(storage.conn(), &space_id, &new_name)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_my_profile(state: tauri::State<AppState>) -> Result<UserProfileView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let profile = kanban_storage::space::get_profile(storage.conn())
+    let profile = monotask_storage::space::get_profile(storage.conn())
         .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| kanban_core::space::UserProfile {
+        .unwrap_or_else(|| monotask_core::space::UserProfile {
             pubkey: state.identity.public_key_hex(),
             display_name: None,
             avatar_blob: None,
@@ -1598,7 +1598,7 @@ fn update_my_profile(
         None
     };
     let pubkey = state.identity.public_key_hex();
-    let new_profile = kanban_core::space::UserProfile {
+    let new_profile = monotask_core::space::UserProfile {
         pubkey: pubkey.clone(),
         display_name: if display_name.is_empty() { None } else { Some(display_name.clone()) },
         avatar_blob: avatar_blob.clone(),
@@ -1610,17 +1610,17 @@ fn update_my_profile(
     };
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     // Preserve ssh_key_path from existing profile
-    let existing = kanban_storage::space::get_profile(storage.conn()).ok().flatten();
-    let final_profile = kanban_core::space::UserProfile {
+    let existing = monotask_storage::space::get_profile(storage.conn()).ok().flatten();
+    let final_profile = monotask_core::space::UserProfile {
         ssh_key_path: existing.and_then(|p| p.ssh_key_path),
         ..new_profile
     };
-    kanban_storage::space::upsert_profile(storage.conn(), &final_profile)
+    monotask_storage::space::upsert_profile(storage.conn(), &final_profile)
         .map_err(|e| e.to_string())?;
     // Propagate to all SpaceDocs
-    let summaries = kanban_storage::space::list_spaces(storage.conn())
+    let summaries = monotask_storage::space::list_spaces(storage.conn())
         .map_err(|e| e.to_string())?;
-    let member_profile = kanban_core::space::MemberProfile {
+    let member_profile = monotask_core::space::MemberProfile {
         display_name: display_name.clone(),
         avatar_b64: avatar_b64.clone().unwrap_or_default(),
         bio: bio.clone().unwrap_or_default(),
@@ -1630,14 +1630,14 @@ fn update_my_profile(
         kicked: false,
     };
     for summary in summaries {
-        if let Ok(bytes) = kanban_storage::space::load_space_doc(storage.conn(), &summary.id) {
+        if let Ok(bytes) = monotask_storage::space::load_space_doc(storage.conn(), &summary.id) {
             if let Ok(mut doc) = automerge::AutoCommit::load(&bytes) {
-                let _ = kanban_core::space::add_member(&mut doc, &pubkey, &member_profile);
-                let _ = kanban_storage::space::update_space_doc(storage.conn(), &summary.id, &doc.save());
+                let _ = monotask_core::space::add_member(&mut doc, &pubkey, &member_profile);
+                let _ = monotask_storage::space::update_space_doc(storage.conn(), &summary.id, &doc.save());
             }
         }
         // Update SQL cache
-        let sql_member = kanban_core::space::Member {
+        let sql_member = monotask_core::space::Member {
             pubkey: pubkey.clone(),
             display_name: if display_name.is_empty() { None } else { Some(display_name.clone()) },
             avatar_blob: avatar_blob.clone(),
@@ -1647,7 +1647,7 @@ fn update_my_profile(
             presence: presence.clone().filter(|s| !s.is_empty()),
             kicked: false,
         };
-        let _ = kanban_storage::space::upsert_member(storage.conn(), &summary.id, &sql_member);
+        let _ = monotask_storage::space::upsert_member(storage.conn(), &summary.id, &sql_member);
     }
     Ok(())
 }
@@ -1655,7 +1655,7 @@ fn update_my_profile(
 #[tauri::command]
 fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result<String, String> {
     let path_ref = path.as_deref().map(std::path::Path::new);
-    let identity = kanban_crypto::import_ssh_identity(path_ref)
+    let identity = monotask_crypto::import_ssh_identity(path_ref)
         .map_err(|e| e.to_string())?;
     let pubkey = identity.public_key_hex();
     let key_bytes = identity.to_secret_bytes();
@@ -1664,8 +1664,8 @@ fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result
         .map_err(|e| e.to_string())?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     // Preserve display_name and avatar_blob from existing profile — only pubkey and ssh_key_path change
-    let existing = kanban_storage::space::get_profile(storage.conn()).ok().flatten();
-    let updated_profile = kanban_core::space::UserProfile {
+    let existing = monotask_storage::space::get_profile(storage.conn()).ok().flatten();
+    let updated_profile = monotask_core::space::UserProfile {
         pubkey: pubkey.clone(),
         display_name: existing.as_ref().and_then(|p| p.display_name.clone()),
         avatar_blob: existing.as_ref().and_then(|p| p.avatar_blob.clone()),
@@ -1675,7 +1675,7 @@ fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result
         presence: existing.as_ref().and_then(|p| p.presence.clone()),
         ssh_key_path: path,
     };
-    kanban_storage::space::upsert_profile(storage.conn(), &updated_profile)
+    monotask_storage::space::upsert_profile(storage.conn(), &updated_profile)
         .map_err(|e| e.to_string())?;
     Ok(pubkey)
 }
@@ -1784,14 +1784,14 @@ fn get_sync_info_cmd(state: tauri::State<AppState>) -> Result<SyncInfo, String> 
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
 
     // Get boards with timestamps
-    let rows = kanban_storage::board::list_boards_with_timestamps(storage.conn())
+    let rows = monotask_storage::board::list_boards_with_timestamps(storage.conn())
         .map_err(|e| e.to_string())?;
 
     let mut boards = Vec::new();
     for (board_id, last_modified) in rows {
         // Load board to get title
         let title = if let Ok(doc) = storage.load_board(&board_id) {
-            kanban_core::board::get_board_title(&doc).unwrap_or_else(|_| board_id[..8.min(board_id.len())].to_string())
+            monotask_core::board::get_board_title(&doc).unwrap_or_else(|_| board_id[..8.min(board_id.len())].to_string())
         } else {
             board_id[..8.min(board_id.len())].to_string()
         };
@@ -1816,11 +1816,11 @@ fn get_sync_info_cmd(state: tauri::State<AppState>) -> Result<SyncInfo, String> 
     drop(net);
 
     let storage2 = state.storage.lock().map_err(|e| e.to_string())?;
-    let all_spaces = kanban_storage::space::list_spaces(storage2.conn())
+    let all_spaces = monotask_storage::space::list_spaces(storage2.conn())
         .map_err(|e| e.to_string())?;
-    let mut all_members: std::collections::HashMap<String, kanban_core::space::Member> = std::collections::HashMap::new();
+    let mut all_members: std::collections::HashMap<String, monotask_core::space::Member> = std::collections::HashMap::new();
     for summary in &all_spaces {
-        if let Ok(space) = kanban_storage::space::get_space(storage2.conn(), &summary.id) {
+        if let Ok(space) = monotask_storage::space::get_space(storage2.conn(), &summary.id) {
             for m in space.members {
                 all_members.entry(m.pubkey.clone()).or_insert(m);
             }
@@ -1845,7 +1845,7 @@ fn get_sync_info_cmd(state: tauri::State<AppState>) -> Result<SyncInfo, String> 
         }
     }).collect();
 
-    let local_peer_id = kanban_net::NetworkHandle::peer_id_from_identity(
+    let local_peer_id = monotask_net::NetworkHandle::peer_id_from_identity(
         state.identity.to_secret_bytes()
     );
 
@@ -1880,7 +1880,7 @@ fn send_chat_message_cmd(
     let pubkey = state.identity.public_key_hex();
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = get_or_create_chat_doc(&storage, &space_id)?;
-    let msg = kanban_core::chat::ChatMessage {
+    let msg = monotask_core::chat::ChatMessage {
         id: uuid::Uuid::new_v4().to_string(),
         author: pubkey,
         text,
@@ -1888,11 +1888,11 @@ fn send_chat_message_cmd(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
-        refs: refs.into_iter().map(|r| kanban_core::chat::ChatRef {
+        refs: refs.into_iter().map(|r| monotask_core::chat::ChatRef {
             kind: r.kind, id: r.id, label: r.label,
         }).collect(),
     };
-    kanban_core::chat::append_message(&mut doc, &msg).map_err(|e| e.to_string())?;
+    monotask_core::chat::append_message(&mut doc, &msg).map_err(|e| e.to_string())?;
     let bytes = doc.save();
     storage.save_board_bytes(&format!("{space_id}-chat"), &bytes, true).map_err(|e| e.to_string())?;
     drop(storage);
@@ -1932,12 +1932,12 @@ fn get_chat_messages_cmd(
 ) -> Result<Vec<ChatMessageView>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let doc = get_or_create_chat_doc(&storage, &space_id)?;
-    let msgs = kanban_core::chat::list_messages(&doc, limit as usize, before_ts)
+    let msgs = monotask_core::chat::list_messages(&doc, limit as usize, before_ts)
         .map_err(|e| e.to_string())?;
 
     // Build author → member profile lookup
-    let space = kanban_storage::space::get_space(storage.conn(), &space_id).ok();
-    let member_map: std::collections::HashMap<String, kanban_core::space::Member> = space
+    let space = monotask_storage::space::get_space(storage.conn(), &space_id).ok();
+    let member_map: std::collections::HashMap<String, monotask_core::space::Member> = space
         .map(|s| s.members.into_iter().map(|m| (m.pubkey.clone(), m)).collect())
         .unwrap_or_default();
 
@@ -1977,7 +1977,7 @@ fn delete_chat_message_cmd(
     let mut found = false;
     for i in 0..len {
         if let Ok(Some((_, entry))) = doc.get(&list_id, i) {
-            if let Ok(Some(id)) = kanban_core::get_string(&doc, &entry, "id") {
+            if let Ok(Some(id)) = monotask_core::get_string(&doc, &entry, "id") {
                 if id == message_id {
                     doc.put(&entry, "deleted", true).map_err(|e| e.to_string())?;
                     found = true;
@@ -2022,7 +2022,7 @@ fn get_mention_suggestions_cmd(
     let mut results: Vec<MentionSuggestion> = Vec::new();
 
     if kind == "all" || kind == "member" {
-        if let Ok(space) = kanban_storage::space::get_space(storage.conn(), &space_id) {
+        if let Ok(space) = monotask_storage::space::get_space(storage.conn(), &space_id) {
             for m in space.members.iter().filter(|m| !m.kicked) {
                 let name = m.display_name.as_deref().unwrap_or(&m.pubkey);
                 if q.is_empty() || name.to_lowercase().contains(&q) {
@@ -2054,7 +2054,7 @@ fn get_mention_suggestions_cmd(
             .collect();
         for board_id in board_ids {
             if let Ok(doc) = storage.load_board(&board_id) {
-                let title = kanban_core::board::get_board_title(&doc)
+                let title = monotask_core::board::get_board_title(&doc)
                     .unwrap_or_else(|_| board_id[..8.min(board_id.len())].to_string());
                 if q.is_empty() || title.to_lowercase().contains(&q) {
                     results.push(MentionSuggestion {
@@ -2182,13 +2182,13 @@ fn main() {
                 Storage::open(&data_dir)
                     .unwrap_or_else(|_| panic!("failed to open storage for net"))
             ));
-            let net_config = kanban_net::NetConfig {
+            let net_config = monotask_net::NetConfig {
                 listen_port: 7272,
                 data_dir: data_dir.clone(),
                 bootstrap_peers: load_saved_peers(&data_dir),
             };
             let mut net_handle = tauri::async_runtime::block_on(
-                kanban_net::NetworkHandle::start(net_config, net_storage, identity_bytes)
+                monotask_net::NetworkHandle::start(net_config, net_storage, identity_bytes)
             ).ok();
 
             // Drain P2P network events and emit to frontend as Tauri events
@@ -2198,19 +2198,19 @@ fn main() {
                     tauri::async_runtime::spawn(async move {
                         while let Some(event) = event_rx.recv().await {
                             match event {
-                                kanban_net::NetEvent::BoardSynced { board_id, peer_id } => {
+                                monotask_net::NetEvent::BoardSynced { board_id, peer_id } => {
                                     let _ = app_handle_for_events.emit("board-synced",
                                         serde_json::json!({"board_id": board_id, "peer_id": peer_id}));
                                 }
-                                kanban_net::NetEvent::PeerConnected { peer_id } => {
+                                monotask_net::NetEvent::PeerConnected { peer_id } => {
                                     let _ = app_handle_for_events.emit("peer-connected",
                                         serde_json::json!({"peer_id": peer_id}));
                                 }
-                                kanban_net::NetEvent::PeerDisconnected { peer_id } => {
+                                monotask_net::NetEvent::PeerDisconnected { peer_id } => {
                                     let _ = app_handle_for_events.emit("peer-disconnected",
                                         serde_json::json!({"peer_id": peer_id}));
                                 }
-                                kanban_net::NetEvent::SyncError { board_id, error } => {
+                                monotask_net::NetEvent::SyncError { board_id, error } => {
                                     let _ = app_handle_for_events.emit("sync-error",
                                         serde_json::json!({"board_id": board_id, "error": error}));
                                 }
@@ -2222,7 +2222,7 @@ fn main() {
 
             // Announce existing spaces so peers can find us immediately on startup.
             if let Some(ref handle) = net_handle {
-                let space_ids = kanban_storage::space::list_spaces(storage.conn())
+                let space_ids = monotask_storage::space::list_spaces(storage.conn())
                     .map(|v| v.into_iter().map(|s| s.id).collect::<Vec<_>>())
                     .unwrap_or_default();
                 if !space_ids.is_empty() {

@@ -22,7 +22,7 @@ pub enum StorageError {
 /// Extract (card_id, number_string) pairs from an Automerge doc.
 fn extract_card_numbers(doc: &automerge::AutoCommit) -> Vec<(String, String)> {
     use automerge::ReadDoc;
-    let cards_map = match kanban_core::get_cards_map_readonly(doc) {
+    let cards_map = match monotask_core::get_cards_map_readonly(doc) {
         Ok(id) => id,
         Err(e) => {
             eprintln!("EXTRACT: get_cards_map_readonly failed: {e}");
@@ -45,7 +45,7 @@ fn extract_card_numbers(doc: &automerge::AutoCommit) -> Vec<(String, String)> {
                 eprintln!("EXTRACT: card {card_id:.8} is deleted, skipping");
                 return None;
             }
-            let number = match kanban_core::get_string(doc, &card_obj, "number").ok().flatten() {
+            let number = match monotask_core::get_string(doc, &card_obj, "number").ok().flatten() {
                 Some(n) => n,
                 None => {
                     eprintln!("EXTRACT: card {card_id:.8} has no number, skipping");
@@ -186,7 +186,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut storage = Storage::open(tmp.path()).unwrap();
         let mut doc = AutoCommit::new();
-        kanban_core::init_doc(&mut doc).unwrap();
+        monotask_core::init_doc(&mut doc).unwrap();
         storage.save_board("board1", &mut doc).unwrap();
         let loaded = storage.load_board("board1").unwrap();
         assert!(automerge::ReadDoc::get(&loaded, automerge::ROOT, "columns").unwrap().is_some());
@@ -196,7 +196,7 @@ mod tests {
     fn list_boards_returns_saved_boards() {
         let mut storage = Storage::open_in_memory().unwrap();
         let mut doc = AutoCommit::new();
-        kanban_core::init_doc(&mut doc).unwrap();
+        monotask_core::init_doc(&mut doc).unwrap();
         storage.save_board("board-a", &mut doc).unwrap();
         storage.save_board("board-b", &mut doc).unwrap();
         let ids = storage.list_board_ids().unwrap();

@@ -279,16 +279,16 @@ fn data_dir(cli: &Cli) -> anyhow::Result<std::path::PathBuf> {
     Ok(new_dir)
 }
 
-fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) -> anyhow::Result<kanban_crypto::Identity> {
-    use kanban_crypto::Identity;
-    use kanban_storage::space as space_store;
+fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) -> anyhow::Result<monotask_crypto::Identity> {
+    use monotask_crypto::Identity;
+    use monotask_storage::space as space_store;
     let key_path = data_dir.join("identity.key");
     // Step 1: Try SSH key from profile
     if let Some(profile) = space_store::get_profile(conn)? {
         if let Some(ssh_path) = &profile.ssh_key_path {
             let p = std::path::Path::new(ssh_path);
             if p.exists() {
-                if let Ok(id) = kanban_crypto::import_ssh_identity(Some(p)) {
+                if let Ok(id) = monotask_crypto::import_ssh_identity(Some(p)) {
                     return Ok(id);
                 }
             }
@@ -305,7 +305,7 @@ fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) ->
     // Step 3: Generate new identity
     let id = Identity::generate();
     std::fs::write(&key_path, id.to_secret_bytes())?;
-    let new_profile = kanban_core::space::UserProfile {
+    let new_profile = monotask_core::space::UserProfile {
         pubkey: id.public_key_hex(),
         display_name: None,
         avatar_blob: None,
@@ -323,7 +323,7 @@ fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) ->
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let dir = data_dir(&cli)?;
-    let mut storage = kanban_storage::Storage::open(&dir)?;
+    let mut storage = monotask_storage::Storage::open(&dir)?;
     let identity = load_cli_identity(&dir, storage.conn())?;
 
     match cli.command {
@@ -332,8 +332,8 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Board { cmd } => match cmd {
             BoardCommands::Create { title, json } => {
-                let id = kanban_crypto::Identity::generate();
-                let (mut doc, board) = kanban_core::board::create_board(&title, &id.public_key_hex())?;
+                let id = monotask_crypto::Identity::generate();
+                let (mut doc, board) = monotask_core::board::create_board(&title, &id.public_key_hex())?;
                 storage.save_board(&board.id, &mut doc)?;
                 if json {
                     let deep_link = format!("monotask://board/{}", board.id);
@@ -349,7 +349,7 @@ async fn main() -> anyhow::Result<()> {
             }
             BoardCommands::Rename { board_id, new_title, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::rename_board(&mut doc, &new_title)?;
+                monotask_core::rename_board(&mut doc, &new_title)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"board_id": board_id, "title": new_title})); }
                 else { println!("Renamed board {} to: {}", board_id, new_title); }
@@ -358,14 +358,14 @@ async fn main() -> anyhow::Result<()> {
         Commands::Column { cmd } => match cmd {
             ColumnCommands::Create { board_id, title, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                let col_id = kanban_core::column::create_column(&mut doc, &title)?;
+                let col_id = monotask_core::column::create_column(&mut doc, &title)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"id": col_id, "board_id": board_id})); }
                 else { println!("Created column: {title} ({col_id})"); }
             }
             ColumnCommands::List { board_id, json } => {
                 let doc = storage.load_board(&board_id)?;
-                let cols = kanban_core::column::list_columns(&doc)?;
+                let cols = monotask_core::column::list_columns(&doc)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&cols)?);
                 } else {
@@ -376,14 +376,14 @@ async fn main() -> anyhow::Result<()> {
             }
             ColumnCommands::Rename { board_id, col_id, new_title, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::rename_column_by_id(&mut doc, &col_id, &new_title)?;
+                monotask_core::rename_column_by_id(&mut doc, &col_id, &new_title)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"col_id": col_id, "title": new_title})); }
                 else { println!("Renamed column {} to: {}", col_id, new_title); }
             }
             ColumnCommands::Delete { board_id, col_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::delete_column(&mut doc, &col_id)?;
+                monotask_core::delete_column(&mut doc, &col_id)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"deleted": col_id})); }
                 else { println!("Deleted column {col_id}"); }
@@ -395,7 +395,7 @@ async fn main() -> anyhow::Result<()> {
                 // Placeholder until identity system is wired in Phase 3
                 let actor_pk = vec![0u8; 32];
                 let members = vec![actor_pk.clone()];
-                let card = kanban_core::card::create_card(&mut doc, &col_id, &title, &actor_pk, &members)?;
+                let card = monotask_core::card::create_card(&mut doc, &col_id, &title, &actor_pk, &members)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     let number_display = card.number.as_ref().map(|n| n.to_display());
@@ -406,7 +406,7 @@ async fn main() -> anyhow::Result<()> {
             }
             CardCommands::View { board_id, card_id, json } => {
                 let doc = storage.load_board(&board_id)?;
-                let card = kanban_core::card::read_card(&doc, &card_id)?;
+                let card = monotask_core::card::read_card(&doc, &card_id)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&card)?);
                 } else {
@@ -422,21 +422,21 @@ async fn main() -> anyhow::Result<()> {
             }
             CardCommands::Rename { board_id, card_id, new_title, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::rename_card(&mut doc, &card_id, &new_title)?;
+                monotask_core::card::rename_card(&mut doc, &card_id, &new_title)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "title": new_title})); }
                 else { println!("Renamed card {} to: {}", card_id, new_title); }
             }
             CardCommands::Delete { board_id, card_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::delete_card(&mut doc, &card_id)?;
+                monotask_core::card::delete_card(&mut doc, &card_id)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"deleted": card_id})); }
                 else { println!("Deleted card {card_id}"); }
             }
             CardCommands::Archive { board_id, card_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::archive_card(&mut doc, &card_id)?;
+                monotask_core::card::archive_card(&mut doc, &card_id)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"archived": card_id})); }
                 else { println!("Archived card {card_id}"); }
@@ -445,7 +445,7 @@ async fn main() -> anyhow::Result<()> {
                 let mut doc = storage.load_board(&board_id)?;
                 let actor_pk = identity.to_secret_bytes().to_vec();
                 let members = vec![actor_pk.clone()];
-                let new_card = kanban_core::card::copy_card(&mut doc, &card_id, &col_id, &actor_pk, &members)?;
+                let new_card = monotask_core::card::copy_card(&mut doc, &card_id, &col_id, &actor_pk, &members)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"id": new_card.id, "title": new_card.title})); }
                 else { println!("Copied card to: {} ({})", new_card.title, new_card.id); }
@@ -453,16 +453,16 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::Move { board_id, card_id, to_col_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
                 // Find which column currently contains the card
-                let cols = kanban_core::column::list_columns(&doc)?;
+                let cols = monotask_core::column::list_columns(&doc)?;
                 let from_col_id = {
                     use automerge::ReadDoc;
                     let mut found = None;
                     'outer: for col in &cols {
-                        let col_obj = match kanban_core::column::find_column_obj(&doc, &col.id)? {
+                        let col_obj = match monotask_core::column::find_column_obj(&doc, &col.id)? {
                             Some(o) => o,
                             None => continue,
                         };
-                        let card_ids = match kanban_core::column::get_card_ids_list(&doc, &col_obj) {
+                        let card_ids = match monotask_core::column::get_card_ids_list(&doc, &col_obj) {
                             Ok(id) => id,
                             Err(_) => continue,
                         };
@@ -479,14 +479,14 @@ async fn main() -> anyhow::Result<()> {
                     }
                     found.ok_or_else(|| anyhow::anyhow!("card {} not found in any column", card_id))?
                 };
-                kanban_core::column::move_card(&mut doc, &card_id, &from_col_id, &to_col_id)?;
+                monotask_core::column::move_card(&mut doc, &card_id, &from_col_id, &to_col_id)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "to_col_id": to_col_id})); }
                 else { println!("Moved card {} to column {}", card_id, to_col_id); }
             }
             CardCommands::SetDescription { board_id, card_id, text, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::set_description(&mut doc, &card_id, &text)?;
+                monotask_core::card::set_description(&mut doc, &card_id, &text)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "description": text})); }
                 else { println!("Updated description for card {card_id}"); }
@@ -494,7 +494,7 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::SetCover { board_id, card_id, color, json } => {
                 let color_arg = if color == "none" { "" } else { &color };
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::set_cover_color(&mut doc, &card_id, color_arg)?;
+                monotask_core::card::set_cover_color(&mut doc, &card_id, color_arg)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "color": color_arg})); }
                 else { println!("Set cover color for card {card_id}"); }
@@ -502,7 +502,7 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::SetDueDate { board_id, card_id, date, json } => {
                 let due: Option<&str> = if date == "none" { None } else { Some(&date) };
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::set_due_date(&mut doc, &card_id, due)?;
+                monotask_core::card::set_due_date(&mut doc, &card_id, due)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "due_date": due})); }
                 else { println!("Set due date for card {card_id}"); }
@@ -510,7 +510,7 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::SetPriority { board_id, card_id, priority, json } => {
                 let pri = if priority == "none" { "" } else { &priority };
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::set_priority(&mut doc, &card_id, pri)?;
+                monotask_core::card::set_priority(&mut doc, &card_id, pri)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "priority": pri})); }
                 else { println!("Set priority for card {card_id}"); }
@@ -518,7 +518,7 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::SetAssignee { board_id, card_id, pubkey, json } => {
                 let pk = if pubkey == "none" { "" } else { &pubkey };
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::card::set_assignee(&mut doc, &card_id, pk)?;
+                monotask_core::card::set_assignee(&mut doc, &card_id, pk)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "assignee": pk})); }
                 else { println!("Set assignee for card {card_id}"); }
@@ -526,21 +526,21 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::Label { cmd } => match cmd {
                 LabelCommands::Add { board_id, card_id, label, json } => {
                     let mut doc = storage.load_board(&board_id)?;
-                    kanban_core::card::add_label(&mut doc, &card_id, &label)?;
+                    monotask_core::card::add_label(&mut doc, &card_id, &label)?;
                     storage.save_board(&board_id, &mut doc)?;
                     if json { println!("{}", serde_json::json!({"card_id": card_id, "label": label})); }
                     else { println!("Added label '{}' to card {}", label, card_id); }
                 }
                 LabelCommands::Remove { board_id, card_id, label, json } => {
                     let mut doc = storage.load_board(&board_id)?;
-                    kanban_core::card::remove_label(&mut doc, &card_id, &label)?;
+                    monotask_core::card::remove_label(&mut doc, &card_id, &label)?;
                     storage.save_board(&board_id, &mut doc)?;
                     if json { println!("{}", serde_json::json!({"card_id": card_id, "removed_label": label})); }
                     else { println!("Removed label '{}' from card {}", label, card_id); }
                 }
                 LabelCommands::List { board_id, card_id, json } => {
                     let doc = storage.load_board(&board_id)?;
-                    let card = kanban_core::card::read_card(&doc, &card_id)?;
+                    let card = monotask_core::card::read_card(&doc, &card_id)?;
                     if json { println!("{}", serde_json::to_string_pretty(&card.labels)?); }
                     else {
                         if card.labels.is_empty() { println!("No labels."); }
@@ -553,7 +553,7 @@ async fn main() -> anyhow::Result<()> {
                     let mut doc = storage.load_board(&board_id)?;
                     // Use placeholder identity until Phase 3 wires real identity
                     let author_key = "placeholder";
-                    let comment = kanban_core::comment::add_comment(&mut doc, &card_id, &text, author_key)?;
+                    let comment = monotask_core::comment::add_comment(&mut doc, &card_id, &text, author_key)?;
                     storage.save_board(&board_id, &mut doc)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&comment)?);
@@ -563,7 +563,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 CommentCommands::List { board_id, card_id, json } => {
                     let doc = storage.load_board(&board_id)?;
-                    let comments = kanban_core::comment::list_comments(&doc, &card_id)?;
+                    let comments = monotask_core::comment::list_comments(&doc, &card_id)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&comments)?);
                     } else {
@@ -574,7 +574,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 CommentCommands::Delete { board_id, card_id, comment_id, json } => {
                     let mut doc = storage.load_board(&board_id)?;
-                    kanban_core::comment::delete_comment(&mut doc, &card_id, &comment_id)?;
+                    monotask_core::comment::delete_comment(&mut doc, &card_id, &comment_id)?;
                     storage.save_board(&board_id, &mut doc)?;
                     if json {
                         println!("{}", serde_json::json!({"deleted": comment_id}));
@@ -584,7 +584,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 CommentCommands::Edit { board_id, card_id, comment_id, new_text, json } => {
                     let mut doc = storage.load_board(&board_id)?;
-                    kanban_core::comment::edit_comment(&mut doc, &card_id, &comment_id, &new_text)?;
+                    monotask_core::comment::edit_comment(&mut doc, &card_id, &comment_id, &new_text)?;
                     storage.save_board(&board_id, &mut doc)?;
                     if json {
                         println!("{}", serde_json::json!({"edited": comment_id}));
@@ -597,7 +597,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Checklist { cmd } => match cmd {
             ChecklistCommands::Add { board_id, card_id, title, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                let cl = kanban_core::checklist::add_checklist(&mut doc, &card_id, &title)?;
+                let cl = monotask_core::checklist::add_checklist(&mut doc, &card_id, &title)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&cl)?);
@@ -607,7 +607,7 @@ async fn main() -> anyhow::Result<()> {
             }
             ChecklistCommands::ItemAdd { board_id, card_id, checklist_id, text, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                let item = kanban_core::checklist::add_checklist_item(&mut doc, &card_id, &checklist_id, &text)?;
+                let item = monotask_core::checklist::add_checklist_item(&mut doc, &card_id, &checklist_id, &text)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&item)?);
@@ -617,7 +617,7 @@ async fn main() -> anyhow::Result<()> {
             }
             ChecklistCommands::ItemCheck { board_id, card_id, checklist_id, item_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::checklist::set_item_checked(&mut doc, &card_id, &checklist_id, &item_id, true)?;
+                monotask_core::checklist::set_item_checked(&mut doc, &card_id, &checklist_id, &item_id, true)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::json!({"checked": true, "item_id": item_id}));
@@ -627,7 +627,7 @@ async fn main() -> anyhow::Result<()> {
             }
             ChecklistCommands::ItemUncheck { board_id, card_id, checklist_id, item_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::checklist::set_item_checked(&mut doc, &card_id, &checklist_id, &item_id, false)?;
+                monotask_core::checklist::set_item_checked(&mut doc, &card_id, &checklist_id, &item_id, false)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::json!({"checked": false, "item_id": item_id}));
@@ -637,7 +637,7 @@ async fn main() -> anyhow::Result<()> {
             }
             ChecklistCommands::ItemDelete { board_id, card_id, checklist_id, item_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::checklist::delete_checklist_item(&mut doc, &card_id, &checklist_id, &item_id)?;
+                monotask_core::checklist::delete_checklist_item(&mut doc, &card_id, &checklist_id, &item_id)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::json!({"deleted_item": item_id}));
@@ -647,7 +647,7 @@ async fn main() -> anyhow::Result<()> {
             }
             ChecklistCommands::Delete { board_id, card_id, checklist_id, json } => {
                 let mut doc = storage.load_board(&board_id)?;
-                kanban_core::checklist::delete_checklist(&mut doc, &card_id, &checklist_id)?;
+                monotask_core::checklist::delete_checklist(&mut doc, &card_id, &checklist_id)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
                     println!("{}", serde_json::json!({"deleted_checklist": checklist_id}));
@@ -674,8 +674,8 @@ async fn cmd_sync(
     port: u16,
     peers: Vec<String>,
 ) -> anyhow::Result<()> {
-    use kanban_net::{NetworkHandle, NetConfig, NetEvent};
-    use kanban_storage::Storage;
+    use monotask_net::{NetworkHandle, NetConfig, NetEvent};
+    use monotask_storage::Storage;
     use std::sync::{Arc, Mutex};
 
     let pid_file = data_dir.join("sync.pid");
@@ -715,7 +715,7 @@ async fn cmd_sync(
     // Load identity bytes and space IDs
     let (identity_bytes, space_ids) = {
         let storage = Storage::open(&data_dir)?;
-        let space_ids: Vec<String> = kanban_storage::space::list_spaces(storage.conn())?
+        let space_ids: Vec<String> = monotask_storage::space::list_spaces(storage.conn())?
             .into_iter().map(|s| s.id).collect();
         let key_path = data_dir.join("identity.key");
         let bytes = std::fs::read(&key_path)
@@ -791,9 +791,9 @@ async fn cmd_sync(
     }
 }
 
-fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, identity: &kanban_crypto::Identity) -> anyhow::Result<()> {
-    use kanban_core::space as cs;
-    use kanban_storage::space as ss;
+fn handle_space(cmd: SpaceCommands, storage: &mut monotask_storage::Storage, identity: &monotask_crypto::Identity) -> anyhow::Result<()> {
+    use monotask_core::space as cs;
+    use monotask_storage::space as ss;
 
     match cmd {
         SpaceCommands::Create { name } => {
@@ -846,16 +846,16 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
             SpaceInviteCommands::Generate { space_id } => {
                 ss::revoke_all_invites(storage.conn(), &space_id)?;
                 let doc_bytes = ss::load_space_doc(storage.conn(), &space_id)?;
-                let token = kanban_crypto::generate_invite_token(&space_id, identity, Some(&doc_bytes))?;
-                let meta = kanban_crypto::verify_invite_token_signature(&token)?;
+                let token = monotask_crypto::generate_invite_token(&space_id, identity, Some(&doc_bytes))?;
+                let meta = monotask_crypto::verify_invite_token_signature(&token)?;
                 ss::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)?;
                 println!("{}", token);
             }
             SpaceInviteCommands::Export { space_id, output_file } => {
                 ss::revoke_all_invites(storage.conn(), &space_id)?;
                 let doc_bytes = ss::load_space_doc(storage.conn(), &space_id)?;
-                let token = kanban_crypto::generate_invite_token(&space_id, identity, Some(&doc_bytes))?;
-                let meta = kanban_crypto::verify_invite_token_signature(&token)?;
+                let token = monotask_crypto::generate_invite_token(&space_id, identity, Some(&doc_bytes))?;
+                let meta = monotask_crypto::verify_invite_token_signature(&token)?;
                 ss::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)?;
                 let space = ss::get_space(storage.conn(), &space_id)?;
                 use base64::Engine;
@@ -876,7 +876,7 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
         SpaceCommands::Join { token_or_file } => {
             let local_pubkey = identity.public_key_hex();
             let (token, _hint_name, file_doc_opt) = parse_token_or_file(&token_or_file)?;
-            let meta = kanban_crypto::verify_invite_token_signature(&token)?;
+            let meta = monotask_crypto::verify_invite_token_signature(&token)?;
             ss::check_invite_policy(storage.conn(), &meta, &local_pubkey)?;
 
             // Prefer doc from token (v2), fall back to .space file payload, then stub
@@ -990,13 +990,13 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
     Ok(())
 }
 
-fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, identity: &kanban_crypto::Identity, data_dir: &std::path::Path) -> anyhow::Result<()> {
-    use kanban_storage::space as ss;
+fn handle_profile(cmd: ProfileCommands, storage: &mut monotask_storage::Storage, identity: &monotask_crypto::Identity, data_dir: &std::path::Path) -> anyhow::Result<()> {
+    use monotask_storage::space as ss;
 
     match cmd {
         ProfileCommands::Show => {
             let profile = ss::get_profile(storage.conn())?
-                .unwrap_or_else(|| kanban_core::space::UserProfile {
+                .unwrap_or_else(|| monotask_core::space::UserProfile {
                     pubkey: identity.public_key_hex(),
                     display_name: None,
                     avatar_blob: None,
@@ -1012,7 +1012,7 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
             println!("SSH key path: {}", profile.ssh_key_path.as_deref().unwrap_or("(auto-generated)"));
         }
         ProfileCommands::SetName { name } => {
-            let existing = ss::get_profile(storage.conn())?.unwrap_or_else(|| kanban_core::space::UserProfile {
+            let existing = ss::get_profile(storage.conn())?.unwrap_or_else(|| monotask_core::space::UserProfile {
                 pubkey: identity.public_key_hex(),
                 display_name: None,
                 avatar_blob: None,
@@ -1022,7 +1022,7 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
                 presence: None,
                 ssh_key_path: None,
             });
-            ss::upsert_profile(storage.conn(), &kanban_core::space::UserProfile {
+            ss::upsert_profile(storage.conn(), &monotask_core::space::UserProfile {
                 display_name: Some(name.clone()),
                 ..existing
             })?;
@@ -1030,7 +1030,7 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
         }
         ProfileCommands::SetAvatar { path } => {
             let avatar_blob = std::fs::read(&path)?;
-            let existing = ss::get_profile(storage.conn())?.unwrap_or_else(|| kanban_core::space::UserProfile {
+            let existing = ss::get_profile(storage.conn())?.unwrap_or_else(|| monotask_core::space::UserProfile {
                 pubkey: identity.public_key_hex(),
                 display_name: None,
                 avatar_blob: None,
@@ -1040,7 +1040,7 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
                 presence: None,
                 ssh_key_path: None,
             });
-            ss::upsert_profile(storage.conn(), &kanban_core::space::UserProfile {
+            ss::upsert_profile(storage.conn(), &monotask_core::space::UserProfile {
                 avatar_blob: Some(avatar_blob),
                 ..existing
             })?;
@@ -1048,12 +1048,12 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
         }
         ProfileCommands::ImportSshKey { path } => {
             let path_ref = path.as_deref().map(std::path::Path::new);
-            let new_identity = kanban_crypto::import_ssh_identity(path_ref)?;
+            let new_identity = monotask_crypto::import_ssh_identity(path_ref)?;
             let pubkey = new_identity.public_key_hex();
             let key_bytes = new_identity.to_secret_bytes();
             std::fs::write(data_dir.join("identity.key"), key_bytes)?;
             let existing = ss::get_profile(storage.conn())?;
-            ss::upsert_profile(storage.conn(), &kanban_core::space::UserProfile {
+            ss::upsert_profile(storage.conn(), &monotask_core::space::UserProfile {
                 pubkey: pubkey.clone(),
                 display_name: existing.as_ref().and_then(|p| p.display_name.clone()),
                 avatar_blob: existing.as_ref().and_then(|p| p.avatar_blob.clone()),
@@ -1069,10 +1069,10 @@ fn handle_profile(cmd: ProfileCommands, storage: &mut kanban_storage::Storage, i
     Ok(())
 }
 
-fn get_local_member_profile(conn: &rusqlite::Connection) -> kanban_core::space::MemberProfile {
-    use kanban_storage::space as ss;
+fn get_local_member_profile(conn: &rusqlite::Connection) -> monotask_core::space::MemberProfile {
+    use monotask_storage::space as ss;
     let profile = ss::get_profile(conn).ok().flatten();
-    kanban_core::space::MemberProfile {
+    monotask_core::space::MemberProfile {
         display_name: profile.as_ref()
             .and_then(|p| p.display_name.clone())
             .unwrap_or_default(),
