@@ -280,6 +280,7 @@
       background: #0d0d1c; border: 1px solid #1a1a30;
       border-radius: 8px; min-width: 260px; width: 260px; flex-shrink: 0;
       display: flex; flex-direction: column; height: calc(100vh - 150px);
+      overflow: hidden;
     }
     .board-col-header {
       padding: 10px 12px 10px 14px; font-size: 11px; color: #aaa;
@@ -294,7 +295,7 @@
     .board-col-cards {
       list-style: none; padding: 8px; overflow-y: auto; flex: 1;
       display: flex; flex-direction: column; gap: 6px;
-      min-height: 60px; -webkit-overflow-scrolling: touch;
+      min-height: 0; -webkit-overflow-scrolling: touch;
     }
     .task-card {
       background: #131326; border: 1px solid #1e1e3a;
