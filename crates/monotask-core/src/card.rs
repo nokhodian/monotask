@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Attachment {
+    pub name: String,
+    pub mime: String,
+    #[serde(skip)]          // excluded from CLI `card view --json` output (too verbose)
+    pub data_b64: String,   // Tauri reads this as a Rust field, not via serde
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Card {
     pub id: String,
     pub number: Option<crate::card_number::CardNumber>,
@@ -18,6 +26,7 @@ pub struct Card {
     pub copied_from: Option<String>,
     pub created_by: String,
     pub created_at: String,
+    pub attachments: std::collections::HashMap<String, Attachment>,
 }
 
 pub(crate) fn assign_next_card_number(
@@ -89,6 +98,7 @@ pub fn create_card(
     doc.put_object(&card_obj, "comments", ObjType::List)?;
     doc.put_object(&card_obj, "checklists", ObjType::List)?;
     doc.put_object(&card_obj, "related", ObjType::Map)?;
+    doc.put_object(&card_obj, "attachments", ObjType::Map)?;
     crate::column::append_card_to_column(doc, col_id, &card_id)?;
     Ok(Card {
         id: card_id,
@@ -149,6 +159,23 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         }
         None => vec![],
     };
+    // Read attachments map
+    let attachments = match doc.get(&card_obj, "attachments")? {
+        Some((_, map_id)) => {
+            let keys: Vec<String> = doc.keys(&map_id).map(|k| k.to_string()).collect();
+            let mut m = std::collections::HashMap::new();
+            for key in keys {
+                if let Some((_, entry_id)) = doc.get(&map_id, key.as_str())? {
+                    let name = crate::get_string(doc, &entry_id, "name")?.unwrap_or_default();
+                    let mime = crate::get_string(doc, &entry_id, "mime")?.unwrap_or_default();
+                    let data_b64 = crate::get_string(doc, &entry_id, "data")?.unwrap_or_default();
+                    m.insert(key, Attachment { name, mime, data_b64 });
+                }
+            }
+            m
+        }
+        None => std::collections::HashMap::new(),
+    };
     Ok(Card {
         id: card_id.to_string(),
         title,
@@ -163,6 +190,7 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         number,
         assignees,
         labels,
+        attachments,
         ..Default::default()
     })
 }
@@ -411,6 +439,40 @@ pub fn set_assignee(doc: &mut AutoCommit, card_id: &str, pubkey_hex: &str) -> Re
     Ok(())
 }
 
+pub fn attach_image(
+    doc: &mut AutoCommit,
+    card_id: &str,
+    id: &str,
+    name: &str,
+    mime: &str,
+    data_b64: &str,
+) -> Result<()> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let attachments_map = match doc.get(&card_obj, "attachments")? {
+        Some((_, map_id)) => map_id,
+        None => doc.put_object(&card_obj, "attachments", ObjType::Map)?,
+    };
+    let entry = doc.put_object(&attachments_map, id, ObjType::Map)?;
+    doc.put(&entry, "name", name)?;
+    doc.put(&entry, "mime", mime)?;
+    doc.put(&entry, "data", data_b64)?;
+    Ok(())
+}
+
+pub fn remove_attachment(
+    doc: &mut AutoCommit,
+    card_id: &str,
+    attachment_id: &str,
+) -> Result<()> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let attachments_map = match doc.get(&card_obj, "attachments")? {
+        Some((_, map_id)) => map_id,
+        None => return Ok(()),
+    };
+    doc.delete(&attachments_map, attachment_id)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,5 +559,55 @@ mod tests {
 
         let result = copy_card(&mut doc, &original.id, &col_id, &actor_pk, &members);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn attach_image_stores_and_reads_back() {
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let card = create_card(&mut doc, &col_id, "Task", &actor_pk, &members).unwrap();
+
+        attach_image(&mut doc, &card.id, "abc123", "shot.png", "image/png", "aGVsbG8=").unwrap();
+
+        let read = read_card(&doc, &card.id).unwrap();
+        assert_eq!(read.attachments.len(), 1);
+        let att = read.attachments.get("abc123").unwrap();
+        assert_eq!(att.name, "shot.png");
+        assert_eq!(att.mime, "image/png");
+        assert_eq!(att.data_b64, "aGVsbG8=");
+    }
+
+    #[test]
+    fn remove_attachment_removes_entry() {
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let card = create_card(&mut doc, &col_id, "Task", &actor_pk, &members).unwrap();
+
+        attach_image(&mut doc, &card.id, "abc123", "shot.png", "image/png", "aGVsbG8=").unwrap();
+        remove_attachment(&mut doc, &card.id, "abc123").unwrap();
+
+        let read = read_card(&doc, &card.id).unwrap();
+        assert!(read.attachments.is_empty());
+    }
+
+    #[test]
+    fn attach_image_on_card_without_attachments_map() {
+        // Verifies attach_image gracefully creates the attachments map if missing
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let card = create_card(&mut doc, &col_id, "Old Task", &actor_pk, &members).unwrap();
+        // attach should succeed even if the attachments map were missing
+        attach_image(&mut doc, &card.id, "xyz789", "img.jpg", "image/jpeg", "dGVzdA==").unwrap();
+        let read = read_card(&doc, &card.id).unwrap();
+        assert_eq!(read.attachments.len(), 1);
     }
 }
