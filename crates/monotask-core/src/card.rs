@@ -319,6 +319,7 @@ pub fn copy_card(
     doc.put_object(&card_obj, "comments", ObjType::List)?;
     doc.put_object(&card_obj, "checklists", ObjType::List)?;
     doc.put_object(&card_obj, "related", ObjType::Map)?;
+    doc.put_object(&card_obj, "attachments", ObjType::Map)?;
 
     // Append to target column
     crate::column::append_card_to_column(doc, target_col_id, &new_card_id)?;
