@@ -348,6 +348,14 @@ struct ChecklistView {
 }
 
 #[derive(serde::Serialize)]
+struct AttachmentView {
+    id: String,
+    name: String,
+    mime: String,
+    data_b64: String,
+}
+
+#[derive(serde::Serialize)]
 struct CardDetailView {
     id: String,
     title: String,
@@ -362,6 +370,7 @@ struct CardDetailView {
     checklists: Vec<ChecklistView>,
     cover_color: Option<String>,
     priority: Option<String>,
+    attachments: Vec<AttachmentView>,
 }
 
 #[derive(serde::Serialize)]
@@ -823,6 +832,15 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
             }).collect(),
         })
         .collect();
+    let attachments: Vec<AttachmentView> = card.attachments
+        .into_iter()
+        .map(|(id, a)| AttachmentView {
+            id,
+            name: a.name,
+            mime: a.mime,
+            data_b64: a.data_b64,
+        })
+        .collect();
     Ok(CardDetailView {
         id: card.id,
         title: card.title,
@@ -837,6 +855,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         checklists,
         cover_color,
         priority,
+        attachments,
     })
 }
 
@@ -974,6 +993,50 @@ fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppSta
         "DELETE FROM card_search_index WHERE card_id = ?1",
         [&card_id],
     );
+    trigger_board_sync(&board_id, &state);
+    Ok(())
+}
+
+fn generate_attachment_id() -> String {
+    let raw = uuid::Uuid::new_v4().to_string().replace('-', "");
+    raw[..6].to_string()
+}
+
+#[tauri::command]
+fn attach_image_cmd(
+    board_id: String,
+    card_id: String,
+    name: String,
+    mime: String,
+    data_b64: String,
+    state: tauri::State<AppState>,
+) -> Result<String, String> {
+    let id = generate_attachment_id();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    monotask_core::card::attach_image(&mut doc, &card_id, &id, &name, &mime, &data_b64)
+        .map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(id)
+}
+
+#[tauri::command]
+fn remove_attachment_cmd(
+    board_id: String,
+    card_id: String,
+    attachment_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    monotask_core::card::remove_attachment(&mut doc, &card_id, &attachment_id)
+        .map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(())
 }
@@ -2296,6 +2359,8 @@ fn main() {
             redo_cmd,
             get_card_history_cmd,
             export_board_cmd,
+            attach_image_cmd,
+            remove_attachment_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
