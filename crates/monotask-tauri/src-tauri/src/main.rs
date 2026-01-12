@@ -1012,6 +1012,9 @@ fn attach_image_cmd(
     state: tauri::State<AppState>,
 ) -> Result<String, String> {
     let id = generate_attachment_id();
+    if data_b64.len() > 5 * 1024 * 1024 {
+        return Err("Image data too large (max 5 MB base64)".to_string());
+    }
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
