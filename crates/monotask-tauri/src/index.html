@@ -611,6 +611,35 @@
       font-family: inherit; outline: none; line-height: 1.5;
     }
     .card-detail-desc:focus { border-color: #2e2e5a; }
+    .desc-tab-bar { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; }
+    .desc-tab {
+      background: #1e1e3a; border: 1px solid #2a2a4a; color: #888;
+      padding: 2px 10px; border-radius: 3px; font-size: 10px; cursor: pointer;
+    }
+    .desc-tab.active { background: #2e2e5a; color: #ccc; border-color: #3a3a6a; }
+    .desc-toolbar { margin-bottom: 4px; }
+    .desc-toolbar-btn {
+      background: #1e1e3a; border: 1px solid #2a2a4a; color: #888;
+      padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: pointer;
+    }
+    .desc-toolbar-btn:hover { background: #2a2a4a; color: #ccc; }
+    .card-detail-desc-preview {
+      width: 100%; min-height: 72px; resize: vertical;
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 8px 10px; border-radius: 4px; font-size: 13px;
+      line-height: 1.5; overflow-y: auto; box-sizing: border-box;
+    }
+    .card-detail-desc-preview img {
+      max-width: 100%; border-radius: 4px; margin: 4px 0; display: block;
+    }
+    .card-detail-desc-preview code {
+      background: #1a1a30; padding: 1px 4px; border-radius: 3px;
+      font-family: monospace; font-size: 12px;
+    }
+    .card-detail-desc-preview ul { padding-left: 20px; margin: 4px 0; }
+    .card-detail-desc-preview h1 { font-size: 17px; color: #ddd; margin: 8px 0 4px; }
+    .card-detail-desc-preview h2 { font-size: 15px; color: #ddd; margin: 8px 0 4px; }
+    .card-detail-desc-preview h3 { font-size: 13px; color: #ddd; margin: 8px 0 4px; }
     .card-detail-due {
       background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
       padding: 6px 10px; border-radius: 4px; font-size: 13px;
@@ -1314,8 +1343,19 @@
       <!-- Left: description, labels, due date -->
       <div class="card-detail-left">
         <div class="card-detail-section">
-          <div class="card-detail-label">Description</div>
-          <textarea id="card-detail-desc" class="card-detail-desc" placeholder="Add a description…"></textarea>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div class="card-detail-label" style="margin-bottom:0;">Description</div>
+            <div class="desc-tab-bar" style="margin-bottom:0;">
+              <button id="desc-tab-edit" class="desc-tab active" onclick="switchDescTab('edit')">Edit</button>
+              <button id="desc-tab-preview" class="desc-tab" onclick="switchDescTab('preview')">Preview</button>
+            </div>
+          </div>
+          <div id="desc-toolbar" class="desc-toolbar">
+            <button class="desc-toolbar-btn" onclick="triggerImageAttach()">📎 Image</button>
+            <input type="file" id="desc-image-input" accept="image/*" style="display:none;" onchange="handleImageFile(this)">
+          </div>
+          <textarea id="card-detail-desc" class="card-detail-desc" placeholder="Add a description… (supports markdown, paste or attach images)"></textarea>
+          <div id="desc-preview" class="card-detail-desc-preview" style="display:none;"></div>
         </div>
         <div class="card-detail-section">
           <div class="card-detail-label">Labels</div>
