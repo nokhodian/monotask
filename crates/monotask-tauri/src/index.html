@@ -2208,6 +2208,7 @@
 
   // ── Card detail modal ─────────────────────────────────────────────────────
   let _cardDetailCtx = null; // { boardId, cardId }
+  let _descAttachments = {}; // { id: { name, mime, data_b64 } } — populated when a card is opened
 
   function formatHlc(hlc) {
     try {
@@ -2319,6 +2320,122 @@
     }
   }
 
+  function switchDescTab(tab) {
+    const editTab = document.getElementById('desc-tab-edit');
+    const previewTab = document.getElementById('desc-tab-preview');
+    const textarea = document.getElementById('card-detail-desc');
+    const preview = document.getElementById('desc-preview');
+    const toolbar = document.getElementById('desc-toolbar');
+    if (tab === 'edit') {
+      editTab.classList.add('active');
+      previewTab.classList.remove('active');
+      textarea.style.display = '';
+      toolbar.style.display = '';
+      preview.style.display = 'none';
+    } else {
+      editTab.classList.remove('active');
+      previewTab.classList.add('active');
+      textarea.style.display = 'none';
+      toolbar.style.display = 'none';
+      preview.style.display = '';
+      preview.innerHTML = renderMarkdown(textarea.value, _descAttachments);
+    }
+  }
+
+  function triggerImageAttach() {
+    document.getElementById('desc-image-input').click();
+  }
+
+  function insertAtCursor(el, text) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.value = el.value.substring(0, start) + text + el.value.substring(end);
+    el.selectionStart = el.selectionEnd = start + text.length;
+    el.focus();
+  }
+
+  async function handleImageFile(input) {
+    const file = input.files[0];
+    if (!file || !_cardDetailCtx) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      const comma = dataUrl.indexOf(',');
+      const dataB64 = dataUrl.substring(comma + 1);
+      const mime = file.type || 'image/png';
+      const name = file.name;
+      const { boardId, cardId } = _cardDetailCtx;
+      try {
+        const id = await invoke('attach_image_cmd', { boardId, cardId, name, mime, dataB64 });
+        _descAttachments[id] = { name, mime, data_b64: dataB64 };
+        insertAtCursor(document.getElementById('card-detail-desc'), `![${name}](img:${id})`);
+      } catch (err) { showAlert('Failed to attach image: ' + err); }
+      input.value = '';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function renderMarkdown(text, attachments) {
+    if (!text) return '';
+    // Escape HTML first
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    // Images: ![alt](img:id) — resolve before other substitutions
+    html = html.replace(/!\[([^\]]*)\]\(img:([a-f0-9]{6})\)/g, (_, alt, id) => {
+      const att = attachments[id];
+      if (!att) return `<span style="color:#888">[image not found: ${id}]</span>`;
+      return `<img src="data:${att.mime};base64,${att.data_b64}" alt="${alt.replace(/"/g, '&quot;')}">`;
+    });
+    // Bold **text**
+    html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    // Italic *text*
+    html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    // Inline code `text`
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    // Headings (process before newline conversion)
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    // Bullet list items
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    // Wrap consecutive li elements in ul
+    html = html.replace(/(<li>[\s\S]*?<\/li>)(\n<li>[\s\S]*?<\/li>)*/g, (m) => `<ul>${m}</ul>`);
+    // Line breaks (after block-level substitutions)
+    html = html.replace(/\n/g, '<br>');
+    return html;
+  }
+
+  document.getElementById('card-detail-desc').addEventListener('paste', async (e) => {
+    if (!_cardDetailCtx) return;
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          const dataUrl = ev.target.result;
+          const comma = dataUrl.indexOf(',');
+          const dataB64 = dataUrl.substring(comma + 1);
+          const mime = item.type;
+          const name = 'pasted-image.png';
+          const { boardId, cardId } = _cardDetailCtx;
+          try {
+            const id = await invoke('attach_image_cmd', { boardId, cardId, name, mime, dataB64 });
+            _descAttachments[id] = { name, mime, data_b64: dataB64 };
+            insertAtCursor(document.getElementById('card-detail-desc'), `![${name}](img:${id})`);
+          } catch (err) { showAlert('Failed to attach pasted image: ' + err); }
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  });
+
   async function openCardDetail(cardId, boardId) {
     _cardDetailCtx = { boardId, cardId };
     try {
@@ -2329,6 +2446,13 @@
       ]);
       document.getElementById('card-detail-title').value = card.title;
       document.getElementById('card-detail-desc').value = card.description || '';
+      // Populate attachment map for the preview renderer
+      _descAttachments = {};
+      for (const att of (card.attachments || [])) {
+        _descAttachments[att.id] = { name: att.name, mime: att.mime, data_b64: att.data_b64 };
+      }
+      // Reset to Edit tab each time a card is opened
+      switchDescTab('edit');
       document.getElementById('card-detail-due').value = card.due_date || '';
       document.getElementById('card-detail-num').textContent = card.number ? '#' + card.number : '';
       document.getElementById('card-detail-priority').value = card.priority || '';
