@@ -2352,11 +2352,13 @@
     el.value = el.value.substring(0, start) + text + el.value.substring(end);
     el.selectionStart = el.selectionEnd = start + text.length;
     el.focus();
+    el.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   async function handleImageFile(input) {
     const file = input.files[0];
     if (!file || !_cardDetailCtx) return;
+    const { boardId, cardId } = _cardDetailCtx;  // capture synchronously
     const reader = new FileReader();
     reader.onload = async (e) => {
       const dataUrl = e.target.result;
@@ -2364,7 +2366,6 @@
       const dataB64 = dataUrl.substring(comma + 1);
       const mime = file.type || 'image/png';
       const name = file.name;
-      const { boardId, cardId } = _cardDetailCtx;
       try {
         const id = await invoke('attach_image_cmd', { boardId, cardId, name, mime, dataB64 });
         _descAttachments[id] = { name, mime, data_b64: dataB64 };
@@ -2386,7 +2387,9 @@
     html = html.replace(/!\[([^\]]*)\]\(img:([a-f0-9]{6})\)/g, (_, alt, id) => {
       const att = attachments[id];
       if (!att) return `<span style="color:#888">[image not found: ${id}]</span>`;
-      return `<img src="data:${att.mime};base64,${att.data_b64}" alt="${alt.replace(/"/g, '&quot;')}">`;
+      const safeMime = att.mime.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      const safeData = att.data_b64.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      return `<img src="data:${safeMime};base64,${safeData}" alt="${alt.replace(/"/g, '&quot;')}">`;
     });
     // Bold **text**
     html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
@@ -2402,6 +2405,10 @@
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
     // Wrap consecutive li elements in ul
     html = html.replace(/(<li>[\s\S]*?<\/li>)(\n<li>[\s\S]*?<\/li>)*/g, (m) => `<ul>${m}</ul>`);
+    // Remove newlines inside ul blocks to prevent spurious <br> tags
+    html = html.replace(/<\/li>\n<li>/g, '</li><li>');
+    html = html.replace(/<ul>\n/g, '<ul>');
+    html = html.replace(/\n<\/ul>/g, '</ul>');
     // Line breaks (after block-level substitutions)
     html = html.replace(/\n/g, '<br>');
     return html;
@@ -2409,6 +2416,7 @@
 
   document.getElementById('card-detail-desc').addEventListener('paste', async (e) => {
     if (!_cardDetailCtx) return;
+    const { boardId, cardId } = _cardDetailCtx;  // capture synchronously
     const items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
     for (const item of Array.from(items)) {
@@ -2423,7 +2431,6 @@
           const dataB64 = dataUrl.substring(comma + 1);
           const mime = item.type;
           const name = 'pasted-image.png';
-          const { boardId, cardId } = _cardDetailCtx;
           try {
             const id = await invoke('attach_image_cmd', { boardId, cardId, name, mime, dataB64 });
             _descAttachments[id] = { name, mime, data_b64: dataB64 };
