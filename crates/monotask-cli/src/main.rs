@@ -97,6 +97,7 @@ enum CardCommands {
     SetDueDate { board_id: String, card_id: String, date: String, #[arg(long)] json: bool },
     SetPriority { board_id: String, card_id: String, priority: String, #[arg(long)] json: bool },
     SetAssignee { board_id: String, card_id: String, pubkey: String, #[arg(long)] json: bool },
+    AttachImage { board_id: String, card_id: String, file: String, #[arg(long)] json: bool },
     /// Label management
     Label {
         #[command(subcommand)]
@@ -522,6 +523,31 @@ async fn main() -> anyhow::Result<()> {
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "assignee": pk})); }
                 else { println!("Set assignee for card {card_id}"); }
+            }
+            CardCommands::AttachImage { board_id, card_id, file, json } => {
+                use std::io::Read;
+                use base64::Engine;
+                let mut f = std::fs::File::open(&file)
+                    .map_err(|e| anyhow::anyhow!("Cannot open {file}: {e}"))?;
+                let mut bytes = Vec::new();
+                f.read_to_end(&mut bytes)?;
+                let data_b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let mime = mime_from_ext(&file);
+                let name = std::path::Path::new(&file)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let id_raw = uuid::Uuid::new_v4().to_string().replace('-', "");
+                let id = &id_raw[..6];
+                let mut doc = storage.load_board(&board_id)?;
+                monotask_core::card::attach_image(&mut doc, &card_id, id, &name, mime, &data_b64)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json {
+                    println!("{}", serde_json::json!({"id": id, "name": name, "mime": mime, "token": format!("img:{id}")}));
+                } else {
+                    println!("Attached {} as img:{} — embed with ![{}](img:{})", name, id, name, id);
+                }
             }
             CardCommands::Label { cmd } => match cmd {
                 LabelCommands::Add { board_id, card_id, label, json } => {
@@ -1545,5 +1571,21 @@ fn parse_token_or_file(input: &str) -> anyhow::Result<(String, String, Option<Ve
     } else {
         // Bare token — space_doc and name come from the embedded payload (v2 token)
         Ok((input.to_string(), String::new(), None))
+    }
+}
+
+fn mime_from_ext(path: &str) -> &'static str {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "png"  => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif"  => "image/gif",
+        "webp" => "image/webp",
+        "svg"  => "image/svg+xml",
+        _      => "image/png",
     }
 }
