@@ -582,20 +582,20 @@ fn handle_sync_request(
             }
 
             let pubkey_hex = hex::encode(pubkey_32);
-            let is_member = {
-                let guard = storage.lock().unwrap();
-                monotask_storage::space::is_active_member(guard.conn(), &space_id, &pubkey_hex)
-                    .unwrap_or(false)
-            };
-            if !is_member {
-                return SyncResponse::Rejected { reason: "not a member".into() };
-            }
 
-            // Merge peer's space doc (members, boards, name) into ours, then reply with merged.
+            // Merge peer's space doc FIRST — this adds the joiner as a member if they
+            // joined via an invite token (their membership only exists in their local doc
+            // until we merge it). Then check membership on the merged state.
             let (my_board_ids, my_space_doc_bytes) = {
                 let mut guard = storage.lock().unwrap();
                 if !space_doc_bytes.is_empty() {
                     merge_space_doc(&space_id, &space_doc_bytes, &mut guard);
+                }
+
+                let is_member = monotask_storage::space::is_active_member(guard.conn(), &space_id, &pubkey_hex)
+                    .unwrap_or(false);
+                if !is_member {
+                    return SyncResponse::Rejected { reason: "not a member".into() };
                 }
                 let boards = monotask_storage::space::get_space_boards(guard.conn(), &space_id)
                     .unwrap_or_default();
