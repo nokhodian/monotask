@@ -582,6 +582,228 @@ fn export_board_cmd(
     serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
 }
 
+// ── Full board export (all card data including descriptions, checklists, comments, attachments)
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportCard {
+    title: String,
+    description: String,
+    labels: Vec<String>,
+    due_date: Option<String>,
+    assignee: Option<String>,
+    cover_color: Option<String>,
+    priority: Option<String>,
+    checklists: Vec<ExportChecklist>,
+    comments: Vec<ExportComment>,
+    attachments: Vec<ExportAttachment>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportChecklist {
+    title: String,
+    items: Vec<ExportChecklistItem>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportChecklistItem {
+    text: String,
+    checked: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportComment {
+    author: String,
+    text: String,
+    created_at: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportAttachment {
+    name: String,
+    mime: String,
+    data_b64: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportColumn {
+    title: String,
+    cards: Vec<ExportCard>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportBoard {
+    version: u32,
+    title: String,
+    columns: Vec<ExportColumn>,
+}
+
+#[tauri::command]
+fn export_board_full_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+) -> Result<String, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let title = monotask_core::board::get_board_title(&doc).unwrap_or_else(|_| board_id.clone());
+    let columns = monotask_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let mut export_cols = Vec::new();
+    for col in &columns {
+        let card_ids = get_column_card_ids(&doc, &col.id);
+        let mut export_cards = Vec::new();
+        for cid in card_ids {
+            if let Ok(card) = monotask_core::card::read_card(&doc, &cid) {
+                if card.deleted || card.archived { continue; }
+                let labels = get_card_labels(&doc, &cid);
+                let assignee = get_card_str_field(&doc, &cid, "assignee");
+                let cover_color = get_card_str_field(&doc, &cid, "cover_color");
+                let priority = get_card_str_field(&doc, &cid, "priority");
+                let checklists = monotask_core::checklist::list_checklists(&doc, &cid)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|cl| ExportChecklist {
+                        title: cl.title,
+                        items: cl.items.into_iter().map(|it| ExportChecklistItem {
+                            text: it.text, checked: it.checked,
+                        }).collect(),
+                    }).collect();
+                let comments: Vec<ExportComment> = monotask_core::comment::list_comments(&doc, &cid)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|c| !c.deleted)
+                    .map(|c| ExportComment { author: c.author, text: c.text, created_at: c.created_at })
+                    .collect();
+                let attachments: Vec<ExportAttachment> = card.attachments.into_iter()
+                    .map(|(_, a)| ExportAttachment { name: a.name, mime: a.mime, data_b64: a.data_b64 })
+                    .collect();
+                export_cards.push(ExportCard {
+                    title: card.title,
+                    description: card.description,
+                    labels,
+                    due_date: card.due_date,
+                    assignee,
+                    cover_color,
+                    priority,
+                    checklists,
+                    comments,
+                    attachments,
+                });
+            }
+        }
+        export_cols.push(ExportColumn { title: col.title.clone(), cards: export_cards });
+    }
+    let export = ExportBoard { version: 1, title, columns: export_cols };
+    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_board_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    json_data: String,
+) -> Result<String, String> {
+    use automerge::{transaction::Transactable, ReadDoc};
+    let export: ExportBoard = serde_json::from_str(&json_data)
+        .map_err(|e| format!("Invalid export file: {e}"))?;
+
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let existing_columns = monotask_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let pk_bytes = state.identity.public_key_bytes();
+    let all_members = vec![pk_bytes.to_vec()]; // simplified: just our own key for numbering
+
+    let mut imported = 0u32;
+    let mut skipped = 0u32;
+
+    for imp_col in &export.columns {
+        // Find or create column by title
+        let col_id = existing_columns.iter()
+            .find(|c| c.title.eq_ignore_ascii_case(&imp_col.title))
+            .map(|c| c.id.clone())
+            .unwrap_or_else(|| {
+                monotask_core::column::create_column(&mut doc, &imp_col.title)
+                    .unwrap_or_default()
+            });
+        if col_id.is_empty() { continue; }
+
+        // Get existing card titles in this column for dedup
+        let existing_card_ids = get_column_card_ids(&doc, &col_id);
+        let existing_titles: std::collections::HashSet<String> = existing_card_ids.iter()
+            .filter_map(|cid| monotask_core::card::read_card(&doc, cid).ok())
+            .filter(|c| !c.deleted && !c.archived)
+            .map(|c| c.title.to_lowercase())
+            .collect();
+
+        for imp_card in &imp_col.cards {
+            // Dedup: skip if a card with the same title (case-insensitive) exists in this column
+            if existing_titles.contains(&imp_card.title.to_lowercase()) {
+                skipped += 1;
+                continue;
+            }
+
+            // Create the card
+            let card = monotask_core::card::create_card(&mut doc, &col_id, &imp_card.title, &pk_bytes, &all_members)
+                .map_err(|e| e.to_string())?;
+            let card_obj = monotask_core::card::get_card_obj(&doc, &card.id)
+                .map_err(|e| e.to_string())?;
+
+            // Set fields
+            if !imp_card.description.is_empty() {
+                doc.put(&card_obj, "description", imp_card.description.as_str()).map_err(|e| e.to_string())?;
+            }
+            if let Some(ref due) = imp_card.due_date {
+                doc.put(&card_obj, "due_date", due.as_str()).map_err(|e| e.to_string())?;
+            }
+            if let Some(ref assignee) = imp_card.assignee {
+                doc.put(&card_obj, "assignee", assignee.as_str()).map_err(|e| e.to_string())?;
+            }
+            if let Some(ref cover) = imp_card.cover_color {
+                doc.put(&card_obj, "cover_color", cover.as_str()).map_err(|e| e.to_string())?;
+            }
+            if let Some(ref priority) = imp_card.priority {
+                doc.put(&card_obj, "priority", priority.as_str()).map_err(|e| e.to_string())?;
+            }
+            // Labels
+            if !imp_card.labels.is_empty() {
+                let labels_obj = doc.get(&card_obj, "labels").ok().flatten()
+                    .map(|(_, id)| id)
+                    .unwrap_or_else(|| doc.put_object(&card_obj, "labels", automerge::ObjType::List).unwrap());
+                for (i, label) in imp_card.labels.iter().enumerate() {
+                    let _ = doc.insert(&labels_obj, i, label.as_str());
+                }
+            }
+            // Checklists
+            for cl in &imp_card.checklists {
+                if let Ok(checklist) = monotask_core::checklist::add_checklist(&mut doc, &card.id, &cl.title) {
+                    for item in &cl.items {
+                        if let Ok(item_obj) = monotask_core::checklist::add_checklist_item(&mut doc, &card.id, &checklist.id, &item.text) {
+                            if item.checked {
+                                let _ = monotask_core::checklist::set_item_checked(&mut doc, &card.id, &checklist.id, &item_obj.id, true);
+                            }
+                        }
+                    }
+                }
+            }
+            // Comments
+            for comment in &imp_card.comments {
+                let _ = monotask_core::comment::add_comment(&mut doc, &card.id, &comment.text, &comment.author);
+            }
+            // Attachments
+            for att in &imp_card.attachments {
+                let att_id = uuid::Uuid::new_v4().to_string();
+                let _ = monotask_core::card::attach_image(&mut doc, &card.id, &att_id, &att.name, &att.mime, &att.data_b64);
+            }
+            imported += 1;
+        }
+    }
+
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+
+    Ok(format!("Imported {} cards, skipped {} duplicates", imported, skipped))
+}
+
 fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<String> {
     use automerge::ReadDoc;
     let card_obj = monotask_core::card::get_card_obj(doc, card_id).ok()?;
@@ -2362,6 +2584,8 @@ fn main() {
             redo_cmd,
             get_card_history_cmd,
             export_board_cmd,
+            export_board_full_cmd,
+            import_board_cmd,
             attach_image_cmd,
             remove_attachment_cmd,
         ])

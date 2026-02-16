@@ -1190,6 +1190,7 @@
         <h2 id="board-view-title"></h2>
         <button id="btn-add-column">+ Column</button>
         <button id="btn-export-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Export board as JSON">&#8595; Export</button>
+        <button id="btn-import-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Import cards from file">&#8593; Import</button>
       </div>
       <!-- priority filter bar removed -->
       <div id="board-columns-area"></div>
@@ -1822,12 +1823,14 @@
 
   async function exportBoard() {
     try {
-      const json = await invoke('export_board_cmd', { boardId: currentBoardId });
+      const json = await invoke('export_board_full_cmd', { boardId: currentBoardId });
+      const parsed = JSON.parse(json);
+      const filename = (parsed.title || 'board').replace(/[^a-zA-Z0-9_-]/g, '_') + '-export.json';
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'board-export.json';
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -3109,6 +3112,22 @@
   };
 
   document.getElementById('btn-export-board').onclick = () => exportBoard();
+  document.getElementById('btn-import-board').onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const result = await invoke('import_board_cmd', { boardId: currentBoardId, jsonData: text });
+        showToast(result);
+        await loadBoardColumns(currentBoardId);
+      } catch (err) { showAlert('Import failed: ' + err); }
+    };
+    input.click();
+  };
 
   // ── New Space modal ────────────────────────────────────────────────────────
   document.getElementById('btn-new-space').onclick = () => {
