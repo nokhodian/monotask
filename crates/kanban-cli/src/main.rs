@@ -184,7 +184,8 @@ fn main() -> anyhow::Result<()> {
                 let card = kanban_core::card::create_card(&mut doc, &col_id, &title, &actor_pk, &members)?;
                 storage.save_board(&board_id, &mut doc)?;
                 if json {
-                    println!("{}", serde_json::json!({"id": card.id, "title": card.title, "board_id": board_id}));
+                    let number_display = card.number.as_ref().map(|n| n.to_display());
+                    println!("{}", serde_json::json!({"id": card.id, "title": card.title, "board_id": board_id, "number": number_display}));
                 } else {
                     println!("Created card: {} ({})", card.title, card.id);
                 }

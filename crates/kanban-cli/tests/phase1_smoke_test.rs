@@ -74,6 +74,16 @@ fn phase1_full_flow() {
     let card2_id = card2["id"].as_str().unwrap().to_string();
     assert_ne!(card_id, card2_id);
 
+    // Verify both cards have numbers and the second has a higher seq
+    let card_view1 = json(&cli(t, &["card", "view", &board_id, &card_id, "--json"]));
+    let card_view2 = json(&cli(t, &["card", "view", &board_id, &card2_id, "--json"]));
+
+    // Both cards should have a number with seq > 0
+    let seq1 = card_view1["number"]["seq"].as_u64().expect("card1 should have a number with seq");
+    let seq2 = card_view2["number"]["seq"].as_u64().expect("card2 should have a number with seq");
+    assert!(seq1 > 0, "seq1 should be positive");
+    assert!(seq2 > seq1, "seq2 should be greater than seq1");
+
     // Both cards exist in the board
     let boards_list = json(&cli(t, &["board", "list", "--json"]));
     assert_eq!(boards_list.as_array().unwrap().len(), 1);

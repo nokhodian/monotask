@@ -56,8 +56,11 @@ impl Storage {
 
     pub fn save_board(&mut self, board_id: &str, doc: &mut automerge::AutoCommit) -> Result<(), StorageError> {
         board::save_board(&self.conn, board_id, doc)?;
-        // Keep the card_number_index in sync with the document
+        // Always re-sync the card_number_index to reflect the current document state.
+        // Clear first to remove stale rows from deleted/renumbered cards.
         let cards = extract_card_numbers(doc);
+        card_number::clear_card_numbers_for_board(&self.conn, board_id)
+            .map_err(StorageError::Sqlite)?;
         if !cards.is_empty() {
             card_number::sync_card_number_index(&self.conn, board_id, &cards)
                 .map_err(StorageError::Sqlite)?;
