@@ -1,1 +1,567 @@
-<!DOCTYPE html><html><body><h1>P2P Kanban</h1></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P2P Kanban</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #0a0a12; color: #ccc; font-family: system-ui, sans-serif; font-size: 14px; }
+
+    /* ── Layout ────────────────────────────────────────────────────────── */
+    body { display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
+
+    /* ── Spaces sidebar ────────────────────────────────────────────────── */
+    #spaces-sidebar {
+      width: 200px; min-width: 160px;
+      background: #0d0d1a;
+      border-right: 1px solid #1e1e3a;
+      display: flex; flex-direction: column;
+      padding: 12px 8px;
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      display: flex; justify-content: space-between; align-items: center;
+      color: #c8962a; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.1em; margin-bottom: 8px; padding: 0 4px;
+    }
+    .sidebar-header button {
+      background: none; border: 1px solid #3a2a0a; color: #c8962a;
+      width: 20px; height: 20px; border-radius: 3px; cursor: pointer;
+      font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;
+    }
+    .sidebar-header button:hover { background: #1e1a08; }
+    #spaces-list { list-style: none; padding: 0; margin: 0; flex: 1; overflow-y: auto; }
+    #spaces-list li {
+      padding: 6px 10px; cursor: pointer; border-radius: 4px;
+      color: #888; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #spaces-list li:hover { color: #ccc; background: #141426; }
+    #spaces-list li.active { color: #eee; background: #1a1a2e; border-left: 2px solid #c8962a; }
+    .sidebar-section-label {
+      font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 0.1em;
+      padding: 12px 10px 4px; margin-top: 4px;
+    }
+    .sidebar-footer { border-top: 1px solid #1e1e3a; padding-top: 8px; margin-top: 4px; }
+    .sidebar-footer button {
+      width: 100%; background: none; border: none; color: #555; cursor: pointer;
+      font-size: 12px; text-align: left; padding: 6px 10px; border-radius: 4px;
+    }
+    .sidebar-footer button:hover { color: #c8962a; background: #141426; }
+
+    /* ── Main content area ─────────────────────────────────────────────── */
+    #main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Board dashboard ───────────────────────────────────────────────── */
+    #board-dashboard {
+      flex: 1; padding: 32px; overflow-y: auto;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .board-placeholder { text-align: center; color: #333; }
+    .board-placeholder h2 { font-size: 20px; color: #444; margin-bottom: 12px; }
+    .board-placeholder p { font-size: 13px; color: #333; max-width: 320px; }
+
+    /* ── Space panel ───────────────────────────────────────────────────── */
+    #space-panel { flex: 1; padding: 24px; overflow-y: auto; display: none; flex-direction: column; }
+    .space-panel-header {
+      display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
+      border-bottom: 1px solid #1e1e3a; padding-bottom: 16px;
+    }
+    .space-panel-header h2 { font-size: 18px; color: #eee; flex: 1; }
+    #btn-back-to-boards {
+      background: none; border: 1px solid #2a2a3a; color: #888;
+      padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+    #btn-back-to-boards:hover { color: #ccc; border-color: #3a3a5a; }
+    .space-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #1e1e3a; }
+    .space-tab {
+      background: none; border: none; color: #555; cursor: pointer;
+      padding: 8px 20px; font-size: 13px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .space-tab:hover { color: #999; }
+    .space-tab.active { color: #c8962a; border-bottom-color: #c8962a; }
+    .space-tab-content { display: none; }
+    .space-tab-content.active { display: block; }
+
+    /* Members */
+    #space-members-list { list-style: none; padding: 0; }
+    #space-members-list li {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid #141426;
+    }
+    .member-avatar {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      background: #1e1e3a; display: flex; align-items: center; justify-content: center;
+      color: #c8962a; font-weight: bold; font-size: 14px;
+    }
+    .member-info { flex: 1; }
+    .member-name { color: #ccc; font-size: 13px; }
+    .member-pubkey { color: #444; font-size: 11px; font-family: monospace; margin-top: 2px; }
+    .member-kicked { opacity: 0.35; }
+    .member-kicked .member-name::after { content: ' [kicked]'; color: #c05050; font-size: 11px; }
+    .btn-kick {
+      background: none; border: 1px solid #3a1a1a; color: #c05050;
+      cursor: pointer; padding: 3px 10px; border-radius: 3px; font-size: 11px;
+    }
+    .btn-kick:hover { background: #1a0a0a; }
+
+    /* Boards tab */
+    #space-boards-list { list-style: none; padding: 0; margin-bottom: 16px; }
+    #space-boards-list li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #141426; font-size: 13px; color: #ccc;
+    }
+    .add-board-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+
+    /* Invite tab */
+    .invite-section { margin-bottom: 16px; }
+    .invite-label { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .token-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+    .token-row input { flex: 1; background: #0d0d1a; border: 1px solid #1e1e3a; color: #aaa; padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 11px; }
+    #invite-qr { margin: 12px 0; }
+    .invite-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+    /* Space badge on board cards */
+    .space-badge {
+      display: inline-block; background: #1e2a3a; color: #3870c0;
+      border: 1px solid #3870c0; border-radius: 3px;
+      padding: 1px 6px; font-size: 10px; margin-left: 4px;
+    }
+
+    /* ── Modals ─────────────────────────────────────────────────────────── */
+    .modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal.open { display: flex; }
+    .modal-box {
+      background: #131320; border: 1px solid #2a2a3a;
+      border-radius: 8px; padding: 24px; min-width: 320px; max-width: 420px; width: 90%;
+    }
+    .modal-box h3 { font-size: 16px; color: #eee; margin-bottom: 16px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+    /* Profile modal */
+    .profile-field { margin-bottom: 14px; }
+    .profile-field label { display: block; color: #777; font-size: 11px; margin-bottom: 4px; }
+    .pubkey-row { display: flex; align-items: center; gap: 8px; }
+    .pubkey-display { font-family: monospace; font-size: 12px; color: #555; flex: 1; word-break: break-all; }
+
+    /* ── Form controls ──────────────────────────────────────────────────── */
+    input[type="text"], input:not([type]) {
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 7px 10px; border-radius: 4px; font-size: 13px; width: 100%;
+      outline: none;
+    }
+    input:focus { border-color: #2e2e5a; }
+    select {
+      background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
+      padding: 6px 10px; border-radius: 4px; font-size: 13px; flex: 1;
+    }
+    button {
+      background: #1a1a2e; border: 1px solid #2a2a4a; color: #ccc;
+      padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px;
+    }
+    button:hover { background: #1e1e38; border-color: #3a3a6a; color: #eee; }
+    .btn-primary { background: #1e2a3a; border-color: #3870c0; color: #5890e0; }
+    .btn-primary:hover { background: #1e3050; }
+    .btn-danger { border-color: #3a1a1a; color: #c05050; }
+    .btn-danger:hover { background: #1a0808; }
+    .btn-small { padding: 3px 8px; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Spaces sidebar ─────────────────────────────────────────────────────── -->
+<div id="spaces-sidebar">
+  <div class="sidebar-header">
+    <span>Spaces</span>
+    <button id="btn-new-space" title="New Space">+</button>
+  </div>
+  <ul id="spaces-list"></ul>
+  <div class="sidebar-footer">
+    <button id="btn-profile">&#9881; Profile</button>
+    <button id="btn-import-invite-sidebar">&#8595; Join Space</button>
+  </div>
+</div>
+
+<!-- ── Main content ───────────────────────────────────────────────────────── -->
+<div id="main-content">
+
+  <!-- Board dashboard (placeholder since no board Tauri commands yet) -->
+  <div id="board-dashboard">
+    <div class="board-placeholder">
+      <h2>P2P Kanban</h2>
+      <p>Board management is available via CLI.<br/>Use the sidebar to manage Spaces.</p>
+    </div>
+  </div>
+
+  <!-- Space detail panel -->
+  <div id="space-panel">
+    <div class="space-panel-header">
+      <button id="btn-back-to-boards">&#8592; Dashboard</button>
+      <h2 id="space-panel-name"></h2>
+    </div>
+    <div class="space-tabs">
+      <button class="space-tab active" data-tab="members">Members</button>
+      <button class="space-tab" data-tab="boards">Boards</button>
+      <button class="space-tab" data-tab="invite">Invite</button>
+    </div>
+
+    <!-- Members tab -->
+    <div id="tab-members" class="space-tab-content active">
+      <ul id="space-members-list"></ul>
+    </div>
+
+    <!-- Boards tab -->
+    <div id="tab-boards" class="space-tab-content">
+      <ul id="space-boards-list"></ul>
+      <div class="add-board-row">
+        <input id="input-board-id-to-add" placeholder="Board ID to add" style="flex:1;" />
+        <button id="btn-add-board-to-space" class="btn-primary">Add Board</button>
+      </div>
+    </div>
+
+    <!-- Invite tab -->
+    <div id="tab-invite" class="space-tab-content">
+      <div id="invite-token-section" style="display:none;">
+        <div class="invite-label">Invite Token</div>
+        <div class="token-row">
+          <input id="invite-token-input" readonly />
+          <button id="btn-copy-token" class="btn-small">Copy</button>
+        </div>
+        <div id="invite-qr"></div>
+        <div class="invite-actions">
+          <button id="btn-export-invite">Export .space file</button>
+          <button id="btn-revoke-invite" class="btn-danger">Revoke &amp; Regenerate</button>
+        </div>
+      </div>
+      <div id="no-invite-section">
+        <p style="color:#555;font-size:13px;margin-bottom:12px;">No active invite token.</p>
+        <button id="btn-generate-invite" class="btn-primary">Generate Invite</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end main-content -->
+
+<!-- ── Create Space modal ─────────────────────────────────────────────────── -->
+<div id="modal-create-space" class="modal">
+  <div class="modal-box">
+    <h3>New Space</h3>
+    <div class="profile-field">
+      <label>Space Name</label>
+      <input id="input-space-name" placeholder="Team Alpha" />
+    </div>
+    <div class="modal-actions">
+      <button id="btn-create-space-cancel">Cancel</button>
+      <button id="btn-create-space-confirm" class="btn-primary">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import Invite modal ────────────────────────────────────────────────── -->
+<div id="modal-import-invite" class="modal">
+  <div class="modal-box">
+    <h3>Join Space</h3>
+    <div class="profile-field">
+      <label>Invite Token or .space file path</label>
+      <input id="input-invite-token" placeholder="Paste token or /path/to/file.space" />
+    </div>
+    <div class="modal-actions">
+      <button id="btn-import-invite-cancel">Cancel</button>
+      <button id="btn-import-invite-confirm" class="btn-primary">Join</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Profile modal ──────────────────────────────────────────────────────── -->
+<div id="modal-profile" class="modal">
+  <div class="modal-box">
+    <h3>Profile</h3>
+    <div class="profile-field">
+      <label>Public Key</label>
+      <div class="pubkey-row">
+        <span id="profile-pubkey-short" class="pubkey-display"></span>
+        <button id="btn-copy-pubkey" class="btn-small">Copy</button>
+      </div>
+    </div>
+    <div class="profile-field">
+      <label>Display Name</label>
+      <input id="input-display-name" placeholder="Your name" />
+    </div>
+    <div class="profile-field">
+      <label>SSH Key Path (optional &#8212; leave blank to use auto-generated key)</label>
+      <div style="display:flex;gap:8px;">
+        <input id="input-ssh-key-path" placeholder="~/.ssh/id_ed25519" />
+        <button id="btn-import-ssh" class="btn-small">Import</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="btn-close-profile">Close</button>
+      <button id="btn-save-profile" class="btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const { invoke } = window.__TAURI__.core;
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let currentSpaceId = null;
+  let currentSpaceData = null;
+
+  // ── Modal helpers ──────────────────────────────────────────────────────────
+  function openModal(id) { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // ── Sidebar ────────────────────────────────────────────────────────────────
+  async function loadSpacesSidebar() {
+    const spaces = await invoke('list_spaces').catch(() => []);
+    const list = document.getElementById('spaces-list');
+    list.innerHTML = '';
+    for (const s of spaces) {
+      const li = document.createElement('li');
+      li.textContent = s.name;
+      li.dataset.spaceId = s.id;
+      li.title = `${s.member_count} member(s)`;
+      if (s.id === currentSpaceId) li.classList.add('active');
+      li.onclick = () => openSpacePanel(s.id);
+      list.appendChild(li);
+    }
+  }
+
+  // ── Space panel ────────────────────────────────────────────────────────────
+  async function openSpacePanel(spaceId) {
+    currentSpaceId = spaceId;
+    document.getElementById('board-dashboard').style.display = 'none';
+    document.getElementById('space-panel').style.display = 'flex';
+    await refreshSpacePanel();
+    await loadSpacesSidebar();
+  }
+
+  async function refreshSpacePanel() {
+    try {
+      const space = await invoke('get_space_cmd', { spaceId: currentSpaceId });
+      currentSpaceData = space;
+      document.getElementById('space-panel-name').textContent = space.name;
+      renderMembersTab(space);
+      renderBoardsTab(space);
+      await renderInviteTab();
+    } catch (e) {
+      console.error('Failed to load space:', e);
+    }
+  }
+
+  function renderMembersTab(space) {
+    const myPubkey = window._myPubkey || '';
+    const isOwner = space.owner_pubkey === myPubkey;
+    const ul = document.getElementById('space-members-list');
+    ul.innerHTML = '';
+    for (const m of space.members) {
+      const li = document.createElement('li');
+      if (m.kicked) li.classList.add('member-kicked');
+      const initial = (m.display_name || m.pubkey).charAt(0).toUpperCase();
+      li.innerHTML = `
+        <div class="member-avatar">${initial}</div>
+        <div class="member-info">
+          <div class="member-name">${m.display_name || '(unnamed)'}</div>
+          <div class="member-pubkey">${m.pubkey.slice(0, 20)}\u2026</div>
+        </div>
+        ${isOwner && !m.kicked && m.pubkey !== myPubkey
+          ? `<button class="btn-kick btn-small" data-pubkey="${m.pubkey}">Kick</button>`
+          : ''}
+      `;
+      ul.appendChild(li);
+    }
+    ul.querySelectorAll('.btn-kick').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm(`Kick ${btn.dataset.pubkey.slice(0, 16)}\u2026?`)) return;
+        await invoke('kick_member_cmd', { spaceId: currentSpaceId, pubkey: btn.dataset.pubkey });
+        await refreshSpacePanel();
+      };
+    });
+  }
+
+  function renderBoardsTab(space) {
+    const ul = document.getElementById('space-boards-list');
+    ul.innerHTML = '';
+    for (const boardId of space.boards) {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <span style="font-family:monospace;font-size:12px;">${boardId}</span>
+        <button class="btn-remove-board btn-small btn-danger" data-board="${boardId}">Remove</button>
+      `;
+      ul.appendChild(li);
+    }
+    ul.querySelectorAll('.btn-remove-board').forEach(btn => {
+      btn.onclick = async () => {
+        await invoke('remove_board_from_space', { spaceId: currentSpaceId, boardId: btn.dataset.board });
+        await refreshSpacePanel();
+      };
+    });
+  }
+
+  async function renderInviteTab() {
+    const token = await invoke('get_invite_qr', { spaceId: currentSpaceId }).catch(() => null);
+    const tokenSection = document.getElementById('invite-token-section');
+    const noInviteSection = document.getElementById('no-invite-section');
+    if (token) {
+      tokenSection.style.display = 'block';
+      noInviteSection.style.display = 'none';
+      document.getElementById('invite-token-input').value = token;
+      const qrDiv = document.getElementById('invite-qr');
+      qrDiv.innerHTML = '';
+      if (window.QRCode) {
+        new QRCode(qrDiv, { text: token, width: 160, height: 160, colorDark: '#c8962a', colorLight: '#0d0d1a' });
+      }
+    } else {
+      tokenSection.style.display = 'none';
+      noInviteSection.style.display = 'block';
+    }
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.space-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('.space-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.space-tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    };
+  });
+
+  // ── New Space modal ────────────────────────────────────────────────────────
+  document.getElementById('btn-new-space').onclick = () => {
+    document.getElementById('input-space-name').value = '';
+    openModal('modal-create-space');
+    document.getElementById('input-space-name').focus();
+  };
+  document.getElementById('btn-create-space-cancel').onclick = () => closeModal('modal-create-space');
+  document.getElementById('btn-create-space-confirm').onclick = async () => {
+    const name = document.getElementById('input-space-name').value.trim();
+    if (!name) return;
+    try {
+      await invoke('create_space', { name });
+      closeModal('modal-create-space');
+      await loadSpacesSidebar();
+    } catch (e) { alert('Error: ' + e); }
+  };
+
+  // ── Import Invite (Join Space) ─────────────────────────────────────────────
+  document.getElementById('btn-import-invite-sidebar').onclick = () => {
+    document.getElementById('input-invite-token').value = '';
+    openModal('modal-import-invite');
+    document.getElementById('input-invite-token').focus();
+  };
+  document.getElementById('btn-import-invite-cancel').onclick = () => closeModal('modal-import-invite');
+  document.getElementById('btn-import-invite-confirm').onclick = async () => {
+    const tokenOrPath = document.getElementById('input-invite-token').value.trim();
+    if (!tokenOrPath) return;
+    try {
+      const space = await invoke('import_invite', { tokenOrPath });
+      closeModal('modal-import-invite');
+      await loadSpacesSidebar();
+      await openSpacePanel(space.id);
+    } catch (e) { alert('Error joining space: ' + e); }
+  };
+
+  // ── Invite tab actions ─────────────────────────────────────────────────────
+  document.getElementById('btn-generate-invite').onclick = async () => {
+    try {
+      await invoke('generate_invite', { spaceId: currentSpaceId });
+      await renderInviteTab();
+    } catch (e) { alert('Error: ' + e); }
+  };
+  document.getElementById('btn-copy-token').onclick = () => {
+    const val = document.getElementById('invite-token-input').value;
+    navigator.clipboard.writeText(val).catch(() => {});
+  };
+  document.getElementById('btn-revoke-invite').onclick = async () => {
+    try {
+      await invoke('generate_invite', { spaceId: currentSpaceId });
+      await renderInviteTab();
+    } catch (e) { alert('Error: ' + e); }
+  };
+  document.getElementById('btn-export-invite').onclick = async () => {
+    const path = prompt('Save .space file to path (e.g. /tmp/myteam.space):');
+    if (!path) return;
+    try {
+      await invoke('export_invite_file', { spaceId: currentSpaceId, path });
+      alert('Exported to ' + path);
+    } catch (e) { alert('Error: ' + e); }
+  };
+
+  // ── Add board to space ─────────────────────────────────────────────────────
+  document.getElementById('btn-add-board-to-space').onclick = async () => {
+    const boardId = document.getElementById('input-board-id-to-add').value.trim();
+    if (!boardId) return;
+    try {
+      await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId });
+      document.getElementById('input-board-id-to-add').value = '';
+      await refreshSpacePanel();
+    } catch (e) { alert('Error: ' + e); }
+  };
+
+  // ── Back to dashboard ──────────────────────────────────────────────────────
+  document.getElementById('btn-back-to-boards').onclick = () => {
+    currentSpaceId = null;
+    document.getElementById('space-panel').style.display = 'none';
+    document.getElementById('board-dashboard').style.display = '';
+    loadSpacesSidebar();
+  };
+
+  // ── Profile modal ──────────────────────────────────────────────────────────
+  document.getElementById('btn-profile').onclick = async () => {
+    try {
+      const profile = await invoke('get_my_profile');
+      window._myPubkey = profile.pubkey;
+      document.getElementById('profile-pubkey-short').textContent = profile.pubkey.slice(0, 32) + '\u2026';
+      document.getElementById('profile-pubkey-short')._fullPubkey = profile.pubkey;
+      document.getElementById('input-display-name').value = profile.display_name || '';
+      document.getElementById('input-ssh-key-path').value = profile.ssh_key_path || '';
+      openModal('modal-profile');
+    } catch (e) { alert('Error loading profile: ' + e); }
+  };
+  document.getElementById('btn-copy-pubkey').onclick = () => {
+    const pk = document.getElementById('profile-pubkey-short')._fullPubkey;
+    if (pk) navigator.clipboard.writeText(pk).catch(() => {});
+  };
+  document.getElementById('btn-import-ssh').onclick = async () => {
+    const path = document.getElementById('input-ssh-key-path').value.trim() || null;
+    try {
+      const pubkey = await invoke('import_ssh_key', { path });
+      document.getElementById('profile-pubkey-short').textContent = pubkey.slice(0, 32) + '\u2026';
+      document.getElementById('profile-pubkey-short')._fullPubkey = pubkey;
+      window._myPubkey = pubkey;
+      alert('SSH key imported.');
+    } catch (e) { alert('Error importing SSH key: ' + e); }
+  };
+  document.getElementById('btn-save-profile').onclick = async () => {
+    const displayName = document.getElementById('input-display-name').value.trim();
+    try {
+      // Re-read existing profile to preserve avatar (update_my_profile replaces both fields atomically)
+      const existing = await invoke('get_my_profile').catch(() => null);
+      await invoke('update_my_profile', {
+        displayName,
+        avatarB64: existing?.avatar_b64 ?? null,
+      });
+      closeModal('modal-profile');
+    } catch (e) { alert('Error saving profile: ' + e); }
+  };
+  document.getElementById('btn-close-profile').onclick = () => closeModal('modal-profile');
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const profile = await invoke('get_my_profile').catch(() => null);
+      if (profile) window._myPubkey = profile.pubkey;
+    } catch (_) {}
+    await loadSpacesSidebar();
+  }
+
+  init();
+</script>
+</body>
+</html>
