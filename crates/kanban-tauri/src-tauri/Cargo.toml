@@ -22,6 +22,7 @@ thiserror      = { workspace = true }
 tracing        = { workspace = true }
 tokio          = { workspace = true }
 anyhow         = { workspace = true }
+rusqlite       = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
