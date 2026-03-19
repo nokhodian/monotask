@@ -161,6 +161,29 @@ struct BoardSummary {
     title: String,
 }
 
+#[derive(serde::Serialize)]
+struct CardView {
+    id: String,
+    title: String,
+    number: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct ColumnView {
+    id: String,
+    title: String,
+    cards: Vec<CardView>,
+}
+
+#[derive(serde::Serialize)]
+struct BoardDetail {
+    id: String,
+    title: String,
+    columns: Vec<ColumnView>,
+}
+
+const DEFAULT_COLUMNS: &[&str] = &["Todo", "In Progress", "Review", "Done"];
+
 #[tauri::command]
 fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -175,6 +198,97 @@ fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, Strin
         boards.push(BoardSummary { id, title });
     }
     Ok(boards)
+}
+
+#[tauri::command]
+fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<BoardDetail, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let title = kanban_core::board::get_board_title(&doc)
+        .unwrap_or_else(|_| board_id.clone());
+
+    // Auto-create default columns if board has none
+    let existing = kanban_core::column::list_columns(&doc).unwrap_or_default();
+    if existing.is_empty() {
+        drop(existing);
+        kanban_core::init_doc(&mut doc).map_err(|e| e.to_string())?;
+        for col_title in DEFAULT_COLUMNS {
+            kanban_core::column::create_column(&mut doc, col_title)
+                .map_err(|e| e.to_string())?;
+        }
+        kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+            .map_err(|e| e.to_string())?;
+    }
+
+    let columns = kanban_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let mut col_views = Vec::with_capacity(columns.len());
+    for col in &columns {
+        let card_ids = get_column_card_ids(&doc, &col.id);
+        let mut cards = Vec::new();
+        for cid in card_ids {
+            if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
+                if !card.deleted && !card.archived {
+                    cards.push(CardView {
+                        id: card.id,
+                        title: card.title,
+                        number: card.number.map(|n| n.to_display()),
+                    });
+                }
+            }
+        }
+        col_views.push(ColumnView { id: col.id.clone(), title: col.title.clone(), cards });
+    }
+    Ok(BoardDetail { id: board_id, title, columns: col_views })
+}
+
+fn get_column_card_ids(doc: &automerge::AutoCommit, col_id: &str) -> Vec<String> {
+    use automerge::ReadDoc;
+    let col_obj = match kanban_core::column::find_column_obj(doc, col_id) {
+        Ok(Some(o)) => o,
+        _ => return vec![],
+    };
+    let card_ids_list = match kanban_core::column::get_card_ids_list(doc, &col_obj) {
+        Ok(o) => o,
+        _ => return vec![],
+    };
+    (0..doc.length(&card_ids_list))
+        .filter_map(|i| {
+            doc.get(&card_ids_list, i).ok().flatten().and_then(|(v, _)| {
+                if let automerge::Value::Scalar(s) = v {
+                    if let automerge::ScalarValue::Str(t) = s.as_ref() {
+                        return Some(t.to_string());
+                    }
+                }
+                None
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let col_id = kanban_core::column::create_column(&mut doc, &title)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(col_id)
+}
+
+#[tauri::command]
+fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let pk = state.identity.public_key_bytes();
+    let card = kanban_core::card::create_card(&mut doc, &col_id, &title, &pk, &[pk.to_vec()])
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(card.id)
 }
 
 #[tauri::command]
@@ -529,6 +643,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             list_boards,
+            get_board_detail,
+            create_column_cmd,
+            create_card_cmd,
             create_space,
             list_spaces,
             get_space_cmd,

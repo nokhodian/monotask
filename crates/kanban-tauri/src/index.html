@@ -33,12 +33,33 @@
     }
     .sidebar-header button:hover { background: #1e1a08; }
     #spaces-list { list-style: none; padding: 0; margin: 0; flex: 1; overflow-y: auto; }
-    #spaces-list li {
-      padding: 6px 10px; cursor: pointer; border-radius: 4px;
-      color: #888; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* space row */
+    .space-row {
+      display: flex; align-items: center; gap: 4px;
+      padding: 5px 6px 5px 10px; cursor: pointer; border-radius: 4px;
+      color: #888; font-size: 13px;
     }
-    #spaces-list li:hover { color: #ccc; background: #141426; }
-    #spaces-list li.active { color: #eee; background: #1a1a2e; border-left: 2px solid #c8962a; }
+    .space-row:hover { color: #ccc; background: #141426; }
+    .space-row.active { color: #eee; background: #1a1a2e; border-left: 2px solid #c8962a; }
+    .space-row-arrow {
+      font-size: 9px; color: #444; transition: transform 0.15s; flex-shrink: 0; width: 10px;
+    }
+    .space-row.open .space-row-arrow { transform: rotate(90deg); }
+    .space-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* boards under space */
+    .space-boards-sub {
+      list-style: none; padding: 0; margin: 0 0 2px 0; display: none;
+    }
+    .space-boards-sub.open { display: block; }
+    .space-boards-sub li {
+      padding: 4px 10px 4px 26px; cursor: pointer; border-radius: 4px;
+      color: #666; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .space-boards-sub li::before { content: '▣'; font-size: 9px; color: #444; flex-shrink: 0; }
+    .space-boards-sub li:hover { color: #ccc; background: #141426; }
+    .space-boards-sub li.active { color: #c8962a; background: #1a1608; }
     .sidebar-section-label {
       font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 0.1em;
       padding: 12px 10px 4px; margin-top: 4px;
@@ -121,38 +142,65 @@
     }
     .board-view-topbar {
       display: flex; align-items: center; gap: 12px;
-      padding: 14px 24px; border-bottom: 1px solid #1a1a2e; flex-shrink: 0;
+      padding: 12px 20px; border-bottom: 1px solid #1a1a2e; flex-shrink: 0;
     }
     #btn-back-to-space {
       background: none; border: 1px solid #2a2a3a; color: #666;
       padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
     }
     #btn-back-to-space:hover { color: #ccc; border-color: #3a3a5a; }
-    .board-view-topbar h2 { font-size: 16px; color: #eee; flex: 1; font-weight: 600; }
+    .board-view-topbar h2 { font-size: 15px; color: #eee; flex: 1; font-weight: 600; }
+    #btn-add-column {
+      background: none; border: 1px solid #2a2a3a; color: #666;
+      padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+    #btn-add-column:hover { color: #c8962a; border-color: #5a3a0a; }
     #board-columns-area {
-      flex: 1; padding: 20px 24px; overflow-x: auto; overflow-y: hidden;
-      display: flex; gap: 16px; align-items: flex-start;
+      flex: 1; padding: 16px 20px; overflow-x: auto; overflow-y: hidden;
+      display: flex; gap: 14px; align-items: flex-start;
     }
     .board-col {
       background: #0d0d1c; border: 1px solid #1a1a30;
-      border-radius: 8px; min-width: 240px; max-width: 280px; flex-shrink: 0;
-      display: flex; flex-direction: column; max-height: calc(100vh - 180px);
+      border-radius: 8px; min-width: 230px; width: 230px; flex-shrink: 0;
+      display: flex; flex-direction: column; max-height: calc(100vh - 130px);
     }
     .board-col-header {
-      padding: 12px 14px; font-size: 12px; color: #888;
+      padding: 10px 12px 10px 14px; font-size: 11px; color: #777;
       text-transform: uppercase; letter-spacing: 0.08em;
       border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .board-col-count {
+      background: #1a1a2e; color: #555; font-size: 10px;
+      border-radius: 8px; padding: 1px 7px; font-family: monospace;
     }
     .board-col-cards {
-      list-style: none; padding: 10px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px;
+      list-style: none; padding: 8px; overflow-y: auto; flex: 1;
+      display: flex; flex-direction: column; gap: 6px;
     }
     .kanban-card {
       background: #131326; border: 1px solid #1e1e3a;
-      border-radius: 6px; padding: 10px 12px; cursor: default;
+      border-radius: 6px; padding: 9px 11px; cursor: default;
+      transition: border-color 0.12s;
     }
-    .kanban-card-title { font-size: 13px; color: #ccc; }
-    .kanban-card-num { font-size: 10px; color: #444; font-family: monospace; margin-top: 4px; }
-    .board-col-empty { color: #333; font-size: 12px; padding: 8px 10px; }
+    .kanban-card:hover { border-color: #2e2e5a; }
+    .kanban-card-title { font-size: 13px; color: #ccc; line-height: 1.4; }
+    .kanban-card-num { font-size: 10px; color: #3a3a5a; font-family: monospace; margin-top: 5px; }
+    .board-col-add {
+      flex-shrink: 0; padding: 6px 8px;
+      border-top: 1px solid #141428;
+    }
+    .btn-add-card {
+      width: 100%; background: none; border: 1px dashed #1e1e3a;
+      color: #444; font-size: 12px; border-radius: 5px;
+      padding: 5px; cursor: pointer; text-align: left;
+    }
+    .btn-add-card:hover { color: #888; border-color: #2e2e5a; background: #0f0f1e; }
+    .col-add-form { display: none; flex-direction: column; gap: 5px; padding: 4px 0; }
+    .col-add-form.open { display: flex; }
+    .col-add-form input { font-size: 12px; padding: 5px 8px; }
+    .col-add-form-btns { display: flex; gap: 5px; }
+    .col-add-form-btns button { font-size: 11px; padding: 3px 10px; flex: 1; }
 
     /* ── Space settings panel (replaces old space-panel) ──────────────── */
     #space-panel { flex: 1; padding: 24px; overflow-y: auto; display: none; flex-direction: column; }
@@ -302,8 +350,9 @@
     <!-- Board view (columns) -->
     <div id="board-view">
       <div class="board-view-topbar">
-        <button id="btn-back-to-space">&#8592; Back to Space</button>
+        <button id="btn-back-to-space">&#8592;</button>
         <h2 id="board-view-title"></h2>
+        <button id="btn-add-column">+ Column</button>
       </div>
       <div id="board-columns-area"></div>
     </div>
@@ -451,19 +500,80 @@
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
+  // Track which spaces are expanded in the sidebar
+  const expandedSpaces = new Set();
+
   async function loadSpacesSidebar() {
     const spaces = await invoke('list_spaces').catch(() => []);
     const list = document.getElementById('spaces-list');
     list.innerHTML = '';
+
     for (const s of spaces) {
-      const li = document.createElement('li');
-      li.textContent = s.name;
-      li.dataset.spaceId = s.id;
-      li.title = `${s.member_count} member(s)`;
-      if (s.id === currentSpaceId) li.classList.add('active');
-      li.onclick = () => openSpaceMain(s.id);
-      list.appendChild(li);
+      // Space row
+      const row = document.createElement('div');
+      row.className = 'space-row' +
+        (s.id === currentSpaceId ? ' active' : '') +
+        (expandedSpaces.has(s.id) ? ' open' : '');
+      row.dataset.spaceId = s.id;
+
+      const arrow = document.createElement('span');
+      arrow.className = 'space-row-arrow';
+      arrow.textContent = '▶';
+
+      const name = document.createElement('span');
+      name.className = 'space-row-name';
+      name.textContent = s.name;
+
+      row.appendChild(arrow);
+      row.appendChild(name);
+
+      // Boards sub-list
+      const sub = document.createElement('ul');
+      sub.className = 'space-boards-sub' + (expandedSpaces.has(s.id) ? ' open' : '');
+      sub.dataset.spaceId = s.id;
+
+      // Click space row: expand/collapse + navigate to space main
+      row.onclick = () => {
+        if (expandedSpaces.has(s.id)) {
+          expandedSpaces.delete(s.id);
+          row.classList.remove('open');
+          sub.classList.remove('open');
+        } else {
+          expandedSpaces.add(s.id);
+          row.classList.add('open');
+          sub.classList.add('open');
+          populateSpaceBoardsSub(sub, s.id);
+        }
+        openSpaceMain(s.id);
+      };
+
+      list.appendChild(row);
+      list.appendChild(sub);
+
+      // If already expanded, populate immediately
+      if (expandedSpaces.has(s.id)) {
+        populateSpaceBoardsSub(sub, s.id);
+      }
     }
+  }
+
+  async function populateSpaceBoardsSub(subEl, spaceId) {
+    subEl.innerHTML = '';
+    try {
+      const space = await invoke('get_space_cmd', { spaceId });
+      for (const boardId of (space.boards || [])) {
+        const title = allBoards[boardId] || boardId.slice(0, 10) + '\u2026';
+        const li = document.createElement('li');
+        li.textContent = title;
+        li.dataset.boardId = boardId;
+        if (boardId === currentBoardId) li.classList.add('active');
+        li.onclick = (e) => {
+          e.stopPropagation();
+          openBoardView(boardId, title);
+        };
+        subEl.appendChild(li);
+      }
+    } catch (_) {}
   }
 
   // ── Load all board titles once ─────────────────────────────────────────────
@@ -533,18 +643,131 @@
     currentBoardId = boardId;
     document.getElementById('board-view-title').textContent = title;
     showView('board-view');
-    renderBoardPlaceholder(boardId);
+    // Highlight in sidebar
+    document.querySelectorAll('.space-boards-sub li').forEach(li => {
+      li.classList.toggle('active', li.dataset.boardId === boardId);
+    });
+    await loadBoardColumns(boardId);
   }
 
-  function renderBoardPlaceholder(boardId) {
-    // Board column/card data requires additional Tauri commands not yet wired.
-    // Show a minimal placeholder with the board ID.
+  async function loadBoardColumns(boardId) {
     const area = document.getElementById('board-columns-area');
     area.innerHTML = '';
-    const msg = document.createElement('div');
-    msg.style.cssText = 'color:#444;font-size:13px;padding:24px;';
-    msg.textContent = 'Board ID: ' + boardId;
-    area.appendChild(msg);
+    try {
+      const detail = await invoke('get_board_detail', { boardId });
+      for (const col of detail.columns) {
+        area.appendChild(buildColumnEl(detail.id, col));
+      }
+    } catch (e) {
+      const msg = document.createElement('div');
+      msg.style.cssText = 'color:#555;font-size:13px;padding:24px;';
+      msg.textContent = 'Error loading board: ' + e;
+      area.appendChild(msg);
+    }
+  }
+
+  function buildColumnEl(boardId, col) {
+    const colEl = document.createElement('div');
+    colEl.className = 'board-col';
+    colEl.dataset.colId = col.id;
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'board-col-header';
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = col.title;
+    const countBadge = document.createElement('span');
+    countBadge.className = 'board-col-count';
+    countBadge.textContent = col.cards.length;
+    header.appendChild(titleSpan);
+    header.appendChild(countBadge);
+
+    // Cards list
+    const cardsList = document.createElement('ul');
+    cardsList.className = 'board-col-cards';
+    for (const card of col.cards) {
+      cardsList.appendChild(buildCardEl(card));
+    }
+
+    // Add card area
+    const addArea = document.createElement('div');
+    addArea.className = 'board-col-add';
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn-add-card';
+    addBtn.textContent = '+ Add card';
+
+    const addForm = document.createElement('div');
+    addForm.className = 'col-add-form';
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.placeholder = 'Card title…';
+    const addBtns = document.createElement('div');
+    addBtns.className = 'col-add-form-btns';
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn-primary';
+    confirmBtn.textContent = 'Add';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    addBtns.appendChild(confirmBtn);
+    addBtns.appendChild(cancelBtn);
+    addForm.appendChild(addInput);
+    addForm.appendChild(addBtns);
+
+    addBtn.onclick = () => {
+      addBtn.style.display = 'none';
+      addForm.classList.add('open');
+      addInput.focus();
+    };
+    cancelBtn.onclick = () => {
+      addForm.classList.remove('open');
+      addBtn.style.display = '';
+      addInput.value = '';
+    };
+    confirmBtn.onclick = async () => {
+      const title = addInput.value.trim();
+      if (!title) return;
+      try {
+        await invoke('create_card_cmd', { boardId, colId: col.id, title });
+        addInput.value = '';
+        addForm.classList.remove('open');
+        addBtn.style.display = '';
+        await loadBoardColumns(boardId);
+        // refresh sidebar board title cache (card count changed)
+      } catch (e) { alert('Error adding card: ' + e); }
+    };
+    addInput.onkeydown = (e) => {
+      if (e.key === 'Enter') confirmBtn.click();
+      if (e.key === 'Escape') cancelBtn.click();
+    };
+
+    addArea.appendChild(addBtn);
+    addArea.appendChild(addForm);
+
+    colEl.appendChild(header);
+    colEl.appendChild(cardsList);
+    colEl.appendChild(addArea);
+    return colEl;
+  }
+
+  function buildCardEl(card) {
+    const li = document.createElement('li');
+    li.className = 'kanban-card';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'kanban-card-title';
+    titleEl.textContent = card.title;
+
+    li.appendChild(titleEl);
+
+    if (card.number) {
+      const numEl = document.createElement('div');
+      numEl.className = 'kanban-card-num';
+      numEl.textContent = '#' + card.number;
+      li.appendChild(numEl);
+    }
+
+    return li;
   }
 
   // ── Space settings (members / boards / invite) ─────────────────────────────
@@ -690,6 +913,17 @@
     currentBoardId = null;
     showView('space-main');
     renderBoardsGrid(currentSpaceData || { boards: [] });
+    document.querySelectorAll('.space-boards-sub li').forEach(li => li.classList.remove('active'));
+  };
+
+  // Add column button
+  document.getElementById('btn-add-column').onclick = async () => {
+    const title = prompt('Column name:');
+    if (!title || !title.trim() || !currentBoardId) return;
+    try {
+      await invoke('create_column_cmd', { boardId: currentBoardId, title: title.trim() });
+      await loadBoardColumns(currentBoardId);
+    } catch (e) { alert('Error creating column: ' + e); }
   };
 
   // ── New Space modal ────────────────────────────────────────────────────────
