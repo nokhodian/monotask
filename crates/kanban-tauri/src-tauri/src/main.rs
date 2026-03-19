@@ -155,6 +155,28 @@ fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView
     Ok(space_to_view(space))
 }
 
+#[derive(serde::Serialize)]
+struct BoardSummary {
+    id: String,
+    title: String,
+}
+
+#[tauri::command]
+fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let ids = kanban_storage::board::list_board_ids(storage.conn())
+        .map_err(|e| e.to_string())?;
+    let mut boards = Vec::with_capacity(ids.len());
+    for id in ids {
+        let title = kanban_storage::board::load_board(storage.conn(), &id)
+            .ok()
+            .and_then(|doc| kanban_core::board::get_board_title(&doc).ok())
+            .unwrap_or_else(|| id.clone());
+        boards.push(BoardSummary { id, title });
+    }
+    Ok(boards)
+}
+
 #[tauri::command]
 fn list_spaces(state: tauri::State<AppState>) -> Result<Vec<SpaceSummaryView>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -506,6 +528,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            list_boards,
             create_space,
             list_spaces,
             get_space_cmd,
