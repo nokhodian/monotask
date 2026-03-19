@@ -39,6 +39,7 @@ enum BoardCommands {
 #[derive(Subcommand)]
 enum ColumnCommands {
     Create { board_id: String, title: String, #[arg(long)] json: bool },
+    List { board_id: String, #[arg(long)] json: bool },
 }
 
 #[derive(Subcommand)]
@@ -47,17 +48,20 @@ enum CardCommands {
     View { board_id: String, card_id: String, #[arg(long)] json: bool },
 }
 
-fn data_dir(cli: &Cli) -> std::path::PathBuf {
-    cli.data_dir.clone().unwrap_or_else(|| {
-        dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("p2p-kanban")
-    })
+fn data_dir(cli: &Cli) -> anyhow::Result<std::path::PathBuf> {
+    if let Some(d) = &cli.data_dir {
+        return Ok(d.clone());
+    }
+    let base = dirs::data_dir()
+        .ok_or_else(|| anyhow::anyhow!(
+            "Cannot determine data directory. Use --data-dir to specify one explicitly."
+        ))?;
+    Ok(base.join("p2p-kanban"))
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let dir = data_dir(&cli);
+    let dir = data_dir(&cli)?;
     let mut storage = kanban_storage::Storage::open(&dir)?;
 
     match cli.command {
@@ -90,6 +94,17 @@ fn main() -> anyhow::Result<()> {
                 if json { println!("{}", serde_json::json!({"id": col_id, "board_id": board_id})); }
                 else { println!("Created column: {title} ({col_id})"); }
             }
+            ColumnCommands::List { board_id, json } => {
+                let doc = storage.load_board(&board_id)?;
+                let cols = kanban_core::column::list_columns(&doc)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&cols)?);
+                } else {
+                    for col in &cols {
+                        println!("{}: {}", col.id, col.title);
+                    }
+                }
+            }
         },
         Commands::Card { cmd } => match cmd {
             CardCommands::Create { board_id, col_id, title, json } => {
@@ -104,10 +119,19 @@ fn main() -> anyhow::Result<()> {
             }
             CardCommands::View { board_id, card_id, json } => {
                 let doc = storage.load_board(&board_id)?;
-                let card_obj = kanban_core::card::get_card_obj(&doc, &card_id)?;
-                let title = kanban_core::get_string(&doc, &card_obj, "title")?.unwrap_or_default();
-                if json { println!("{}", serde_json::json!({"id": card_id, "title": title})); }
-                else { println!("{}: {}", card_id, title); }
+                let card = kanban_core::card::read_card(&doc, &card_id)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&card)?);
+                } else {
+                    println!("ID:          {}", card.id);
+                    println!("Title:       {}", card.title);
+                    if !card.description.is_empty() {
+                        println!("Description: {}", card.description);
+                    }
+                    if card.deleted { println!("Status:      DELETED"); }
+                    else if card.archived { println!("Status:      archived"); }
+                    if let Some(due) = &card.due_date { println!("Due:         {due}"); }
+                }
             }
         },
     }

@@ -19,6 +19,22 @@ pub fn create_column(doc: &mut AutoCommit, title: &str) -> Result<String> {
     Ok(col_id)
 }
 
+pub fn list_columns(doc: &AutoCommit) -> crate::Result<Vec<Column>> {
+    let cols = match doc.get(automerge::ROOT, "columns")? {
+        Some((_, id)) => id,
+        None => return Ok(vec![]),
+    };
+    let mut result = Vec::new();
+    for i in 0..doc.length(&cols) {
+        if let Some((_, obj)) = doc.get(&cols, i)? {
+            let id = crate::get_string(doc, &obj, "id")?.unwrap_or_default();
+            let title = crate::get_string(doc, &obj, "title")?.unwrap_or_default();
+            result.push(Column { id, title });
+        }
+    }
+    Ok(result)
+}
+
 pub fn rename_column(doc: &mut AutoCommit, col_obj: &automerge::ObjId, new_title: &str) -> Result<()> {
     doc.put(col_obj, "title", new_title)?;
     Ok(())
