@@ -208,6 +208,18 @@ pub fn copy_card(
             Some((_, id)) => id,
             None => return Err(crate::Error::NotFound(source_card_id.to_string())),
         };
+        // Guard: do not allow copying a deleted card
+        let is_deleted = match doc.get(&src_obj, "deleted")? {
+            Some((automerge::Value::Scalar(s), _)) => {
+                matches!(s.as_ref(), automerge::ScalarValue::Boolean(true))
+            }
+            _ => false,
+        };
+        if is_deleted {
+            return Err(crate::Error::NotFound(
+                format!("card {source_card_id} is deleted and cannot be copied"),
+            ));
+        }
         let title = crate::get_string(doc, &src_obj, "title")?
             .map(|t| format!("Copy of {t}"))
             .unwrap_or_else(|| "Copy of card".to_string());
@@ -325,5 +337,19 @@ mod tests {
         assert_eq!(copy.number.as_ref().unwrap().seq, 2); // seq incremented from 1
         assert!(copy.assignees.is_empty());
         assert_eq!(copy.copied_from, Some(original.id.clone()));
+    }
+
+    #[test]
+    fn copy_card_rejects_deleted_source() {
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let original = create_card(&mut doc, &col_id, "Deploy API", &actor_pk, &members).unwrap();
+        delete_card(&mut doc, &original.id).unwrap();
+
+        let result = copy_card(&mut doc, &original.id, &col_id, &actor_pk, &members);
+        assert!(result.is_err());
     }
 }
