@@ -1,6 +1,7 @@
 pub mod board;
 pub mod card_number;
 pub mod schema;
+pub mod space;
 
 use rusqlite::Connection;
 use std::path::Path;
