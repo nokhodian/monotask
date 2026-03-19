@@ -47,13 +47,11 @@ pub fn actor_prefix(pubkey_bytes: &[u8], all_member_pubkeys: &[Vec<u8>]) -> Stri
     let prefix4 = &encoded[..4];
     let collision = all_member_pubkeys
         .iter()
+        .filter(|other_pk| other_pk.as_slice() != pubkey_bytes)
         .any(|other_pk| {
-            let other_encoded = base32::encode(
-                base32::Alphabet::RFC4648 { padding: false },
-                other_pk,
-            )
-            .to_lowercase();
-            other_encoded.starts_with(prefix4)
+            let other = base32::encode(base32::Alphabet::RFC4648 { padding: false }, other_pk)
+                .to_lowercase();
+            other.starts_with(prefix4)
         });
 
     if collision {
@@ -99,9 +97,12 @@ mod tests {
 
     #[test]
     fn actor_prefix_collision_extends_to_8() {
-        // All-zero bytes base32-encode to "AAAA..." so both keys share the same 4-char prefix
+        // [0u8; 32] base32-encodes to "aaaa..." (first 4 chars: "aaaa")
+        // [0, 0, 0, 16, ...] also starts with "aaaa" (same first 20 bits) but is a different key
         let pk = vec![0u8; 32];
-        let other = vec![0u8; 32]; // same prefix
+        let mut other = vec![0u8; 32];
+        other[3] = 16; // Different key, same 4-char base32 prefix
+        assert_ne!(pk, other); // sanity check
         let p = actor_prefix(&pk, &[other]);
         assert_eq!(p.len(), 8);
     }
