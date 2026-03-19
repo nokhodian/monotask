@@ -5,6 +5,7 @@ pub mod checklist;
 pub mod clock;
 pub mod column;
 pub mod comment;
+pub mod migration;
 
 use thiserror::Error;
 
