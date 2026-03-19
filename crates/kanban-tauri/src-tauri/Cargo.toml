@@ -1,0 +1,27 @@
+[package]
+name = "kanban-tauri"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "kanban_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "kanban-tauri"
+path = "src/main.rs"
+
+[dependencies]
+kanban-core    = { path = "../../kanban-core" }
+kanban-crypto  = { path = "../../kanban-crypto" }
+kanban-storage = { path = "../../kanban-storage" }
+tauri          = { version = "2", features = [] }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+thiserror      = { workspace = true }
+tracing        = { workspace = true }
+tokio          = { workspace = true }
+anyhow         = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
