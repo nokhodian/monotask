@@ -24,16 +24,17 @@ pub type Result<T> = std::result::Result<T, Error>;
 use automerge::{AutoCommit, ObjId, ObjType, ReadDoc, ROOT, transaction::Transactable};
 
 /// Initialize a new Automerge document with the p2p-kanban root structure.
-pub fn init_doc(doc: &mut AutoCommit) {
+pub fn init_doc(doc: &mut AutoCommit) -> Result<()> {
     // Only initialise once
     if doc.get(ROOT, "columns").ok().flatten().is_some() {
-        return;
+        return Ok(());
     }
-    let _ = doc.put_object(ROOT, "columns", ObjType::List);
-    let _ = doc.put_object(ROOT, "cards", ObjType::Map);
-    let _ = doc.put_object(ROOT, "members", ObjType::Map);
-    let _ = doc.put_object(ROOT, "actor_card_seq", ObjType::Map);
-    let _ = doc.put_object(ROOT, "label_definitions", ObjType::Map);
+    doc.put_object(ROOT, "columns", ObjType::List)?;
+    doc.put_object(ROOT, "cards", ObjType::Map)?;
+    doc.put_object(ROOT, "members", ObjType::Map)?;
+    doc.put_object(ROOT, "actor_card_seq", ObjType::Map)?;
+    doc.put_object(ROOT, "label_definitions", ObjType::Map)?;
+    Ok(())
 }
 
 /// Return the `cards` map ObjId (read-write).

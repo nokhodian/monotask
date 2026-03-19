@@ -8,7 +8,7 @@ static LOGICAL: AtomicU64 = AtomicU64::new(0);
 /// It does not advance the logical counter from incoming remote timestamps
 /// (that is Phase 2 work when networking is implemented).
 pub fn now() -> String {
-    let wall = Utc::now().timestamp_millis() as u64;
+    let wall = Utc::now().timestamp_millis().max(0) as u64;
     let logical = LOGICAL.fetch_add(1, Ordering::SeqCst);
     format!("{wall:016x}-{logical:08x}")
 }
