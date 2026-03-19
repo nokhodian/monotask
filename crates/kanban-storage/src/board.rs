@@ -3,8 +3,9 @@ use rusqlite::params;
 use crate::StorageError;
 
 pub fn save_board(conn: &rusqlite::Connection, board_id: &str, doc: &mut AutoCommit) -> Result<(), StorageError> {
+    let tx = conn.unchecked_transaction()?;
     let bytes = doc.save();
-    conn.execute(
+    tx.execute(
         "INSERT INTO boards (board_id, automerge_doc, last_modified)
          VALUES (?1, ?2, unixepoch())
          ON CONFLICT(board_id) DO UPDATE SET
@@ -12,6 +13,7 @@ pub fn save_board(conn: &rusqlite::Connection, board_id: &str, doc: &mut AutoCom
              last_modified = excluded.last_modified",
         params![board_id, bytes],
     )?;
+    tx.commit()?;
     Ok(())
 }
 

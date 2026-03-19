@@ -5,6 +5,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         PRAGMA journal_mode=WAL;
         PRAGMA foreign_keys=ON;
 
+        BEGIN;
+
         CREATE TABLE IF NOT EXISTS boards (
             board_id      TEXT PRIMARY KEY,
             automerge_doc BLOB NOT NULL,
@@ -60,6 +62,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             hlc        TEXT    NOT NULL,
             PRIMARY KEY (board_id, actor_key, seq)
         );
+
+        COMMIT;
     ")?;
     Ok(())
 }
