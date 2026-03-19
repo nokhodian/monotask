@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e120a"/>
+      <stop offset="100%" stop-color="#0a0704"/>
+    </radialGradient>
+    <radialGradient id="headFur" cx="40%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#6b4020"/>
+      <stop offset="60%" stop-color="#4a2a10"/>
+      <stop offset="100%" stop-color="#2e1808"/>
+    </radialGradient>
+    <radialGradient id="facePatch" cx="50%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#f0b87a"/>
+      <stop offset="50%" stop-color="#d4935a"/>
+      <stop offset="100%" stop-color="#b36e3a"/>
+    </radialGradient>
+    <radialGradient id="eyeAmber" cx="38%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#ffe066"/>
+      <stop offset="40%" stop-color="#f5a623"/>
+      <stop offset="100%" stop-color="#c87800"/>
+    </radialGradient>
+    <radialGradient id="earInner" cx="50%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#8c5030"/>
+      <stop offset="100%" stop-color="#5a2e12"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="circle">
+      <circle cx="240" cy="240" r="230"/>
+    </clipPath>
+  </defs>
+
+  <!-- Outer ring -->
+  <circle cx="240" cy="240" r="238" fill="none" stroke="#6b4020" stroke-width="1.5" opacity="0.4"/>
+  <!-- Background -->
+  <circle cx="240" cy="240" r="235" fill="url(#bg)"/>
+
+  <!-- Subtle amber rim glow at bottom -->
+  <ellipse cx="240" cy="430" rx="120" ry="30" fill="#f5a623" opacity="0.06"/>
+
+  <!-- LEFT EAR -->
+  <circle cx="82" cy="210" r="52" fill="url(#headFur)"/>
+  <circle cx="82" cy="210" r="36" fill="url(#earInner)"/>
+  <circle cx="82" cy="210" r="20" fill="#3a1a08"/>
+  <!-- ear highlight -->
+  <ellipse cx="76" cy="200" rx="7" ry="5" fill="#8c5030" opacity="0.5"/>
+
+  <!-- RIGHT EAR -->
+  <circle cx="398" cy="210" r="52" fill="url(#headFur)"/>
+  <circle cx="398" cy="210" r="36" fill="url(#earInner)"/>
+  <circle cx="398" cy="210" r="20" fill="#3a1a08"/>
+  <ellipse cx="392" cy="200" rx="7" ry="5" fill="#8c5030" opacity="0.5"/>
+
+  <!-- HEAD -->
+  <ellipse cx="240" cy="222" rx="138" ry="145" fill="url(#headFur)"/>
+
+  <!-- Brow ridge shadow -->
+  <ellipse cx="240" cy="168" rx="80" ry="18" fill="#1e0e04" opacity="0.5"/>
+
+  <!-- FACE PATCH -->
+  <ellipse cx="240" cy="268" rx="90" ry="100" fill="url(#facePatch)"/>
+
+  <!-- Face texture highlight -->
+  <ellipse cx="228" cy="240" rx="30" ry="20" fill="#f5c890" opacity="0.12"/>
+
+  <!-- LEFT EYE SOCKET (deep shadow) -->
+  <circle cx="196" cy="202" r="30" fill="#120a04"/>
+  <!-- Left eye iris glow -->
+  <circle cx="196" cy="202" r="24" fill="url(#eyeAmber)" filter="url(#softGlow)"/>
+  <!-- Left eye iris detail ring -->
+  <circle cx="196" cy="202" r="22" fill="none" stroke="#c87800" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="196" cy="202" r="18" fill="none" stroke="#ffe066" stroke-width="0.8" opacity="0.3"/>
+  <!-- Left pupil -->
+  <circle cx="198" cy="204" r="11" fill="#0a0602"/>
+  <!-- Left pupil glint -->
+  <circle cx="193" cy="198" r="5" fill="white" opacity="0.85"/>
+  <circle cx="202" cy="196" r="2.5" fill="white" opacity="0.4"/>
+  <!-- Eye catchlight bottom -->
+  <ellipse cx="198" cy="213" rx="5" ry="2.5" fill="#f5a623" opacity="0.15"/>
+
+  <!-- RIGHT EYE SOCKET -->
+  <circle cx="284" cy="202" r="30" fill="#120a04"/>
+  <!-- Right eye iris glow -->
+  <circle cx="284" cy="202" r="24" fill="url(#eyeAmber)" filter="url(#softGlow)"/>
+  <circle cx="284" cy="202" r="22" fill="none" stroke="#c87800" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="284" cy="202" r="18" fill="none" stroke="#ffe066" stroke-width="0.8" opacity="0.3"/>
+  <!-- Right pupil -->
+  <circle cx="286" cy="204" r="11" fill="#0a0602"/>
+  <!-- Right pupil glint -->
+  <circle cx="281" cy="198" r="5" fill="white" opacity="0.85"/>
+  <circle cx="290" cy="196" r="2.5" fill="white" opacity="0.4"/>
+  <ellipse cx="286" cy="213" rx="5" ry="2.5" fill="#f5a623" opacity="0.15"/>
+
+  <!-- BROW LEFT (expressive arch) -->
+  <path d="M 172 174 Q 196 164 220 172" stroke="#2e1808" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M 172 172 Q 196 162 220 170" stroke="#4a2a10" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- BROW RIGHT -->
+  <path d="M 260 172 Q 284 164 308 174" stroke="#2e1808" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M 260 170 Q 284 162 308 172" stroke="#4a2a10" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- NOSE -->
+  <ellipse cx="240" cy="248" rx="20" ry="14" fill="#9a5c30"/>
+  <!-- Nostrils -->
+  <ellipse cx="231" cy="251" rx="6.5" ry="5" fill="#3a1808" opacity="0.9"/>
+  <ellipse cx="249" cy="251" rx="6.5" ry="5" fill="#3a1808" opacity="0.9"/>
+  <!-- Nose bridge highlight -->
+  <ellipse cx="240" cy="242" rx="5" ry="3" fill="#d4835a" opacity="0.4"/>
+
+  <!-- MOUTH -->
+  <path d="M 212 286 Q 240 310 268 286" stroke="#7a3d18" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+  <!-- Smile corner dimples -->
+  <circle cx="212" cy="286" r="3.5" fill="#9a5030" opacity="0.6"/>
+  <circle cx="268" cy="286" r="3.5" fill="#9a5030" opacity="0.6"/>
+
+  <!-- CHIN fur tuft -->
+  <ellipse cx="240" cy="345" rx="35" ry="18" fill="#5a3018" opacity="0.4"/>
+
+  <!-- TOP HEAD fur highlight -->
+  <ellipse cx="222" cy="108" rx="28" ry="12" fill="#7a4a28" opacity="0.35"/>
+
+  <!-- Tiny floating KANBAN CARDS (top right, playful) -->
+  <!-- Card 1 -->
+  <g transform="rotate(-12, 360, 100)" opacity="0.7">
+    <rect x="335" y="82" width="42" height="32" rx="4" fill="#f5a623" opacity="0.9"/>
+    <rect x="340" y="90" width="25" height="3" rx="1.5" fill="#0a0602" opacity="0.5"/>
+    <rect x="340" y="96" width="18" height="3" rx="1.5" fill="#0a0602" opacity="0.35"/>
+    <rect x="340" y="102" width="22" height="3" rx="1.5" fill="#0a0602" opacity="0.3"/>
+  </g>
+  <!-- Card 2 (stacked behind) -->
+  <g transform="rotate(-4, 355, 85)" opacity="0.45">
+    <rect x="330" y="62" width="42" height="32" rx="4" fill="#d48820"/>
+  </g>
+  <!-- Card 3 (small, top left) -->
+  <g transform="rotate(8, 110, 110)" opacity="0.55">
+    <rect x="86" y="92" width="34" height="26" rx="4" fill="#7a4020" opacity="0.8"/>
+    <rect x="91" y="100" width="20" height="2.5" rx="1" fill="#f5a623" opacity="0.5"/>
+    <rect x="91" y="106" width="14" height="2.5" rx="1" fill="#f5a623" opacity="0.35"/>
+  </g>
+
+</svg>
