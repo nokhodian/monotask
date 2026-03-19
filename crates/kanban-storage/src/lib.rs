@@ -1,7 +1,8 @@
 pub mod board;
+pub mod card_number;
 pub mod schema;
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use std::path::Path;
 use thiserror::Error;
 
@@ -54,21 +55,12 @@ impl Storage {
 
     /// Resolve a card reference: tries card number index first, falls back to UUID passthrough.
     pub fn resolve_card_ref(&self, board_id: &str, card_ref: &str) -> Result<String, StorageError> {
-        // Try card number pattern first (e.g. "a7f3-1")
-        if card_ref.contains('-') && card_ref.split('-').last()
-            .map(|s| s.parse::<u64>().is_ok()).unwrap_or(false)
-        {
-            let result: Option<String> = self.conn.query_row(
-                "SELECT card_id FROM card_number_index WHERE board_id=?1 AND number=?2",
-                rusqlite::params![board_id, card_ref],
-                |r| r.get(0),
-            ).optional()?;
-            if let Some(uuid) = result {
-                return Ok(uuid);
-            }
-        }
-        // UUID passthrough
-        Ok(card_ref.to_string())
+        card_number::resolve_card_ref(&self.conn, board_id, card_ref)
+    }
+
+    pub fn sync_card_number_index(&self, board_id: &str, cards: &[(String, String)]) -> Result<(), StorageError> {
+        card_number::sync_card_number_index(&self.conn, board_id, cards)
+            .map_err(StorageError::Sqlite)
     }
 }
 
