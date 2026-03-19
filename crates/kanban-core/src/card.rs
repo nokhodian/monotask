@@ -5,6 +5,7 @@ use crate::Result;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Card {
     pub id: String,
+    pub number: Option<crate::card_number::CardNumber>,
     pub title: String,
     pub description: String,
     pub assignees: Vec<String>,
@@ -17,14 +18,60 @@ pub struct Card {
     pub created_at: String,
 }
 
-pub fn create_card(doc: &mut AutoCommit, col_id: &str, title: &str) -> Result<Card> {
+pub(crate) fn assign_next_card_number(
+    doc: &mut AutoCommit,
+    actor_pk: &[u8],
+    all_members: &[Vec<u8>],
+) -> Result<crate::card_number::CardNumber> {
+    use automerge::{ObjId, ObjType, ScalarValue};
+
+    let actor_key = hex::encode(actor_pk);
+
+    // Get or create actor_card_seq map at root
+    let seq_map: ObjId = match doc.get(automerge::ROOT, "actor_card_seq")? {
+        Some((automerge::Value::Object(ObjType::Map), id)) => id,
+        _ => doc.put_object(automerge::ROOT, "actor_card_seq", ObjType::Map)?,
+    };
+
+    let next_seq: u64 = match doc.get(&seq_map, &actor_key)? {
+        Some((automerge::Value::Scalar(s), _)) => {
+            if let ScalarValue::Counter(c) = s.as_ref() {
+                let current = u64::from(c);
+                doc.increment(&seq_map, &actor_key, 1)?;
+                current + 1
+            } else {
+                return Err(crate::Error::InvalidDocument(
+                    "actor_card_seq entry is not a counter".into(),
+                ));
+            }
+        }
+        _ => {
+            doc.put(&seq_map, &actor_key, ScalarValue::counter(1))?;
+            1
+        }
+    };
+
+    let prefix = crate::card_number::actor_prefix(actor_pk, all_members);
+    Ok(crate::card_number::CardNumber::new(prefix, next_seq))
+}
+
+pub fn create_card(
+    doc: &mut AutoCommit,
+    col_id: &str,
+    title: &str,
+    actor_pk: &[u8],
+    all_members: &[Vec<u8>],
+) -> Result<Card> {
     let card_id = uuid::Uuid::new_v4().to_string();
     let hlc = crate::clock::now();
+    let number = assign_next_card_number(doc, actor_pk, all_members)?;
     let cards_map = crate::get_cards_map(doc)?;
     let card_obj = doc.put_object(&cards_map, &card_id, ObjType::Map)?;
     doc.put(&card_obj, "id", card_id.as_str())?;
     doc.put(&card_obj, "title", title)?;
     doc.put(&card_obj, "description", "")?;
+    doc.put(&card_obj, "number", number.to_display())?;
+    doc.put(&card_obj, "created_by", hex::encode(actor_pk))?;
     doc.put(&card_obj, "created_at", hlc.as_str())?;
     doc.put(&card_obj, "deleted", false)?;
     doc.put(&card_obj, "archived", false)?;
@@ -37,6 +84,7 @@ pub fn create_card(doc: &mut AutoCommit, col_id: &str, title: &str) -> Result<Ca
     Ok(Card {
         id: card_id,
         title: title.to_string(),
+        number: Some(number),
         created_at: hlc,
         ..Default::default()
     })
@@ -144,7 +192,9 @@ mod tests {
         let mut doc = AutoCommit::new();
         crate::init_doc(&mut doc).unwrap();
         let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
-        let card = create_card(&mut doc, &col_id, "My Task").unwrap();
+        let actor_pk = vec![0u8; 32];
+        let members = vec![actor_pk.clone()];
+        let card = create_card(&mut doc, &col_id, "My Task", &actor_pk, &members).unwrap();
         assert_eq!(card.title, "My Task");
         assert!(!card.id.is_empty());
     }
@@ -154,8 +204,37 @@ mod tests {
         let mut doc = AutoCommit::new();
         crate::init_doc(&mut doc).unwrap();
         let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
-        let card = create_card(&mut doc, &col_id, "Task").unwrap();
+        let actor_pk = vec![0u8; 32];
+        let members = vec![actor_pk.clone()];
+        let card = create_card(&mut doc, &col_id, "Task", &actor_pk, &members).unwrap();
         delete_card(&mut doc, &card.id).unwrap();
         assert!(is_tombstoned(&doc, &card.id).unwrap());
+    }
+
+    #[test]
+    fn create_card_assigns_number() {
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let card = create_card(&mut doc, &col_id, "My Task", &actor_pk, &members).unwrap();
+        assert!(card.number.is_some());
+        let num = card.number.unwrap();
+        assert_eq!(num.seq, 1);
+        assert!(!num.prefix.is_empty());
+    }
+
+    #[test]
+    fn sequential_cards_have_increasing_seq() {
+        let mut doc = AutoCommit::new();
+        crate::init_doc(&mut doc).unwrap();
+        let actor_pk = vec![1u8; 32];
+        let members = vec![actor_pk.clone()];
+        let col_id = crate::column::create_column(&mut doc, "To Do").unwrap();
+        let c1 = create_card(&mut doc, &col_id, "Task 1", &actor_pk, &members).unwrap();
+        let c2 = create_card(&mut doc, &col_id, "Task 2", &actor_pk, &members).unwrap();
+        assert_eq!(c1.number.unwrap().seq, 1);
+        assert_eq!(c2.number.unwrap().seq, 2);
     }
 }
