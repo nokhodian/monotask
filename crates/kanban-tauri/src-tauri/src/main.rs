@@ -188,12 +188,11 @@ const DEFAULT_COLUMNS: &[&str] = &["Todo", "In Progress", "Review", "Done"];
 fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<BoardSummary, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let pk = state.identity.public_key_hex();
-    let (mut doc, _board) = kanban_core::board::create_board(&title, &pk)
+    let (mut doc, board) = kanban_core::board::create_board(&title, &pk)
         .map_err(|e| e.to_string())?;
-    let board_id = uuid::Uuid::new_v4().to_string();
-    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+    kanban_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
-    Ok(BoardSummary { id: board_id, title })
+    Ok(BoardSummary { id: board.id, title })
 }
 
 #[tauri::command]

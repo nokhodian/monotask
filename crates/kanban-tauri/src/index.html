@@ -387,8 +387,7 @@
         </div>
         <div style="font-size:11px;color:#444;margin-top:4px;">— or —</div>
         <div class="add-board-row">
-          <input id="input-new-board-title" placeholder="New board title…" style="flex:1;" />
-          <button id="btn-create-and-add-board" class="btn-primary">Create &amp; Add</button>
+          <button id="btn-create-and-add-board" class="btn-primary" style="width:100%;">&#43; Create New Board &amp; Add to Space</button>
         </div>
       </div>
     </div>
@@ -415,6 +414,51 @@
   </div>
 
 </div><!-- end main-content -->
+
+<!-- ── Create Board modal ─────────────────────────────────────────────────── -->
+<div id="modal-create-board" class="modal">
+  <div class="modal-box">
+    <h3>New Board</h3>
+    <div class="profile-field">
+      <label>Board Title</label>
+      <input id="input-new-board-modal-title" placeholder="My Board" />
+    </div>
+    <div class="modal-actions">
+      <button id="btn-create-board-cancel">Cancel</button>
+      <button id="btn-create-board-confirm" class="btn-primary">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Column modal ────────────────────────────────────────────────────── -->
+<div id="modal-add-column" class="modal">
+  <div class="modal-box">
+    <h3>New Column</h3>
+    <div class="profile-field">
+      <label>Column Name</label>
+      <input id="input-add-column-title" placeholder="e.g. Blocked" />
+    </div>
+    <div class="modal-actions">
+      <button id="btn-add-column-cancel">Cancel</button>
+      <button id="btn-add-column-confirm" class="btn-primary">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Export invite path modal ───────────────────────────────────────────── -->
+<div id="modal-export-invite" class="modal">
+  <div class="modal-box">
+    <h3>Export Invite File</h3>
+    <div class="profile-field">
+      <label>Save path</label>
+      <input id="input-export-invite-path" placeholder="/tmp/myteam.space" />
+    </div>
+    <div class="modal-actions">
+      <button id="btn-export-invite-cancel">Cancel</button>
+      <button id="btn-export-invite-confirm" class="btn-primary">Export</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Create Space modal ─────────────────────────────────────────────────── -->
 <div id="modal-create-space" class="modal">
@@ -944,14 +988,25 @@
     document.querySelectorAll('.space-boards-sub li').forEach(li => li.classList.remove('active'));
   };
 
-  // Add column button
-  document.getElementById('btn-add-column').onclick = async () => {
-    const title = prompt('Column name:');
-    if (!title || !title.trim() || !currentBoardId) return;
+  // Add column button → modal
+  document.getElementById('btn-add-column').onclick = () => {
+    document.getElementById('input-add-column-title').value = '';
+    openModal('modal-add-column');
+    document.getElementById('input-add-column-title').focus();
+  };
+  document.getElementById('btn-add-column-cancel').onclick = () => closeModal('modal-add-column');
+  document.getElementById('btn-add-column-confirm').onclick = async () => {
+    const title = document.getElementById('input-add-column-title').value.trim();
+    if (!title || !currentBoardId) return;
     try {
-      await invoke('create_column_cmd', { boardId: currentBoardId, title: title.trim() });
+      await invoke('create_column_cmd', { boardId: currentBoardId, title });
+      closeModal('modal-add-column');
       await loadBoardColumns(currentBoardId);
     } catch (e) { alert('Error creating column: ' + e); }
+  };
+  document.getElementById('input-add-column-title').onkeydown = (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-add-column-confirm').click();
+    if (e.key === 'Escape') closeModal('modal-add-column');
   };
 
   // ── New Space modal ────────────────────────────────────────────────────────
@@ -1007,13 +1062,24 @@
       await renderInviteTab();
     } catch (e) { alert('Error: ' + e); }
   };
-  document.getElementById('btn-export-invite').onclick = async () => {
-    const path = prompt('Save .space file to path (e.g. /tmp/myteam.space):');
+  document.getElementById('btn-export-invite').onclick = () => {
+    document.getElementById('input-export-invite-path').value = '';
+    openModal('modal-export-invite');
+    document.getElementById('input-export-invite-path').focus();
+  };
+  document.getElementById('btn-export-invite-cancel').onclick = () => closeModal('modal-export-invite');
+  document.getElementById('btn-export-invite-confirm').onclick = async () => {
+    const path = document.getElementById('input-export-invite-path').value.trim();
     if (!path) return;
     try {
       await invoke('export_invite_file', { spaceId: currentSpaceId, path });
+      closeModal('modal-export-invite');
       alert('Exported to ' + path);
     } catch (e) { alert('Error: ' + e); }
+  };
+  document.getElementById('input-export-invite-path').onkeydown = (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-export-invite-confirm').click();
+    if (e.key === 'Escape') closeModal('modal-export-invite');
   };
 
   // ── Populate board select in settings ─────────────────────────────────────
@@ -1054,35 +1120,53 @@
     } catch (e) { alert('Error: ' + e); }
   };
 
-  // ── Create new board and add to space ─────────────────────────────────────
-  document.getElementById('btn-create-and-add-board').onclick = async () => {
-    const title = document.getElementById('input-new-board-title').value.trim();
-    if (!title) return;
-    try {
-      const board = await invoke('create_board_cmd', { title });
-      await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
-      document.getElementById('input-new-board-title').value = '';
-      await refreshAllBoards();
-      await refreshSpaceSettings();
-      await refreshSpaceMain();
-      // Expand sidebar for this space
-      const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
-      if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
-    } catch (e) { alert('Error: ' + e); }
+  // ── Create new board and add to space (from settings) ─────────────────────
+  document.getElementById('btn-create-and-add-board').onclick = () => {
+    openCreateBoardModal(async (title) => {
+      try {
+        const board = await invoke('create_board_cmd', { title });
+        await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
+        await refreshAllBoards();
+        await refreshSpaceSettings();
+        await refreshSpaceMain();
+        const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
+        if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
+      } catch (e) { alert('Error: ' + e); }
+    });
   };
 
-  // ── Quick new board from boards grid ──────────────────────────────────────
-  document.getElementById('btn-new-board-quick').onclick = async () => {
-    const title = prompt('Board title:');
-    if (!title || !title.trim()) return;
-    try {
-      const board = await invoke('create_board_cmd', { title: title.trim() });
-      await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
-      await refreshAllBoards();
-      await refreshSpaceMain();
-      const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
-      if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
-    } catch (e) { alert('Error: ' + e); }
+  // ── New board modal (shared by grid button + create-and-add) ──────────────
+  let _newBoardCallback = null;
+  function openCreateBoardModal(onConfirm) {
+    _newBoardCallback = onConfirm;
+    document.getElementById('input-new-board-modal-title').value = '';
+    openModal('modal-create-board');
+    document.getElementById('input-new-board-modal-title').focus();
+  }
+  document.getElementById('btn-create-board-cancel').onclick = () => closeModal('modal-create-board');
+  document.getElementById('btn-create-board-confirm').onclick = async () => {
+    const title = document.getElementById('input-new-board-modal-title').value.trim();
+    if (!title) return;
+    closeModal('modal-create-board');
+    if (_newBoardCallback) await _newBoardCallback(title);
+  };
+  document.getElementById('input-new-board-modal-title').onkeydown = (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-create-board-confirm').click();
+    if (e.key === 'Escape') closeModal('modal-create-board');
+  };
+
+  // Quick new board from boards grid
+  document.getElementById('btn-new-board-quick').onclick = () => {
+    openCreateBoardModal(async (title) => {
+      try {
+        const board = await invoke('create_board_cmd', { title });
+        await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
+        await refreshAllBoards();
+        await refreshSpaceMain();
+        const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
+        if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
+      } catch (e) { alert('Error: ' + e); }
+    });
   };
 
   // ── Profile modal ──────────────────────────────────────────────────────────
