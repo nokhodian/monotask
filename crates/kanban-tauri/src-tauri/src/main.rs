@@ -222,7 +222,7 @@ fn export_invite_file(space_id: String, path: String, state: tauri::State<AppSta
         "space_name": space_name,
         "space_doc": space_doc_b64,
     });
-    std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap())
+    std::fs::write(&path, serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
 }
 
