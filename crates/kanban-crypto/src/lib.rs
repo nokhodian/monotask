@@ -43,6 +43,9 @@ impl Identity {
 
     pub fn verify(pubkey_bytes: &[u8; 32], msg: &[u8], sig_bytes: &[u8]) -> Result<(), CryptoError> {
         let vk = VerifyingKey::from_bytes(pubkey_bytes).map_err(|_| CryptoError::InvalidKey)?;
+        if vk.is_weak() {
+            return Err(CryptoError::InvalidKey);
+        }
         let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| CryptoError::InvalidKey)?;
         let sig = Signature::from_bytes(&sig_arr);
         vk.verify(msg, &sig).map_err(|_| CryptoError::VerifyFailed)
@@ -53,7 +56,13 @@ impl Identity {
         self.signing_key.to_bytes()
     }
 
-    /// Restore from stored key bytes
+    /// Restore from stored key bytes.
+    ///
+    /// # Safety
+    ///
+    /// `bytes` must be a valid previously-generated Ed25519 scalar. Passing
+    /// zeroed or corrupted bytes produces a key whose derived public key will
+    /// not match the original — always validate the round-trip after restore.
     pub fn from_secret_bytes(bytes: &[u8; 32]) -> Self {
         Self { signing_key: SigningKey::from_bytes(bytes) }
     }
