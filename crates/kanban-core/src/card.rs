@@ -36,7 +36,14 @@ pub(crate) fn assign_next_card_number(
     let next_seq: u64 = match doc.get(&seq_map, &actor_key)? {
         Some((automerge::Value::Scalar(s), _)) => {
             if let ScalarValue::Counter(c) = s.as_ref() {
-                let current = u64::from(c);
+                // automerge Counter wraps i64; guard against malformed/adversarial documents
+                let raw_i64 = i64::from(c);
+                if raw_i64 < 0 {
+                    return Err(crate::Error::InvalidDocument(
+                        "actor_card_seq counter has negative value".into(),
+                    ));
+                }
+                let current = raw_i64 as u64;
                 doc.increment(&seq_map, &actor_key, 1)?;
                 current + 1
             } else {
