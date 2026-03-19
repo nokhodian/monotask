@@ -1,5 +1,10 @@
 use std::str::FromStr;
-use regex::Regex;
+use std::sync::LazyLock;
+
+static CARD_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^([a-z0-9]{4,8})-(\d+)$")
+        .expect("card number regex is valid")
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CardNumber {
@@ -27,8 +32,7 @@ impl FromStr for CardNumber {
     type Err = CardNumberError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let re = Regex::new(r"^([a-z0-9]{4,8})-(\d+)$").unwrap();
-        let caps = re.captures(s).ok_or(CardNumberError::InvalidFormat)?;
+        let caps = CARD_RE.captures(s).ok_or(CardNumberError::InvalidFormat)?;
         let prefix = caps[1].to_string();
         let seq: u64 = caps[2].parse().map_err(|_| CardNumberError::InvalidFormat)?;
         Ok(CardNumber { prefix, seq })
@@ -37,12 +41,22 @@ impl FromStr for CardNumber {
 
 /// Derive the actor's display prefix for a given board.
 /// Uses 4 chars normally; extends to 8 if another board member shares the same 4-char prefix.
+/// Note: if two members also share the same 8-character prefix, the prefix will not
+/// extend further. This is a known limitation acceptable for typical board sizes.
 pub fn actor_prefix(pubkey_bytes: &[u8], all_member_pubkeys: &[Vec<u8>]) -> String {
     let encoded = base32::encode(
         base32::Alphabet::RFC4648 { padding: false },
         pubkey_bytes,
     )
     .to_lowercase();
+
+    // Guard: base32 of n bytes produces ceil(n*8/5) chars; we need at least 4.
+    // Ed25519 keys are always 32 bytes (producing 52+ chars), but the signature
+    // accepts &[u8], so defend against unexpectedly short inputs.
+    if encoded.len() < 4 {
+        // Pad with zeros to reach minimum prefix length
+        return format!("{:0<4}", encoded);
+    }
 
     let prefix4 = &encoded[..4];
     let collision = all_member_pubkeys
@@ -55,7 +69,11 @@ pub fn actor_prefix(pubkey_bytes: &[u8], all_member_pubkeys: &[Vec<u8>]) -> Stri
         });
 
     if collision {
-        encoded[..8].to_string()
+        if encoded.len() >= 8 {
+            encoded[..8].to_string()
+        } else {
+            encoded.clone()
+        }
     } else {
         prefix4.to_string()
     }
