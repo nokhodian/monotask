@@ -131,7 +131,11 @@ enum SyncResponse {
    - For each board, the loop (run by the initiator):
      ```rust
      let mut doc = storage.lock().load_board(&board_id)
-         .unwrap_or_else(|_| kanban_core::new_board_doc());
+         .unwrap_or_else(|_| {
+             let mut d = AutoCommit::new();
+             kanban_core::init_doc(&mut d).expect("init_doc");
+             d
+         });
      let mut sync_state = automerge::sync::SyncState::new();
      loop {
          let msg = doc.generate_sync_message(&mut sync_state)?;
