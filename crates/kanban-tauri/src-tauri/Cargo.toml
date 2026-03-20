@@ -15,6 +15,7 @@ path = "src/main.rs"
 kanban-core    = { path = "../../kanban-core" }
 kanban-crypto  = { path = "../../kanban-crypto" }
 kanban-storage = { path = "../../kanban-storage" }
+kanban-net     = { path = "../../kanban-net" }
 tauri          = { version = "2", features = [] }
 serde          = { workspace = true }
 serde_json     = { workspace = true }

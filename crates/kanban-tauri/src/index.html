@@ -57,6 +57,7 @@
     }
     .space-row.open .space-row-arrow { transform: rotate(90deg); }
     .space-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sync-dot { font-size: 10px; margin-left: 4px; cursor: default; }
 
     /* boards under space */
     .space-boards-sub {
@@ -804,8 +805,15 @@
       name.className = 'space-row-name';
       name.textContent = s.name;
 
+      const syncDot = document.createElement('span');
+      syncDot.className = 'sync-dot';
+      syncDot.id = 'sync-dot-' + s.id;
+      syncDot.title = 'No peers';
+      syncDot.textContent = '⚫';
+
       row.appendChild(arrow);
       row.appendChild(name);
+      row.appendChild(syncDot);
 
       // Boards sub-list
       const sub = document.createElement('ul');
@@ -1854,6 +1862,19 @@
   }
 
   init();
+
+  // ── Sync status polling ────────────────────────────────────────────────────
+  async function pollSyncStatus() {
+    try {
+      const peers = await invoke('get_sync_status_cmd');
+      document.querySelectorAll('.sync-dot').forEach(dot => {
+        dot.textContent = peers.length > 0 ? '🟢' : '⚫';
+        dot.title = peers.length > 0 ? `${peers.length} peer(s) connected` : 'No peers';
+      });
+    } catch (e) { /* ignore */ }
+  }
+  setInterval(pollSyncStatus, 5000);
+  pollSyncStatus();
 </script>
 </body>
 </html>

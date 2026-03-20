@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use kanban_storage::Storage;
 use kanban_crypto::Identity;
 use tauri::Manager;
@@ -10,6 +10,7 @@ struct AppState {
     storage: Mutex<Storage>,
     identity: Identity,
     data_dir: std::path::PathBuf,
+    net: Mutex<Option<kanban_net::NetworkHandle>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -923,6 +924,17 @@ fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result
     Ok(pubkey)
 }
 
+#[derive(serde::Serialize)]
+struct SyncPeerView {
+    peer_id: String,
+}
+
+#[tauri::command]
+fn get_sync_status_cmd(_state: tauri::State<AppState>) -> Vec<SyncPeerView> {
+    // Stub: returns empty list for now (full peer tracking requires more state)
+    vec![]
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -941,10 +953,25 @@ fn main() {
             let identity = load_identity(&data_dir, storage.conn())
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
+            // Start P2P sync in background
+            let identity_bytes = identity.to_secret_bytes();
+            let net_storage = Arc::new(Mutex::new(
+                Storage::open(&data_dir)
+                    .unwrap_or_else(|_| panic!("failed to open storage for net"))
+            ));
+            let net_config = kanban_net::NetConfig {
+                listen_port: 7272,
+                data_dir: data_dir.clone(),
+            };
+            let net_handle = tauri::async_runtime::block_on(
+                kanban_net::NetworkHandle::start(net_config, net_storage, identity_bytes)
+            ).ok();
+
             app.manage(AppState {
                 storage: Mutex::new(storage),
                 identity,
                 data_dir: data_dir.clone(),
+                net: Mutex::new(net_handle),
             });
 
             Ok(())
@@ -976,6 +1003,7 @@ fn main() {
             get_my_profile,
             update_my_profile,
             import_ssh_key,
+            get_sync_status_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
