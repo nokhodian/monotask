@@ -8,7 +8,7 @@ libp2p = { version = "0.53", features = [
     "tcp", "quic", "noise", "yamux",
     "mdns", "kad", "relay", "dcutr", "autonat",
     "request-response", "identify",
-    "tokio",
+    "tokio", "macros",
 ] }
 kanban-core    = { path = "../kanban-core" }
 kanban-crypto  = { path = "../kanban-crypto" }
