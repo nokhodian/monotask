@@ -237,6 +237,8 @@ jobs:
 
             depends_on macos: \">= :ventura\"
 
+            disable_quarantine true
+
             app \"Monotask.app\"
 
             zap trash: [
