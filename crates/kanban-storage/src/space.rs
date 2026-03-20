@@ -223,6 +223,28 @@ pub fn check_invite_policy(
     }
 }
 
+// ── Net helpers ──────────────────────────────────────────────────────────────
+
+/// Returns board IDs associated with a Space.
+pub fn get_space_boards(conn: &Connection, space_id: &str) -> Result<Vec<String>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT board_id FROM space_boards WHERE space_id = ?"
+    )?;
+    let ids = stmt.query_map([space_id], |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+    Ok(ids)
+}
+
+/// Returns true if the pubkey is an active (not kicked) member of the Space.
+pub fn is_active_member(conn: &Connection, space_id: &str, pubkey_hex: &str) -> Result<bool, rusqlite::Error> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM space_members WHERE space_id = ? AND pubkey = ? AND kicked = 0",
+        [space_id, pubkey_hex],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 // ── ProfileStore ──────────────────────────────────────────────────────────────
 
 pub fn get_profile(conn: &Connection) -> Result<Option<UserProfile>, StorageError> {
