@@ -52,16 +52,31 @@ you ──── [invite token] ──→ teammate
 
 ## Install
 
-### Homebrew (macOS — recommended)
+### Desktop App — Homebrew Cask (macOS, recommended)
+
+```bash
+brew tap nokhodian/tap
+brew install --cask monotask
+```
+
+Opens as a native macOS app. Double-click `Monotask.app` in Applications.
+
+### CLI — Homebrew Formula
 
 ```bash
 brew tap nokhodian/tap
 brew install monotask
 ```
 
-### Download a release binary
+### Desktop App — Direct DMG download
 
-Grab the latest pre-built binary from the [Releases page](https://github.com/nokhodian/monotask/releases/latest):
+Grab the DMG from the [Releases page](https://github.com/nokhodian/monotask/releases/latest), open it, and drag `Monotask.app` to Applications.
+
+| Platform | Download |
+|----------|----------|
+| macOS Apple Silicon (Desktop) | `Monotask-<version>-aarch64.dmg` |
+
+### CLI — Direct binary download
 
 | Platform | Archive |
 |----------|---------|
@@ -70,13 +85,13 @@ Grab the latest pre-built binary from the [Releases page](https://github.com/nok
 | Linux x86_64 (musl) | `monotask-<version>-x86_64-linux.tar.gz` |
 
 ```bash
-# Example: macOS Apple Silicon
+# Example: macOS Apple Silicon CLI
 curl -L https://github.com/nokhodian/monotask/releases/latest/download/monotask-v0.1.0-aarch64-apple-darwin.tar.gz | tar xz
 mv monotask /usr/local/bin/
 monotask --help
 ```
 
-Each archive contains a single `monotask` binary. SHA-256 checksums are provided as `.sha256` sidecar files next to each archive.
+SHA-256 checksums are provided as `.sha256` sidecar files next to each download.
 
 ### Build from source
 
