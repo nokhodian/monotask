@@ -166,6 +166,40 @@ struct CardView {
     id: String,
     title: String,
     number: Option<String>,
+    has_description: bool,
+    labels: Vec<String>,
+    due_date: Option<String>,
+    assignee: Option<String>,
+    last_move: Option<MoveEvent>,
+}
+
+#[derive(serde::Serialize)]
+struct CommentView {
+    id: String,
+    author: String,
+    text: String,
+    created_at: String,
+}
+
+#[derive(serde::Serialize)]
+struct MoveEvent {
+    from_col: String,
+    to_col: String,
+    timestamp: String,
+}
+
+#[derive(serde::Serialize)]
+struct CardDetailView {
+    id: String,
+    title: String,
+    description: String,
+    number: Option<String>,
+    labels: Vec<String>,
+    due_date: Option<String>,
+    assignee: Option<String>,
+    created_at: String,
+    comments: Vec<CommentView>,
+    history: Vec<MoveEvent>,
 }
 
 #[derive(serde::Serialize)]
@@ -240,10 +274,19 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
         for cid in card_ids {
             if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
                 if !card.deleted && !card.archived {
+                    let labels = get_card_labels(&doc, &cid);
+                    let history = get_card_history(&doc, &cid);
+                    let last_move = history.into_iter().last();
+                    let assignee = get_card_str_field(&doc, &cid, "assignee");
                     cards.push(CardView {
-                        id: card.id,
+                        id: card.id.clone(),
                         title: card.title,
                         number: card.number.map(|n| n.to_display()),
+                        has_description: !card.description.is_empty(),
+                        due_date: card.due_date,
+                        assignee,
+                        labels,
+                        last_move,
                     });
                 }
             }
@@ -251,6 +294,67 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
         col_views.push(ColumnView { id: col.id.clone(), title: col.title.clone(), cards });
     }
     Ok(BoardDetail { id: board_id, title, columns: col_views })
+}
+
+fn get_card_history(doc: &automerge::AutoCommit, card_id: &str) -> Vec<MoveEvent> {
+    use automerge::ReadDoc;
+    let card_obj = match kanban_core::card::get_card_obj(doc, card_id) {
+        Ok(o) => o,
+        Err(e) => { eprintln!("[get_card_history] get_card_obj failed: {e}"); return vec![]; }
+    };
+    let hist_obj = match doc.get(&card_obj, "history") {
+        Ok(Some((_, id))) => id,
+        Ok(None) => { eprintln!("[get_card_history] no history key on card {card_id}"); return vec![]; }
+        Err(e) => { eprintln!("[get_card_history] error reading history: {e}"); return vec![]; }
+    };
+    eprintln!("[get_card_history] history list length={}", doc.length(&hist_obj));
+    (0..doc.length(&hist_obj))
+        .filter_map(|i| {
+            doc.get(&hist_obj, i).ok().flatten().and_then(|(_, obj)| {
+                let from_col = kanban_core::get_string(doc, &obj, "from_col").ok().flatten().unwrap_or_default();
+                let to_col   = kanban_core::get_string(doc, &obj, "to_col").ok().flatten().unwrap_or_default();
+                let timestamp = kanban_core::get_string(doc, &obj, "timestamp").ok().flatten().unwrap_or_default();
+                Some(MoveEvent { from_col, to_col, timestamp })
+            })
+        })
+        .collect()
+}
+
+fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<String> {
+    use automerge::ReadDoc;
+    let card_obj = kanban_core::card::get_card_obj(doc, card_id).ok()?;
+    let (v, _) = doc.get(&card_obj, field).ok()??;
+    if let automerge::Value::Scalar(s) = v {
+        if let automerge::ScalarValue::Str(t) = s.as_ref() {
+            let r = t.to_string();
+            return if r.is_empty() { None } else { Some(r) };
+        }
+    }
+    None
+}
+
+fn get_card_labels(doc: &automerge::AutoCommit, card_id: &str) -> Vec<String> {
+    use automerge::ReadDoc;
+    let card_obj = match kanban_core::card::get_card_obj(doc, card_id) {
+        Ok(o) => o,
+        Err(_) => return vec![],
+    };
+    let labels_obj = match doc.get(&card_obj, "labels") {
+        Ok(Some((_, id))) => id,
+        _ => return vec![],
+    };
+    (0..doc.length(&labels_obj))
+        .filter_map(|i| {
+            doc.get(&labels_obj, i).ok().flatten().and_then(|(v, _)| {
+                if let automerge::Value::Scalar(s) = v {
+                    if let automerge::ScalarValue::Str(t) = s.as_ref() {
+                        return Some(t.to_string());
+                    }
+                }
+                None
+            })
+        })
+        .collect()
 }
 
 fn get_column_card_ids(doc: &automerge::AutoCommit, col_id: &str) -> Vec<String> {
@@ -324,6 +428,29 @@ fn move_card_cmd(
     kanban_core::column::append_card_to_column(&mut doc, &to_col_id, &card_id)
         .map_err(|e| e.to_string())?;
 
+    // Record movement history on the card
+    {
+        use automerge::{ObjType, transaction::Transactable};
+        let columns = kanban_core::column::list_columns(&doc).unwrap_or_default();
+        eprintln!("[move_card_cmd] card={card_id} columns_found={}", columns.len());
+        let from_title = columns.iter().find(|c| c.id == from_col_id).map(|c| c.title.clone()).unwrap_or_else(|| from_col_id.clone());
+        let to_title   = columns.iter().find(|c| c.id == to_col_id).map(|c| c.title.clone()).unwrap_or_else(|| to_col_id.clone());
+        eprintln!("[move_card_cmd] from={from_title:?} to={to_title:?}");
+        let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+        let hist_obj = match doc.get(&card_obj, "history").map_err(|e| e.to_string())? {
+            Some((_, id)) => { eprintln!("[move_card_cmd] history list exists"); id }
+            None => { eprintln!("[move_card_cmd] creating history list"); doc.put_object(&card_obj, "history", ObjType::List).map_err(|e| e.to_string())? }
+        };
+        let idx = doc.length(&hist_obj);
+        eprintln!("[move_card_cmd] inserting history event at idx={idx}");
+        let ts = kanban_core::clock::now();
+        let ev = doc.insert_object(&hist_obj, idx, ObjType::Map).map_err(|e| e.to_string())?;
+        doc.put(&ev, "from_col",  from_title.as_str()).map_err(|e| e.to_string())?;
+        doc.put(&ev, "to_col",    to_title.as_str()).map_err(|e| e.to_string())?;
+        doc.put(&ev, "timestamp", ts.as_str()).map_err(|e| e.to_string())?;
+        eprintln!("[move_card_cmd] history recorded OK");
+    }
+
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -340,6 +467,132 @@ fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     Ok(card.id)
+}
+
+#[tauri::command]
+fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>) -> Result<CardDetailView, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let card = kanban_core::card::read_card(&doc, &card_id).map_err(|e| e.to_string())?;
+    let labels = get_card_labels(&doc, &card_id);
+    let assignee = get_card_str_field(&doc, &card_id, "assignee");
+    let history = get_card_history(&doc, &card_id);
+    let comments = kanban_core::comment::list_comments(&doc, &card_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| CommentView { id: c.id, author: c.author, text: c.text, created_at: c.created_at })
+        .collect();
+    Ok(CardDetailView {
+        id: card.id,
+        title: card.title,
+        description: card.description,
+        number: card.number.map(|n| n.to_display()),
+        labels,
+        due_date: card.due_date,
+        assignee,
+        created_at: card.created_at,
+        comments,
+        history,
+    })
+}
+
+#[tauri::command]
+fn update_card_cmd(
+    board_id: String,
+    card_id: String,
+    title: String,
+    description: String,
+    labels: Vec<String>,
+    due_date: Option<String>,
+    assignee: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    use automerge::{ReadDoc, ObjType, transaction::Transactable};
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+    doc.put(&card_obj, "title", title.as_str()).map_err(|e| e.to_string())?;
+    doc.put(&card_obj, "description", description.as_str()).map_err(|e| e.to_string())?;
+    let due = due_date.as_deref().unwrap_or("");
+    doc.put(&card_obj, "due_date", due).map_err(|e| e.to_string())?;
+    let assignee_val = assignee.as_deref().unwrap_or("");
+    doc.put(&card_obj, "assignee", assignee_val).map_err(|e| e.to_string())?;
+    // Replace labels list
+    let labels_obj = match doc.get(&card_obj, "labels").map_err(|e| e.to_string())? {
+        Some((_, id)) => id,
+        None => doc.put_object(&card_obj, "labels", ObjType::List).map_err(|e| e.to_string())?,
+    };
+    let len = doc.length(&labels_obj);
+    for i in (0..len).rev() {
+        doc.delete(&labels_obj, i).map_err(|e| e.to_string())?;
+    }
+    for (i, label) in labels.iter().enumerate() {
+        doc.insert(&labels_obj, i, label.as_str()).map_err(|e| e.to_string())?;
+    }
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri::State<AppState>) -> Result<CommentView, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let author = state.identity.public_key_hex();
+    let comment = kanban_core::comment::add_comment(&mut doc, &card_id, &text, &author)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(CommentView { id: comment.id, author: comment.author, text: comment.text, created_at: comment.created_at })
+}
+
+#[tauri::command]
+fn delete_comment_cmd(board_id: String, card_id: String, comment_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::comment::delete_comment(&mut doc, &card_id, &comment_id)
+        .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    kanban_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    use automerge::{ReadDoc, transaction::Transactable};
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let cols = match doc.get(automerge::ROOT, "columns").map_err(|e| e.to_string())? {
+        Some((_, id)) => id,
+        None => return Err("board has no columns".into()),
+    };
+    let len = doc.length(&cols);
+    let idx = (0..len).find(|&i| {
+        doc.get(&cols, i).ok().flatten()
+            .and_then(|(_, obj)| kanban_core::get_string(&doc, &obj, "id").ok().flatten())
+            .map(|s| s == col_id)
+            .unwrap_or(false)
+    }).ok_or_else(|| format!("column not found: {col_id}"))?;
+    doc.delete(&cols, idx).map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -703,6 +956,12 @@ fn main() {
             get_board_detail,
             create_column_cmd,
             create_card_cmd,
+            get_card_cmd,
+            update_card_cmd,
+            delete_card_cmd,
+            delete_column_cmd,
+            add_comment_cmd,
+            delete_comment_cmd,
             create_space,
             list_spaces,
             get_space_cmd,
