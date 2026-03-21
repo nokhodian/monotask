@@ -375,6 +375,7 @@ mod tests {
             owner_pubkey: "owner-pk".into(),
             timestamp: 0,
             token_hash: "hash".into(),
+            space_doc: None,
         };
         // joiner (different pubkey) → always Ok
         assert!(check_invite_policy(&conn, &meta, "joiner-pk").is_ok());
@@ -391,6 +392,7 @@ mod tests {
             owner_pubkey: "owner-pk".into(),
             timestamp: 0,
             token_hash: "hash-abc".into(),
+            space_doc: None,
         };
         assert!(matches!(
             check_invite_policy(&conn, &meta, "owner-pk"),

@@ -470,6 +470,35 @@
     }
     .comment-compose textarea:focus { border-color: #2e2e5a; }
     .comment-compose button { align-self: flex-end; font-size: 11px; padding: 4px 12px; }
+
+    /* Checklist */
+    .checklist-section { margin-bottom: 16px; }
+    .checklist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .checklist-name { font-size: 12px; font-weight: 600; color: #aaa; }
+    .checklist-progress-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .checklist-pct { font-size: 10px; color: #555; flex-shrink: 0; width: 28px; text-align: right; }
+    .checklist-progress { flex: 1; height: 4px; background: #1e1e3a; border-radius: 2px; }
+    .checklist-progress-bar { height: 100%; background: #4a904a; border-radius: 2px; transition: width 0.25s; }
+    .checklist-progress-bar.complete { background: #4aaa4a; }
+    .checklist-items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+    .checklist-item { display: flex; align-items: flex-start; gap: 8px; padding: 3px 4px; border-radius: 3px; }
+    .checklist-item:hover { background: #0f0f1e; }
+    .checklist-item input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; cursor: pointer; accent-color: #4a904a; }
+    .checklist-item-text { font-size: 12px; color: #ccc; flex: 1; line-height: 1.5; word-break: break-word; }
+    .checklist-item-text.checked { text-decoration: line-through; color: #555; }
+    .btn-del-cl-item { background: none; border: none; color: #2a2a4a; cursor: pointer; font-size: 11px; padding: 0 3px; opacity: 0; transition: opacity 0.1s; }
+    .checklist-item:hover .btn-del-cl-item { opacity: 1; }
+    .btn-del-cl-item:hover { color: #c05050; }
+    .checklist-add-item { display: flex; gap: 6px; margin-top: 8px; }
+    .checklist-add-item input { font-size: 12px; padding: 4px 8px; flex: 1; }
+    .checklist-add-item button { font-size: 11px; padding: 3px 10px; flex-shrink: 0; }
+    .btn-add-checklist { font-size: 11px; padding: 3px 10px; margin-top: 4px; }
+    .checklist-section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .btn-del-checklist { background: none; border: none; color: #3a3a5a; cursor: pointer; font-size: 10px; padding: 0 3px; }
+    .btn-del-checklist:hover { color: #c05050; }
+    /* Card checklist progress chip */
+    .card-checklist-chip { font-size: 10px; color: #3a3a5a; background: #1a1a2e; border-radius: 3px; padding: 1px 5px; display: inline-flex; align-items: center; gap: 3px; }
+    .card-checklist-chip.done { color: #4a904a; background: #1a2a1a; }
   </style>
 </head>
 <body>
@@ -695,6 +724,9 @@
           <div class="card-detail-label">Assignee</div>
           <div id="card-detail-assignee-picker" class="assignee-picker"></div>
         </div>
+        <!-- Checklists injected here by JS -->
+        <div id="card-detail-checklists"></div>
+        <button id="btn-add-checklist" class="btn-add-checklist">+ Add Checklist</button>
       </div>
       <!-- Right: activity feed -->
       <div class="card-detail-right">
@@ -1037,11 +1069,15 @@
         animation: 150,
         // CRITICAL for Tauri WKWebView: HTML5 DnD fires dragstart but never fires
         // 'drop', causing cards to snap back. forceFallback bypasses HTML5 DnD
-        // entirely and uses mouse events (mousedown/mousemove/mouseup) instead.
+        // entirely and uses pointer events instead.
         forceFallback: true,
+        fallbackOnBody: true,   // append ghost to body so WKWebView drop events fire
         fallbackClass: 'sortable-ghost',
         ghostClass: 'sortable-ghost',
         chosenClass: 'sortable-chosen',
+        delay: 120,             // brief delay prevents accidental drags on tap
+        delayOnTouchOnly: false,
+        touchStartThreshold: 4,
         onStart: () => { _sortableDragging = true; },
         onEnd: async (evt) => {
           setTimeout(() => { _sortableDragging = false; }, 100);
@@ -1050,16 +1086,21 @@
           const toColEl = evt.to.closest('.board-col');
           const fromColId = fromColEl ? fromColEl.dataset.colId : null;
           const toColId = toColEl ? toColEl.dataset.colId : null;
-          _dbg(`onEnd cardId=${cardId} from=${fromColId} to=${toColId}`);
-          if (!fromColId || !toColId) { _dbg('ERROR: col element not found'); return; }
-          if (fromColId === toColId) { _dbg('same col, skip'); return; }
+          if (!fromColId || !toColId) return;
+          if (fromColId === toColId) {
+            // Same-column reorder — persist the new position
+            const newIndex = evt.newIndex;
+            try {
+              await invoke('reorder_card_cmd', { boardId, colId: fromColId, cardId, newIndex });
+            } catch (err) {
+              await loadBoardColumns(boardId);
+            }
+            return;
+          }
           try {
-            _dbg('calling move_card_cmd…');
             await invoke('move_card_cmd', { boardId, cardId, fromColId, toColId });
-            _dbg('move_card_cmd OK');
             await loadBoardColumns(boardId);
           } catch (err) {
-            _dbg('ERROR: ' + err);
             alert('Error moving card: ' + err);
             await loadBoardColumns(boardId);
           }
@@ -1167,6 +1208,13 @@
       descIcon.title = 'Has description';
       descIcon.textContent = '☰';
       meta.appendChild(descIcon);
+    }
+    if (card.checklist_total > 0) {
+      const chip = document.createElement('span');
+      chip.className = 'card-checklist-chip' + (card.checklist_done === card.checklist_total ? ' done' : '');
+      chip.title = 'Checklist progress';
+      chip.textContent = '☑ ' + card.checklist_done + '/' + card.checklist_total;
+      meta.appendChild(chip);
     }
     // Due date — inline picker, click to pick, auto-saves
     const dueWrap = document.createElement('div');
@@ -1318,6 +1366,7 @@
       document.getElementById('comment-input').value = '';
       renderLabelPicker(card.labels || []);
       renderAssigneePicker(spaceMembers, card.assignee || null);
+      renderChecklists(card.checklists || [], boardId, cardId);
       renderActivityFeed(card, boardId, cardId);
       openModal('modal-card-detail');
     } catch (e) { alert('Error loading card: ' + e); }
@@ -1413,6 +1462,159 @@
     feed.scrollTop = feed.scrollHeight;
   }
 
+  // ── Checklist rendering ───────────────────────────────────────────────────
+  function renderChecklists(checklists, boardId, cardId) {
+    const container = document.getElementById('card-detail-checklists');
+    container.innerHTML = '';
+    if (!checklists || checklists.length === 0) return;
+
+    for (const cl of checklists) {
+      const section = document.createElement('div');
+      section.className = 'checklist-section';
+
+      // Header
+      const header = document.createElement('div');
+      header.className = 'checklist-section-title';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'checklist-name';
+      nameEl.textContent = cl.title || 'Checklist';
+      const delClBtn = document.createElement('button');
+      delClBtn.className = 'btn-del-checklist';
+      delClBtn.title = 'Delete checklist';
+      delClBtn.textContent = 'Delete';
+      delClBtn.onclick = async () => {
+        // soft-delete by removing all items then the checklist (no full delete API yet, just hide)
+        if (!confirm('Delete this checklist?')) return;
+        // We don't have a delete_checklist cmd — delete all items to clear it
+        for (const item of cl.items) {
+          try { await invoke('delete_checklist_item_cmd', { boardId, cardId, clId: cl.id, itemId: item.id }); } catch (_) {}
+        }
+        const card = await invoke('get_card_cmd', { boardId, cardId });
+        renderChecklists(card.checklists, boardId, cardId);
+        // Refresh board tile checklist count
+        refreshBoardTileChecklists(boardId);
+      };
+      header.appendChild(nameEl);
+      header.appendChild(delClBtn);
+      section.appendChild(header);
+
+      // Progress bar
+      const total = cl.items.length;
+      const done = cl.items.filter(it => it.checked).length;
+      if (total > 0) {
+        const pRow = document.createElement('div');
+        pRow.className = 'checklist-progress-row';
+        const pct = Math.round((done / total) * 100);
+        const pctEl = document.createElement('span');
+        pctEl.className = 'checklist-pct';
+        pctEl.textContent = pct + '%';
+        const bar = document.createElement('div');
+        bar.className = 'checklist-progress';
+        const fill = document.createElement('div');
+        fill.className = 'checklist-progress-bar' + (pct === 100 ? ' complete' : '');
+        fill.style.width = pct + '%';
+        bar.appendChild(fill);
+        pRow.appendChild(pctEl);
+        pRow.appendChild(bar);
+        section.appendChild(pRow);
+      }
+
+      // Items list
+      const ul = document.createElement('ul');
+      ul.className = 'checklist-items';
+      for (const item of cl.items) {
+        ul.appendChild(buildChecklistItemEl(item, cl.id, boardId, cardId, section, cl));
+      }
+      section.appendChild(ul);
+
+      // Add item row
+      const addRow = document.createElement('div');
+      addRow.className = 'checklist-add-item';
+      const addInput = document.createElement('input');
+      addInput.type = 'text';
+      addInput.placeholder = 'Add an item…';
+      const addBtn = document.createElement('button');
+      addBtn.textContent = 'Add';
+      addBtn.onclick = async () => {
+        const text = addInput.value.trim();
+        if (!text) return;
+        try {
+          await invoke('add_checklist_item_cmd', { boardId, cardId, clId: cl.id, text });
+          addInput.value = '';
+          const card = await invoke('get_card_cmd', { boardId, cardId });
+          renderChecklists(card.checklists, boardId, cardId);
+          refreshBoardTileChecklists(boardId);
+        } catch (e) { alert('Error: ' + e); }
+      };
+      addInput.onkeydown = (e) => { if (e.key === 'Enter') addBtn.click(); };
+      addRow.appendChild(addInput);
+      addRow.appendChild(addBtn);
+      section.appendChild(addRow);
+
+      container.appendChild(section);
+    }
+  }
+
+  function buildChecklistItemEl(item, clId, boardId, cardId, sectionEl, cl) {
+    const li = document.createElement('li');
+    li.className = 'checklist-item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = item.checked;
+    cb.onchange = async () => {
+      try {
+        await invoke('toggle_checklist_item_cmd', { boardId, cardId, clId, itemId: item.id, checked: cb.checked });
+        item.checked = cb.checked;
+        textEl.className = 'checklist-item-text' + (item.checked ? ' checked' : '');
+        // Update progress bar
+        const total = cl.items.length;
+        const done = cl.items.filter(it => it.checked).length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const pctEl = sectionEl.querySelector('.checklist-pct');
+        const fillEl = sectionEl.querySelector('.checklist-progress-bar');
+        if (pctEl) pctEl.textContent = pct + '%';
+        if (fillEl) { fillEl.style.width = pct + '%'; fillEl.classList.toggle('complete', pct === 100); }
+        refreshBoardTileChecklists(boardId);
+      } catch (e) { cb.checked = !cb.checked; }
+    };
+
+    const textEl = document.createElement('span');
+    textEl.className = 'checklist-item-text' + (item.checked ? ' checked' : '');
+    textEl.textContent = item.text;
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-del-cl-item';
+    delBtn.title = 'Delete item';
+    delBtn.textContent = '×';
+    delBtn.onclick = async () => {
+      try {
+        await invoke('delete_checklist_item_cmd', { boardId, cardId, clId, itemId: item.id });
+        li.remove();
+        cl.items = cl.items.filter(it => it.id !== item.id);
+        const total = cl.items.length;
+        const done = cl.items.filter(it => it.checked).length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const pctEl = sectionEl.querySelector('.checklist-pct');
+        const fillEl = sectionEl.querySelector('.checklist-progress-bar');
+        if (pctEl) pctEl.textContent = pct + '%';
+        if (fillEl) { fillEl.style.width = pct + '%'; fillEl.classList.toggle('complete', pct === 100); }
+        refreshBoardTileChecklists(boardId);
+      } catch (e) { alert('Error: ' + e); }
+    };
+
+    li.appendChild(cb);
+    li.appendChild(textEl);
+    li.appendChild(delBtn);
+    return li;
+  }
+
+  async function refreshBoardTileChecklists(boardId) {
+    // Refresh the checklist chip on the card tile without full board reload
+    if (currentBoardId !== boardId) return;
+    // No-op for now — full reload happens on modal close via loadBoardColumns
+  }
+
   function renderLabelPicker(selectedLabels) {
     const picker = document.getElementById('card-detail-label-picker');
     picker.innerHTML = '';
@@ -1473,6 +1675,17 @@
     _cardDetailCtx = null;
   };
 
+  document.getElementById('btn-add-checklist').onclick = async () => {
+    if (!_cardDetailCtx) return;
+    const { boardId, cardId } = _cardDetailCtx;
+    const title = prompt('Checklist title:', 'Checklist') || 'Checklist';
+    try {
+      await invoke('add_checklist_cmd', { boardId, cardId, title });
+      const card = await invoke('get_card_cmd', { boardId, cardId });
+      renderChecklists(card.checklists || [], boardId, cardId);
+    } catch (e) { alert('Error: ' + e); }
+  };
+
   document.getElementById('btn-delete-card').onclick = async () => {
     if (!_cardDetailCtx) return;
     if (!confirm('Delete this card? This cannot be undone.')) return;
@@ -1484,6 +1697,16 @@
       await loadBoardColumns(boardId);
     } catch (e) { alert('Error deleting card: ' + e); }
   };
+
+  // Reload board when closing card detail (to refresh checklist chips)
+  document.getElementById('modal-card-detail').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-card-detail') && _cardDetailCtx) {
+      const { boardId } = _cardDetailCtx;
+      closeModal('modal-card-detail');
+      _cardDetailCtx = null;
+      loadBoardColumns(boardId);
+    }
+  });
 
   // ── Space settings (members / boards / invite) ─────────────────────────────
   async function openSpaceSettings() {

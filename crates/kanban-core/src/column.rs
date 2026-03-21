@@ -73,6 +73,25 @@ pub fn append_card_to_column(doc: &mut AutoCommit, col_id: &str, card_id: &str) 
     Ok(())
 }
 
+pub fn reorder_card_in_column(doc: &mut AutoCommit, col_id: &str, card_id: &str, new_index: usize) -> Result<()> {
+    let col_obj = find_column_obj(doc, col_id)?
+        .ok_or_else(|| crate::Error::NotFound(format!("column {col_id}")))?;
+    let card_ids = get_card_ids_list(doc, &col_obj)?;
+    let len = doc.length(&card_ids);
+    let old_idx = (0..len).find(|&i| {
+        doc.get(&card_ids, i).ok().flatten()
+            .and_then(|(v, _)| if let automerge::Value::Scalar(s) = v {
+                if let automerge::ScalarValue::Str(t) = s.as_ref() { Some(t.to_string()) } else { None }
+            } else { None })
+            .as_deref() == Some(card_id)
+    }).ok_or_else(|| crate::Error::NotFound(format!("card {card_id}")))?;
+    if old_idx == new_index { return Ok(()); }
+    doc.delete(&card_ids, old_idx)?;
+    let insert_idx = new_index.min(doc.length(&card_ids));
+    doc.insert(&card_ids, insert_idx, card_id)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
