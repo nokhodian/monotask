@@ -584,10 +584,22 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
             let (token, space_name, doc_bytes_opt) = parse_token_or_file(&token_or_file)?;
             let meta = kanban_crypto::verify_invite_token_signature(&token)?;
             ss::check_invite_policy(storage.conn(), &meta, &local_pubkey)?;
-            // Idempotency
+            // If already a member but we have a .space file, update name + boards from it
             if let Ok(existing) = ss::get_space(storage.conn(), &meta.space_id) {
                 if existing.members.iter().any(|m| m.pubkey == local_pubkey) {
-                    println!("Already a member of Space: {} ({})", existing.name, meta.space_id);
+                    if let Some(ref bytes) = doc_bytes_opt {
+                        let mut doc = automerge::AutoCommit::load(bytes)?;
+                        let boards = cs::list_board_refs(&doc)?;
+                        let members = cs::list_members(&doc)?;
+                        let new_name = cs::get_space_name(&doc).unwrap_or(existing.name);
+                        ss::update_space_doc(storage.conn(), &meta.space_id, &doc.save())?;
+                        ss::rename_space(storage.conn(), &meta.space_id, &new_name)?;
+                        for m in &members { let _ = ss::upsert_member(storage.conn(), &meta.space_id, m); }
+                        for b in &boards { let _ = ss::add_board(storage.conn(), &meta.space_id, b); }
+                        println!("Updated Space: {} ({})", new_name, meta.space_id);
+                    } else {
+                        println!("Already a member of Space: {} ({})", existing.name, meta.space_id);
+                    }
                     return Ok(());
                 }
             }

@@ -94,6 +94,13 @@ async fn run_inner(
                     NetCommand::AnnounceSpaces { space_ids } => {
                         my_spaces = space_ids.clone();
                         announce_spaces(&mut swarm.behaviour_mut().kademlia, &space_ids);
+                        // Also query DHT for peers already in these spaces (internet discovery)
+                        for space_id in &space_ids {
+                            crate::discovery::query_space_peers(
+                                &mut swarm.behaviour_mut().kademlia,
+                                space_id,
+                            );
+                        }
                     }
                     NetCommand::TriggerSync { board_id } => {
                         tracing::debug!("net: trigger sync board={board_id}");
@@ -118,6 +125,12 @@ async fn run_inner(
             _ = reannounce.tick() => {
                 if !my_spaces.is_empty() {
                     announce_spaces(&mut swarm.behaviour_mut().kademlia, &my_spaces);
+                    for space_id in &my_spaces {
+                        crate::discovery::query_space_peers(
+                            &mut swarm.behaviour_mut().kademlia,
+                            space_id,
+                        );
+                    }
                 }
             }
         }

@@ -140,6 +140,10 @@ pub fn list_members(doc: &AutoCommit) -> crate::Result<Vec<Member>> {
     Ok(result)
 }
 
+pub fn get_space_name(doc: &AutoCommit) -> Option<String> {
+    crate::get_string(doc, &automerge::ROOT, "name").ok().flatten()
+}
+
 pub fn list_board_refs(doc: &AutoCommit) -> crate::Result<Vec<String>> {
     let boards = get_boards_map(doc)?;
     let mut result = Vec::new();

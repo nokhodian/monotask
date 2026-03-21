@@ -100,6 +100,14 @@ pub fn update_space_doc(
     Ok(())
 }
 
+pub fn rename_space(conn: &Connection, space_id: &str, new_name: &str) -> Result<(), StorageError> {
+    conn.execute(
+        "UPDATE spaces SET name = ?1 WHERE id = ?2",
+        params![new_name, space_id],
+    )?;
+    Ok(())
+}
+
 pub fn upsert_member(
     conn: &Connection,
     space_id: &str,
