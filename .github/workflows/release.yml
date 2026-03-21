@@ -137,6 +137,7 @@ jobs:
     name: Update Homebrew Formula (CLI)
     needs: release
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -209,6 +210,7 @@ jobs:
     name: Update Homebrew Cask (Desktop App)
     needs: release
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/download-artifact@v4
         with:
