@@ -45,10 +45,11 @@ pub struct UserProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InviteMetadata {
-    pub space_id: String,       // hyphenated UUID
-    pub owner_pubkey: String,   // hex ed25519 pubkey
-    pub timestamp: u64,         // unix seconds
-    pub token_hash: String,     // SHA-256 hex of raw 120-byte token
+    pub space_id: String,            // hyphenated UUID
+    pub owner_pubkey: String,        // hex ed25519 pubkey
+    pub timestamp: u64,              // unix seconds
+    pub token_hash: String,          // SHA-256 hex of raw token bytes
+    pub space_doc: Option<Vec<u8>>,  // automerge space doc (name, members, board refs)
 }
 
 // ── CRDT helpers ──────────────────────────────────────────────────────────────

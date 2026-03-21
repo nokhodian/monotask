@@ -552,18 +552,19 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
         SpaceCommands::Invite { cmd } => match cmd {
             SpaceInviteCommands::Generate { space_id } => {
                 ss::revoke_all_invites(storage.conn(), &space_id)?;
-                let token = kanban_crypto::generate_invite_token(&space_id, identity)?;
+                let doc_bytes = ss::load_space_doc(storage.conn(), &space_id)?;
+                let token = kanban_crypto::generate_invite_token(&space_id, identity, Some(&doc_bytes))?;
                 let meta = kanban_crypto::verify_invite_token_signature(&token)?;
                 ss::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)?;
                 println!("{}", token);
             }
             SpaceInviteCommands::Export { space_id, output_file } => {
                 ss::revoke_all_invites(storage.conn(), &space_id)?;
-                let token = kanban_crypto::generate_invite_token(&space_id, identity)?;
+                let doc_bytes = ss::load_space_doc(storage.conn(), &space_id)?;
+                let token = kanban_crypto::generate_invite_token(&space_id, identity, Some(&doc_bytes))?;
                 let meta = kanban_crypto::verify_invite_token_signature(&token)?;
                 ss::insert_invite(storage.conn(), &meta.token_hash, &token, &space_id, None)?;
                 let space = ss::get_space(storage.conn(), &space_id)?;
-                let doc_bytes = ss::load_space_doc(storage.conn(), &space_id)?;
                 use base64::Engine;
                 let space_doc_b64 = base64::engine::general_purpose::STANDARD.encode(&doc_bytes);
                 let payload = serde_json::json!({
@@ -581,13 +582,17 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
         },
         SpaceCommands::Join { token_or_file } => {
             let local_pubkey = identity.public_key_hex();
-            let (token, space_name, doc_bytes_opt) = parse_token_or_file(&token_or_file)?;
+            let (token, _hint_name, file_doc_opt) = parse_token_or_file(&token_or_file)?;
             let meta = kanban_crypto::verify_invite_token_signature(&token)?;
             ss::check_invite_policy(storage.conn(), &meta, &local_pubkey)?;
-            // If already a member but we have a .space file, update name + boards from it
+
+            // Prefer doc from token (v2), fall back to .space file payload, then stub
+            let resolved_doc = meta.space_doc.clone().or(file_doc_opt);
+
+            // If already a member but we now have a doc, update name + boards
             if let Ok(existing) = ss::get_space(storage.conn(), &meta.space_id) {
                 if existing.members.iter().any(|m| m.pubkey == local_pubkey) {
-                    if let Some(ref bytes) = doc_bytes_opt {
+                    if let Some(ref bytes) = resolved_doc {
                         let mut doc = automerge::AutoCommit::load(bytes)?;
                         let boards = cs::list_board_refs(&doc)?;
                         let members = cs::list_members(&doc)?;
@@ -604,13 +609,14 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
                 }
             }
             let local_profile = get_local_member_profile(storage.conn());
-            let (mut doc, members, boards) = if let Some(bytes) = doc_bytes_opt {
+            let (mut doc, members, boards, space_name) = if let Some(bytes) = resolved_doc {
                 let doc = automerge::AutoCommit::load(&bytes)?;
+                let name = cs::get_space_name(&doc).unwrap_or_else(|| "Shared Space".into());
                 let members = cs::list_members(&doc)?;
                 let boards = cs::list_board_refs(&doc)?;
-                (doc, members, boards)
+                (doc, members, boards, name)
             } else {
-                let mut doc = cs::create_space_doc(&space_name, &meta.owner_pubkey)?;
+                let mut doc = cs::create_space_doc("Shared Space", &meta.owner_pubkey)?;
                 let empty = cs::MemberProfile { display_name: String::new(), avatar_b64: String::new(), kicked: false };
                 cs::add_member(&mut doc, &meta.owner_pubkey, &empty)?;
                 let stub_owner = cs::Member {
@@ -619,7 +625,7 @@ fn handle_space(cmd: SpaceCommands, storage: &mut kanban_storage::Storage, ident
                     avatar_blob: None,
                     kicked: false,
                 };
-                (doc, vec![stub_owner], vec![])
+                (doc, vec![stub_owner], vec![], "Shared Space".into())
             };
             cs::add_member(&mut doc, &local_pubkey, &local_profile)?;
             let doc_bytes = doc.save();
@@ -1216,6 +1222,7 @@ fn parse_token_or_file(input: &str) -> anyhow::Result<(String, String, Option<Ve
         };
         Ok((token, name, doc_bytes))
     } else {
-        Ok((input.to_string(), "Shared Space".to_string(), None))
+        // Bare token — space_doc and name come from the embedded payload (v2 token)
+        Ok((input.to_string(), String::new(), None))
     }
 }
