@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "app-cli", about = "Monotask – P2P Kanban CLI")]
+#[command(name = "monotask", about = "Monotask – P2P task manager CLI")]
 struct Cli {
     #[arg(long, global = true, help = "Data directory")]
     data_dir: Option<std::path::PathBuf>,
@@ -57,6 +57,14 @@ enum Commands {
         /// Show sync status
         #[arg(long)]
         status: bool,
+        /// TCP port to listen on (default: OS-assigned). Use a fixed port when
+        /// peers need to dial you directly via --peer.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Dial a specific peer at startup (bypasses mDNS). Format:
+        /// /ip4/1.2.3.4/tcp/7272  — repeat for multiple peers.
+        #[arg(long = "peer")]
+        peers: Vec<String>,
     },
 }
 
@@ -214,7 +222,13 @@ fn data_dir(cli: &Cli) -> anyhow::Result<std::path::PathBuf> {
         .ok_or_else(|| anyhow::anyhow!(
             "Cannot determine data directory. Use --data-dir to specify one explicitly."
         ))?;
-    Ok(base.join("p2p-kanban"))
+    // Migrate data from old "p2p-kanban" directory if new "monotask" dir doesn't exist yet
+    let new_dir = base.join("monotask");
+    let old_dir = base.join("p2p-kanban");
+    if !new_dir.exists() && old_dir.exists() {
+        let _ = std::fs::rename(&old_dir, &new_dir);
+    }
+    Ok(new_dir)
 }
 
 fn load_cli_identity(data_dir: &std::path::Path, conn: &rusqlite::Connection) -> anyhow::Result<kanban_crypto::Identity> {
@@ -262,7 +276,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init => {
-            println!("Initialized p2p-kanban at {}", dir.display());
+            println!("Initialized monotask at {}", dir.display());
         }
         Commands::Board { cmd } => match cmd {
             BoardCommands::Create { title, json } => {
@@ -270,7 +284,7 @@ async fn main() -> anyhow::Result<()> {
                 let (mut doc, board) = kanban_core::board::create_board(&title, &id.public_key_hex())?;
                 storage.save_board(&board.id, &mut doc)?;
                 if json {
-                    let deep_link = format!("kanban://board/{}", board.id);
+                    let deep_link = format!("monotask://board/{}", board.id);
                     println!("{}", serde_json::json!({"id": board.id, "title": board.title, "deep_link": deep_link}));
                 } else {
                     println!("Created board: {} ({})", board.title, board.id);
@@ -414,8 +428,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Space { cmd } => handle_space(cmd, &mut storage, &identity)?,
         Commands::Profile { cmd } => handle_profile(cmd, &mut storage, &identity, &dir)?,
         Commands::AiHelp => print_ai_help(),
-        Commands::Sync { detach, stop, status } => {
-            cmd_sync(dir, detach, stop, status).await?;
+        Commands::Sync { detach, stop, status, port, peers } => {
+            cmd_sync(dir, detach, stop, status, port, peers).await?;
         }
     }
     Ok(())
@@ -426,6 +440,8 @@ async fn cmd_sync(
     detach: bool,
     stop: bool,
     status: bool,
+    port: u16,
+    peers: Vec<String>,
 ) -> anyhow::Result<()> {
     use kanban_net::{NetworkHandle, NetConfig, NetEvent};
     use kanban_storage::Storage;
@@ -478,25 +494,64 @@ async fn cmd_sync(
 
     let storage = Arc::new(Mutex::new(Storage::open(&data_dir)?));
     let mut handle = NetworkHandle::start(
-        NetConfig { listen_port: 0, data_dir: data_dir.clone() },
-        storage,
+        NetConfig { listen_port: port, data_dir: data_dir.clone(), bootstrap_peers: peers },
+        Arc::clone(&storage),
         identity_bytes,
     ).await?;
 
     handle.announce_spaces(space_ids).await;
 
+    // Snapshot current last_modified timestamps so we can detect CLI-side changes.
+    let mut last_seen: std::collections::HashMap<String, i64> = {
+        let guard = storage.lock().unwrap();
+        let mut stmt = guard.conn()
+            .prepare("SELECT board_id, last_modified FROM boards")
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    };
+
+    // Use SyncTrigger so we can poll in the same select! that receives events.
+    let sync_trigger = handle.sync_trigger();
+    let mut poll_interval = tokio::time::interval(std::time::Duration::from_secs(2));
+
     println!("Sync daemon running. Press Ctrl+C to stop.");
     loop {
-        if let Some(event) = handle.event_rx.recv().await {
-            match &event {
-                NetEvent::PeerConnected { peer_id } =>
-                    println!("connected: {peer_id}"),
-                NetEvent::PeerDisconnected { peer_id } =>
-                    println!("disconnected: {peer_id}"),
-                NetEvent::BoardSynced { board_id, peer_id } =>
-                    println!("synced board {board_id} with {peer_id}"),
-                NetEvent::SyncError { board_id, error } =>
-                    println!("sync error {board_id}: {error}"),
+        tokio::select! {
+            Some(event) = handle.event_rx.recv() => {
+                match event {
+                    NetEvent::PeerConnected { peer_id } =>
+                        println!("connected: {peer_id}"),
+                    NetEvent::PeerDisconnected { peer_id } =>
+                        println!("disconnected: {peer_id}"),
+                    NetEvent::BoardSynced { board_id, peer_id } =>
+                        println!("synced board {board_id} with {peer_id}"),
+                    NetEvent::SyncError { board_id, error } =>
+                        println!("sync error {board_id}: {error}"),
+                }
+            }
+            _ = poll_interval.tick() => {
+                // Detect boards modified by CLI commands (or any other process).
+                let current: std::collections::HashMap<String, i64> = {
+                    let guard = storage.lock().unwrap();
+                    let mut stmt = guard.conn()
+                        .prepare("SELECT board_id, last_modified FROM boards")
+                        .unwrap_or_else(|_| panic!("failed to prepare board poll query"));
+                    stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+                        .unwrap()
+                        .filter_map(|r| r.ok())
+                        .collect()
+                };
+                for (board_id, ts) in &current {
+                    let old_ts = last_seen.get(board_id).copied().unwrap_or(0);
+                    if *ts > old_ts {
+                        println!("board {board_id:.8} changed (ts={ts}), triggering sync");
+                        sync_trigger.trigger_sync(board_id.clone()).await;
+                    }
+                }
+                last_seen = current;
             }
         }
     }
@@ -772,22 +827,22 @@ fn print_ai_help() {
 ================================================================================
 MONOTASK CLI – AI AGENT REFERENCE
 ================================================================================
-Binary : app-cli  (alias: monotask)
+Binary : monotask
 Version: 0.1.0
-Purpose: P2P Kanban board manager with local-first CRDT storage. Designed for
+Purpose: P2P task manager with local-first CRDT storage. Designed for
          task management, collaborative workspaces, and automation via CLI.
 
-Run `app-cli ai-help` to print this document at any time.
+Run `monotask ai-help` to print this document at any time.
 
 --------------------------------------------------------------------------------
 QUICK-START FOR AGENTS
 --------------------------------------------------------------------------------
-1. Check your identity:       app-cli profile show
-2. Create a board:            app-cli board create "My Project"
-3. List columns on a board:   app-cli column list <BOARD_ID>
-4. Create a card:             app-cli card create <BOARD_ID> <COL_ID> "Task title"
-5. View a card:               app-cli card view <BOARD_ID> <CARD_ID>
-6. Add a comment:             app-cli card comment add <BOARD_ID> <CARD_ID> "text"
+1. Check your identity:       monotask profile show
+2. Create a board:            monotask board create "My Project"
+3. List columns on a board:   monotask column list <BOARD_ID>
+4. Create a card:             monotask card create <BOARD_ID> <COL_ID> "Task title"
+5. View a card:               monotask card view <BOARD_ID> <CARD_ID>
+6. Add a comment:             monotask card comment add <BOARD_ID> <CARD_ID> "text"
 
 Always use --json for machine-readable output when parsing results.
 
@@ -795,10 +850,10 @@ Always use --json for machine-readable output when parsing results.
 GLOBAL FLAGS
 --------------------------------------------------------------------------------
 --data-dir <PATH>
-    Override the storage directory (default: $XDG_DATA_HOME/p2p-kanban or
-    ~/.local/share/p2p-kanban on Linux/macOS).
+    Override the storage directory (default: $XDG_DATA_HOME/monotask or
+    ~/.local/share/monotask on Linux/macOS).
     The directory contains:
-      kanban.db    – SQLite database (boards, spaces, profile, invites)
+      monotask.db  – SQLite database (boards, spaces, profile, invites)
       identity.key – Raw 32-byte Ed25519 secret key (auto-created on first run)
 
 --------------------------------------------------------------------------------
@@ -822,7 +877,7 @@ COMMANDS
 --------------------------------------------------------------------------------
 
 ## init
-Usage: app-cli init
+Usage: monotaskinit
 Effect: Prints the data directory path. Triggers identity creation if missing.
         Safe to run multiple times (idempotent).
 
@@ -837,11 +892,11 @@ Automerge CRDT documents (binary blobs in SQLite).
 
   Creates a new board with the given title. Prints the board ID.
   Text output:  "Created board: <title> (<id>)"
-  JSON output:  {"id":"<uuid>","title":"<title>","deep_link":"kanban://board/<id>"}
+  JSON output:  {"id":"<uuid>","title":"<title>","deep_link":"monotask://board/<id>"}
 
   Example:
-    $ app-cli board create "Sprint 42" --json
-    {"id":"a1b2c3d4-...","title":"Sprint 42","deep_link":"kanban://board/a1b2c3..."}
+    $ monotask board create "Sprint 42" --json
+    {"id":"a1b2c3d4-...","title":"Sprint 42","deep_link":"monotask://board/a1b2c3..."}
 
 ### board list
   --json   Output JSON
@@ -851,7 +906,7 @@ Automerge CRDT documents (binary blobs in SQLite).
   JSON output:  ["<uuid>", ...]
 
   Example:
-    $ app-cli board list --json
+    $ monotaskboard list --json
     ["a1b2c3d4-...","e5f6a7b8-..."]
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -867,7 +922,7 @@ maintains an ordered list of card IDs.
   JSON output:  {"id":"<uuid>","board_id":"<board_id>"}
 
   Example:
-    $ app-cli column create a1b2c3d4-... "In Progress" --json
+    $ monotaskcolumn create a1b2c3d4-... "In Progress" --json
     {"id":"c9d0e1f2-...","board_id":"a1b2c3d4-..."}
 
 ### column list <BOARD_ID>
@@ -880,7 +935,7 @@ maintains an ordered list of card IDs.
   Note: card_ids is the ordered list of card UUIDs in each column.
 
   Example:
-    $ app-cli column list a1b2c3d4-... --json
+    $ monotask column list a1b2c3d4-... --json
     [{"id":"c9d0e1f2-...","title":"Todo","card_ids":[]},
      {"id":"d3e4f5a6-...","title":"Done","card_ids":["card-uuid-..."]}]
 
@@ -911,7 +966,7 @@ Card fields:
   JSON output:  {"id":"<uuid>","title":"<title>","board_id":"<board_id>","number":"<prefix>-<n>"}
 
   Example:
-    $ app-cli card create a1b2-... c9d0-... "Fix login bug" --json
+    $ monotask card create a1b2-... c9d0-... "Fix login bug" --json
     {"id":"f1a2b3c4-...","title":"Fix login bug","board_id":"a1b2-...","number":"aaaa-1"}
 
 ### card view <BOARD_ID> <CARD_ID>
@@ -938,7 +993,7 @@ Card fields:
     }
 
   Example:
-    $ app-cli card view a1b2-... f1a2b3c4-... --json
+    $ monotask card view a1b2-... f1a2b3c4-... --json
 
 ### card comment add <BOARD_ID> <CARD_ID> <TEXT>
   --json   Output JSON
@@ -1070,11 +1125,11 @@ Manages the local user's identity and display information.
 
 ### profile set-name <NAME>
   Sets your display name (shown to other space members).
-  Example:  app-cli profile set-name "Alice"
+  Example:  monotaskprofile set-name "Alice"
 
 ### profile set-avatar <PATH>
   Reads an image file (any format) and stores it as your avatar blob.
-  Example:  app-cli profile set-avatar ~/avatar.png
+  Example:  monotaskprofile set-avatar ~/avatar.png
 
 ### profile import-ssh-key [PATH]
   Imports an OpenSSH Ed25519 private key as your identity.
@@ -1112,7 +1167,7 @@ Item ID    : UUID v4
 --------------------------------------------------------------------------------
 STORAGE
 --------------------------------------------------------------------------------
-Location:  ~/.local/share/p2p-kanban/kanban.db  (or custom --data-dir)
+Location:  ~/.local/share/monotask/monotask.db  (or custom --data-dir)
 
 Database tables:
   boards            board_id | automerge_doc (BLOB) | last_modified | last_heads
@@ -1135,41 +1190,41 @@ COMMON AGENT WORKFLOWS
 --------------------------------------------------------------------------------
 
 ### Workflow: Create a board and populate it
-  BOARD=$(app-cli board create "My Board" --json | jq -r .id)
-  TODO_COL=$(app-cli column create $BOARD "Todo" --json | jq -r .id)
-  DOING_COL=$(app-cli column create $BOARD "Doing" --json | jq -r .id)
-  DONE_COL=$(app-cli column create $BOARD "Done" --json | jq -r .id)
-  CARD=$(app-cli card create $BOARD $TODO_COL "First task" --json | jq -r .id)
-  app-cli card view $BOARD $CARD --json
+  BOARD=$(monotask board create "My Board" --json | jq -r .id)
+  TODO_COL=$(monotaskcolumn create $BOARD "Todo" --json | jq -r .id)
+  DOING_COL=$(monotaskcolumn create $BOARD "Doing" --json | jq -r .id)
+  DONE_COL=$(monotaskcolumn create $BOARD "Done" --json | jq -r .id)
+  CARD=$(monotask card create $BOARD $TODO_COL "First task" --json | jq -r .id)
+  monotask card view $BOARD $CARD --json
 
 ### Workflow: Inspect all cards in a board
   # 1. List columns
-  COLS=$(app-cli column list $BOARD --json)
+  COLS=$(monotask column list $BOARD --json)
   # 2. For each column, iterate card_ids and call card view
   echo $COLS | jq -r '.[].card_ids[]' | while read CARD_ID; do
-    app-cli card view $BOARD $CARD_ID --json
+    monotask card view $BOARD $CARD_ID --json
   done
 
 ### Workflow: Collaborative space setup (two users, A and B)
   # --- User A ---
-  SPACE=$(app-cli space create "Team" | awk '{print $NF}' | tr -d '()')
-  app-cli space boards add $SPACE $BOARD
-  app-cli space invite export $SPACE invite.space
+  SPACE=$(monotaskspace create "Team" | awk '{print $NF}' | tr -d '()')
+  monotaskspace boards add $SPACE $BOARD
+  monotaskspace invite export $SPACE invite.space
   # Share invite.space with User B
 
   # --- User B ---
-  app-cli space join invite.space
-  app-cli space boards list $SPACE   # see boards shared by A
+  monotaskspace join invite.space
+  monotaskspace boards list $SPACE   # see boards shared by A
 
 ### Workflow: Add a checklist to a card
-  CL=$(app-cli checklist add $BOARD $CARD "Definition of Done" --json | jq -r .id)
-  ITEM=$(app-cli checklist item-add $BOARD $CARD $CL "Write tests" --json | jq -r .id)
-  app-cli checklist item-check $BOARD $CARD $CL $ITEM
+  CL=$(monotaskchecklist add $BOARD $CARD "Definition of Done" --json | jq -r .id)
+  ITEM=$(monotaskchecklist item-add $BOARD $CARD $CL "Write tests" --json | jq -r .id)
+  monotaskchecklist item-check $BOARD $CARD $CL $ITEM
 
 ### Workflow: Comment thread
-  app-cli card comment add $BOARD $CARD "Starting work on this"
-  app-cli card comment add $BOARD $CARD "Blocked on API access"
-  app-cli card comment list $BOARD $CARD --json
+  monotask card comment add $BOARD $CARD "Starting work on this"
+  monotask card comment add $BOARD $CARD "Blocked on API access"
+  monotaskcard comment list $BOARD $CARD --json
 
 --------------------------------------------------------------------------------
 ERROR HANDLING

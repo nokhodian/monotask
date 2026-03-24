@@ -24,11 +24,15 @@ fn extract_card_numbers(doc: &automerge::AutoCommit) -> Vec<(String, String)> {
     use automerge::ReadDoc;
     let cards_map = match kanban_core::get_cards_map_readonly(doc) {
         Ok(id) => id,
-        Err(_) => return vec![],
+        Err(e) => {
+            eprintln!("EXTRACT: get_cards_map_readonly failed: {e}");
+            return vec![];
+        }
     };
-    doc.keys(&cards_map)
+    let all_keys: Vec<String> = doc.keys(&cards_map).map(|k| k.to_string()).collect();
+    eprintln!("EXTRACT: cards_map has {} keys", all_keys.len());
+    let result: Vec<(String, String)> = all_keys.into_iter()
         .filter_map(|card_id| {
-            let card_id = card_id.to_string();
             let card_obj = doc.get(&cards_map, &card_id).ok()?.map(|(_, id)| id)?;
             // Skip deleted cards — they should not be resolvable by number
             let is_deleted = match doc.get(&card_obj, "deleted").ok().flatten() {
@@ -38,12 +42,21 @@ fn extract_card_numbers(doc: &automerge::AutoCommit) -> Vec<(String, String)> {
                 _ => false,
             };
             if is_deleted {
+                eprintln!("EXTRACT: card {card_id:.8} is deleted, skipping");
                 return None;
             }
-            let number = kanban_core::get_string(doc, &card_obj, "number").ok()??;
+            let number = match kanban_core::get_string(doc, &card_obj, "number").ok().flatten() {
+                Some(n) => n,
+                None => {
+                    eprintln!("EXTRACT: card {card_id:.8} has no number, skipping");
+                    return None;
+                }
+            };
             Some((card_id, number))
         })
-        .collect()
+        .collect();
+    eprintln!("EXTRACT: returning {} card number entries", result.len());
+    result
 }
 
 pub struct Storage {
@@ -66,16 +79,38 @@ impl Storage {
     }
 
     pub fn save_board(&mut self, board_id: &str, doc: &mut automerge::AutoCommit) -> Result<(), StorageError> {
-        board::save_board(&self.conn, board_id, doc)?;
-        // Always re-sync the card_number_index to reflect the current document state.
-        // Clear first to remove stale rows from deleted/renumbered cards.
         let cards = extract_card_numbers(doc);
-        card_number::clear_card_numbers_for_board(&self.conn, board_id)
-            .map_err(StorageError::Sqlite)?;
-        if !cards.is_empty() {
-            card_number::sync_card_number_index(&self.conn, board_id, &cards)
-                .map_err(StorageError::Sqlite)?;
+        // Wrap board save + index rebuild in one transaction to prevent race
+        // conditions from concurrent CLI/daemon processes hitting the UNIQUE
+        // constraint on (board_id, number).
+        let tx = self.conn.transaction().map_err(StorageError::Sqlite)?;
+        let bytes = doc.save();
+        tx.execute(
+            "INSERT INTO boards (board_id, automerge_doc, last_modified)
+             VALUES (?1, ?2, unixepoch())
+             ON CONFLICT(board_id) DO UPDATE SET
+                 automerge_doc = excluded.automerge_doc,
+                 last_modified = excluded.last_modified",
+            rusqlite::params![board_id, bytes],
+        ).map_err(StorageError::Sqlite)?;
+        tx.execute(
+            "DELETE FROM card_number_index WHERE board_id = ?1",
+            rusqlite::params![board_id],
+        ).map_err(StorageError::Sqlite)?;
+        for (card_id, number) in &cards {
+            // ON CONFLICT DO NOTHING handles both the (board_id, card_id) PK and
+            // the (board_id, number) unique index. The latter can be hit when two
+            // peers concurrently assign the same sequential number to different
+            // cards — the Automerge doc is correct but the index can only hold one
+            // mapping per number. The first card inserted wins; callers that need
+            // to resolve the number unambiguously should use the card UUID instead.
+            tx.execute(
+                "INSERT OR IGNORE INTO card_number_index (board_id, card_id, number)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![board_id, card_id, number],
+            ).map_err(StorageError::Sqlite)?;
         }
+        tx.commit().map_err(StorageError::Sqlite)?;
         Ok(())
     }
 

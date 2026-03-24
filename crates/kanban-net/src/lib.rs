@@ -30,6 +30,9 @@ pub struct NetConfig {
     pub listen_port: u16,
     /// Data directory — port is saved here as `net.port` after bind.
     pub data_dir: PathBuf,
+    /// Optional list of peer multiaddrs to dial at startup (bypasses mDNS).
+    /// Format: `/ip4/1.2.3.4/tcp/7272` or `/ip4/1.2.3.4/udp/7272/quic-v1`.
+    pub bootstrap_peers: Vec<String>,
 }
 
 impl Default for NetConfig {
@@ -37,6 +40,7 @@ impl Default for NetConfig {
         Self {
             listen_port: 7272,
             data_dir: PathBuf::from("."),
+            bootstrap_peers: Vec::new(),
         }
     }
 }
@@ -53,9 +57,24 @@ pub enum NetEvent {
 /// Commands sent from callers into the network task.
 #[derive(Debug)]
 pub(crate) enum NetCommand {
-    AnnounceSpaces { space_ids: Vec<String> },
-    TriggerSync    { board_id: String },
+    AnnounceSpaces     { space_ids: Vec<String> },
+    TriggerSync        { board_id: String },
+    ForceRediscovery,
+    AddPeer            { addr: String },
+    GetPeers           { reply: tokio::sync::oneshot::Sender<Vec<String>> },
     Stop,
+}
+
+/// A cloneable handle that can send sync-trigger commands independently of the event receiver.
+/// Useful when you need to drive both receiving events and triggering sync in the same loop.
+#[derive(Clone)]
+pub struct SyncTrigger(mpsc::Sender<NetCommand>);
+
+impl SyncTrigger {
+    /// Async version — call from an async context.
+    pub async fn trigger_sync(&self, board_id: String) {
+        let _ = self.0.send(NetCommand::TriggerSync { board_id }).await;
+    }
 }
 
 /// Handle to the background network task.
@@ -97,6 +116,49 @@ impl NetworkHandle {
     /// Gracefully stop the network task.
     pub async fn stop(&self) {
         let _ = self.cmd_tx.send(NetCommand::Stop).await;
+    }
+
+    /// Trigger immediate sync for a board — safe to call from non-async Tauri commands.
+    pub fn trigger_sync_sync(&self, board_id: String) {
+        let _ = self.cmd_tx.try_send(NetCommand::TriggerSync { board_id });
+    }
+
+    /// Return a cloneable sender so you can trigger sync while also receiving events.
+    pub fn sync_trigger(&self) -> SyncTrigger {
+        SyncTrigger(self.cmd_tx.clone())
+    }
+
+    /// Synchronous version of announce_spaces — safe to call from non-async Tauri commands.
+    pub fn announce_spaces_sync(&self, space_ids: Vec<String>) {
+        let _ = self.cmd_tx.blocking_send(NetCommand::AnnounceSpaces { space_ids });
+    }
+
+    /// Re-announce spaces on DHT + re-Hello all connected peers. Call to force an immediate sync attempt.
+    pub fn force_rediscovery_sync(&self) {
+        let _ = self.cmd_tx.blocking_send(NetCommand::ForceRediscovery);
+    }
+
+    /// Dial a peer by multiaddr (e.g. `/ip4/1.2.3.4/tcp/7272`).
+    pub fn add_peer_sync(&self, addr: String) {
+        let _ = self.cmd_tx.blocking_send(NetCommand::AddPeer { addr });
+    }
+
+    /// Return currently connected peer IDs (synchronous, blocks briefly).
+    pub fn get_peers_sync(&self) -> Vec<String> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self.cmd_tx.blocking_send(NetCommand::GetPeers { reply: tx });
+        rx.blocking_recv().unwrap_or_default()
+    }
+
+    /// Compute the local libp2p PeerId from the identity seed.
+    pub fn peer_id_from_identity(identity_bytes: [u8; 32]) -> String {
+        let mut key_bytes = identity_bytes;
+        let Ok(secret) = libp2p::identity::ed25519::SecretKey::try_from_bytes(&mut key_bytes) else {
+            return String::new();
+        };
+        let ed_kp = libp2p::identity::ed25519::Keypair::from(secret);
+        let keypair = libp2p::identity::Keypair::from(ed_kp);
+        libp2p::PeerId::from_public_key(&keypair.public()).to_string()
     }
 }
 

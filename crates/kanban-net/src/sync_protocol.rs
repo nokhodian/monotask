@@ -14,6 +14,9 @@ pub enum SyncRequest {
         board_ids: Vec<String>,
         /// Ed25519 signature over `space_id.as_bytes()`.
         signature: Vec<u8>,
+        /// Automerge-encoded space doc (members, boards, name). Empty = not available.
+        #[serde(default)]
+        space_doc_bytes: Vec<u8>,
     },
     /// One round of Automerge sync for a board.
     BoardSync {
@@ -26,7 +29,13 @@ pub enum SyncRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncResponse {
     /// Hello accepted; here are the responder's board IDs in this Space.
-    HelloAck { board_ids: Vec<String> },
+    HelloAck {
+        space_id: String,
+        board_ids: Vec<String>,
+        /// Automerge-encoded space doc (members, boards, name). Empty = not available.
+        #[serde(default)]
+        space_doc_bytes: Vec<u8>,
+    },
     /// One round of Automerge sync in reply. `None` = this side has converged.
     BoardSync {
         board_id: String,
@@ -151,9 +160,14 @@ mod tests {
 
     #[test]
     fn serialize_hello_ack_roundtrip() {
-        let res = SyncResponse::HelloAck { board_ids: vec!["x".into()] };
-        let SyncResponse::HelloAck { board_ids } = cbor_roundtrip_response(res)
+        let res = SyncResponse::HelloAck {
+            space_id: "s1".into(),
+            board_ids: vec!["x".into()],
+            space_doc_bytes: vec![],
+        };
+        let SyncResponse::HelloAck { space_id, board_ids, .. } = cbor_roundtrip_response(res)
             else { panic!() };
+        assert_eq!(space_id, "s1");
         assert_eq!(board_ids, vec!["x"]);
     }
 

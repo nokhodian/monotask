@@ -83,6 +83,91 @@
     }
     .sidebar-footer button:hover { color: #c8962a; background: #141426; }
 
+    /* ── Network Status panel ──────────────────────────────────────────── */
+    #net-status-panel {
+      position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.6); z-index: 200;
+    }
+    #net-status-panel.open { display: flex; }
+    .net-status-box {
+      background: #0d0d1c; border: 1px solid #2a2a4a; border-radius: 10px;
+      padding: 24px; width: 560px; max-height: 80vh; display: flex; flex-direction: column; gap: 14px;
+    }
+    .net-status-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
+    .net-status-section-title {
+      font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;
+    }
+    .net-peers-section { flex-shrink: 0; }
+    .net-peer-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #0f0f20; border: 1px solid #2a2a4a; border-radius: 4px;
+      padding: 4px 10px; font-size: 10px; font-family: monospace; color: #7a9a7a;
+      margin: 3px 4px 3px 0;
+    }
+    .net-peer-dot { width: 6px; height: 6px; border-radius: 50%; background: #4a9a4a; flex-shrink: 0; }
+    .net-boards-section { flex: 1; overflow-y: auto; min-height: 0; }
+    .net-boards-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .net-boards-table th {
+      text-align: left; color: #444; font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.08em; padding: 4px 8px; border-bottom: 1px solid #1a1a2e;
+      font-weight: normal;
+    }
+    .net-boards-table td { padding: 6px 8px; color: #888; border-bottom: 1px solid #111120; }
+    .net-boards-table td:first-child { color: #bbb; }
+    .net-boards-table td:last-child { color: #4a9a4a; font-family: monospace; font-size: 11px; }
+    .net-local-id {
+      font-size: 10px; color: #333; font-family: monospace; padding: 6px 0;
+      word-break: break-all;
+    }
+    .net-status-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      border-top: 1px solid #1a1a2e; padding-top: 10px;
+    }
+    .btn-net-refresh {
+      background: none; border: 1px solid #2a2a3a; color: #666;
+      border-radius: 4px; padding: 5px 14px; cursor: pointer; font-size: 12px;
+    }
+    .btn-net-refresh:hover { color: #c8962a; border-color: #5a3a0a; }
+    .net-status-ts { font-size: 10px; color: #333; }
+
+    /* ── Sync panel ────────────────────────────────────────────────────── */
+    #sync-panel {
+      position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.6); z-index: 200;
+    }
+    #sync-panel.open { display: flex; }
+    .sync-box {
+      background: #0d0d1c; border: 1px solid #2a2a4a; border-radius: 10px;
+      padding: 24px; width: 380px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .sync-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
+    .sync-explain { font-size: 11px; color: #555; line-height: 1.6; }
+    .sync-explain strong { color: #888; }
+    .sync-peers-list { display: flex; flex-direction: column; gap: 6px; }
+    .sync-peer-row { display: flex; align-items: center; gap: 8px; background: #0a0a18;
+      border: 1px solid #1e1e3a; border-radius: 5px; padding: 6px 10px; }
+    .sync-peer-addr { flex: 1; font-size: 11px; color: #888; font-family: monospace; word-break: break-all; }
+    .sync-peer-rm { background: none; border: none; color: #444; cursor: pointer; font-size: 14px; padding: 0 4px; }
+    .sync-peer-rm:hover { color: #c84a3a; }
+    .sync-input-row { display: flex; gap: 6px; }
+    .sync-addr-input {
+      flex: 1; background: #0a0a18; border: 1px solid #2a2a3a; border-radius: 4px;
+      color: #ccc; font-size: 11px; padding: 6px 8px; font-family: monospace;
+    }
+    .sync-addr-input:focus { outline: none; border-color: #5a3a0a; }
+    .sync-addr-input::placeholder { color: #333; }
+    .btn-sync-connect {
+      background: #1a1a08; border: 1px solid #5a3a0a; color: #c8962a;
+      border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; white-space: nowrap;
+    }
+    .btn-sync-connect:hover { background: #2a2a10; }
+    .btn-sync-refresh {
+      background: none; border: 1px solid #2a2a3a; color: #666;
+      border-radius: 4px; padding: 7px 14px; cursor: pointer; font-size: 12px;
+    }
+    .btn-sync-refresh:hover { color: #c8962a; border-color: #5a3a0a; }
+    .sync-status-msg { font-size: 11px; color: #4a9a4a; min-height: 14px; }
+
     /* ── Main content area ─────────────────────────────────────────────── */
     #main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -189,21 +274,45 @@
     .board-col-cards {
       list-style: none; padding: 8px; overflow-y: auto; flex: 1;
       display: flex; flex-direction: column; gap: 6px;
+      min-height: 60px;
     }
     .kanban-card {
       background: #131326; border: 1px solid #1e1e3a;
-      border-radius: 6px; padding: 9px 11px; cursor: default;
+      border-radius: 6px; overflow: hidden; cursor: pointer;
       transition: border-color 0.12s;
     }
     .kanban-card:hover { border-color: #2e2e5a; }
+    .kanban-card-body { padding: 9px 11px; }
+    .kanban-card-cover { height: 36px; border-radius: 0; }
     .kanban-card-title { font-size: 13px; color: #ccc; line-height: 1.4; }
     .kanban-card-num { font-size: 10px; color: #3a3a5a; font-family: monospace; margin-top: 5px; }
     /* Drag and drop */
-    .kanban-card { cursor: pointer; }
-    .kanban-card.sortable-ghost { opacity: 0.35; background: #1e1e3a; }
+    .kanban-card.sortable-ghost { opacity: 0.25; background: #1e1e3a; border: 1px dashed #2e2e5a; }
     .kanban-card.sortable-chosen { cursor: grabbing; }
-    /* SortableJS drag-over highlight handled via .sortable-drag */
-    .board-col-cards.sortable-drag-over { background: #0f0f1c; border-radius: 0 0 8px 8px; }
+    /* Fallback ghost (the element following the cursor) — must have pointer-events: none
+       so that hover detection on the destination list works in WKWebView */
+    .sortable-fallback {
+      pointer-events: none !important;
+      opacity: 0.9 !important;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.55), 0 1px 4px rgba(0,0,0,0.4) !important;
+      border-color: #3a3a6a !important;
+      transform: rotate(1.5deg) !important;
+    }
+    .board-col-cards.sortable-drag-over { background: #0f0f20; outline: 1px dashed #2e2e5a; border-radius: 0 0 8px 8px; }
+    /* Cover color picker */
+    .cover-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .cover-swatch {
+      width: 32px; height: 22px; border-radius: 4px; border: 2px solid transparent;
+      cursor: pointer; transition: transform 0.1s;
+    }
+    .cover-swatch:hover { transform: scale(1.15); }
+    .cover-swatch.selected { border-color: #fff; }
+    .cover-swatch-none {
+      width: 32px; height: 22px; border-radius: 4px; border: 2px solid #2e2e5a;
+      cursor: pointer; background: #0d0d1a; display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: #555; transition: border-color 0.1s;
+    }
+    .cover-swatch-none:hover { border-color: #555; }
 
     /* Column delete button */
     .btn-delete-col {
@@ -215,11 +324,15 @@
     /* Card label chips */
     .kanban-card-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
     .card-label-chip {
-      height: 6px; border-radius: 3px; min-width: 32px; display: inline-block;
+      height: 18px; border-radius: 4px; min-width: 40px; display: inline-flex;
+      align-items: center; padding: 0 7px; font-size: 10px; font-weight: 600;
+      color: rgba(0,0,0,0.7); letter-spacing: 0.03em; white-space: nowrap;
+      max-width: 80px; overflow: hidden; text-overflow: ellipsis;
     }
     .kanban-card-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
     .card-meta-desc { font-size: 10px; color: #3a3a5a; }
     .card-meta-due { font-size: 10px; color: #c8962a; cursor: pointer; }
+    .card-meta-due.overdue { color: #e05050; background: rgba(224,80,80,0.12); border-radius: 3px; padding: 1px 4px; }
     .card-due-wrap { position: relative; display: inline-flex; align-items: center; }
     .card-due-input-overlay {
       position: absolute; inset: 0; opacity: 0; cursor: pointer;
@@ -522,6 +635,67 @@
   <div class="sidebar-footer">
     <button id="btn-profile">&#9881; Profile</button>
     <button id="btn-import-invite-sidebar">&#8595; Join Space</button>
+    <button id="btn-open-sync">&#8635; Sync / Peers</button>
+    <button id="btn-open-net-status">&#128246; Network Status</button>
+    <div id="app-version-badge" style="font-size:9px;color:#2a2a4a;padding:6px 10px 2px;font-family:monospace;letter-spacing:0.03em;"></div>
+  </div>
+</div>
+
+<!-- ── Sync & Peers panel ──────────────────────────────────────────────── -->
+<div id="sync-panel">
+  <div class="sync-box">
+    <h3>&#8635; Sync &amp; Peers</h3>
+    <p class="sync-explain">
+      <strong>How peers find each other:</strong> mDNS (same LAN) or Kademlia DHT (internet).
+      Over <strong>Tailscale / VPN</strong>, enter the peer's address manually below.
+      Format: <code style="color:#888;font-size:10px;">/ip4/100.x.x.x/tcp/7272</code>
+    </p>
+    <div>
+      <div style="font-size:11px;color:#555;margin-bottom:8px;">Saved peers (dialed on startup &amp; on Refresh):</div>
+      <div id="sync-peers-list" class="sync-peers-list"></div>
+    </div>
+    <div class="sync-input-row">
+      <input id="sync-addr-input" class="sync-addr-input" placeholder="/ip4/100.73.x.x/tcp/7272" />
+      <button class="btn-sync-connect" id="btn-sync-add-peer">+ Connect</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn-sync-refresh" id="btn-sync-refresh">&#8635; Refresh Sync</button>
+      <span id="sync-status-msg" class="sync-status-msg"></span>
+    </div>
+    <button style="background:none;border:none;color:#444;cursor:pointer;font-size:12px;text-align:right;align-self:flex-end;" id="btn-close-sync">Close</button>
+  </div>
+</div>
+
+<!-- ── Network Status panel ───────────────────────────────────────────────── -->
+<div id="net-status-panel">
+  <div class="net-status-box">
+    <h3>&#128246; Network Status</h3>
+    <div class="net-peers-section">
+      <div class="net-status-section-title">Connected Peers</div>
+      <div id="net-peers-container"><span style="color:#333;font-size:12px;">Loading…</span></div>
+    </div>
+    <div class="net-boards-section">
+      <div class="net-status-section-title">Boards — Last Modified</div>
+      <table class="net-boards-table">
+        <thead>
+          <tr>
+            <th>Board</th>
+            <th>ID</th>
+            <th>Last Modified</th>
+          </tr>
+        </thead>
+        <tbody id="net-boards-tbody"></tbody>
+      </table>
+    </div>
+    <div>
+      <div class="net-status-section-title">Local Peer ID</div>
+      <div id="net-local-id" class="net-local-id">—</div>
+    </div>
+    <div class="net-status-footer">
+      <button class="btn-net-refresh" id="btn-net-refresh">&#8635; Refresh</button>
+      <span class="net-status-ts" id="net-status-ts"></span>
+      <button style="background:none;border:none;color:#444;cursor:pointer;font-size:12px;" id="btn-close-net-status">Close</button>
+    </div>
   </div>
 </div>
 
@@ -651,20 +825,6 @@
   </div>
 </div>
 
-<!-- ── Export invite path modal ───────────────────────────────────────────── -->
-<div id="modal-export-invite" class="modal">
-  <div class="modal-box">
-    <h3>Export Invite File</h3>
-    <div class="profile-field">
-      <label>Save path</label>
-      <input id="input-export-invite-path" placeholder="/tmp/myteam.space" />
-    </div>
-    <div class="modal-actions">
-      <button id="btn-export-invite-cancel">Cancel</button>
-      <button id="btn-export-invite-confirm" class="btn-primary">Export</button>
-    </div>
-  </div>
-</div>
 
 <!-- ── Create Space modal ─────────────────────────────────────────────────── -->
 <div id="modal-create-space" class="modal">
@@ -686,8 +846,11 @@
   <div class="modal-box">
     <h3>Join Space</h3>
     <div class="profile-field">
-      <label>Invite Token or .space file path</label>
-      <input id="input-invite-token" placeholder="Paste token or /path/to/file.space" />
+      <label>Invite Token or .space file</label>
+      <div style="display:flex;gap:6px;">
+        <input id="input-invite-token" placeholder="Paste invite token…" style="flex:1;" />
+        <button id="btn-pick-space-file" style="white-space:nowrap;">Browse…</button>
+      </div>
     </div>
     <div class="modal-actions">
       <button id="btn-import-invite-cancel">Cancel</button>
@@ -723,6 +886,14 @@
         <div class="card-detail-section">
           <div class="card-detail-label">Assignee</div>
           <div id="card-detail-assignee-picker" class="assignee-picker"></div>
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Cover Color</div>
+          <div id="card-detail-cover-picker" class="cover-picker"></div>
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Move to Column</div>
+          <select id="card-detail-move-col" style="background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:6px 10px;border-radius:4px;font-size:13px;outline:none;width:100%;"></select>
         </div>
         <!-- Checklists injected here by JS -->
         <div id="card-detail-checklists"></div>
@@ -1069,29 +1240,38 @@
         animation: 150,
         // CRITICAL for Tauri WKWebView: HTML5 DnD fires dragstart but never fires
         // 'drop', causing cards to snap back. forceFallback bypasses HTML5 DnD
-        // entirely and uses pointer events instead.
+        // entirely and uses pointer/mouse events instead.
         forceFallback: true,
-        fallbackOnBody: true,   // append ghost to body so WKWebView drop events fire
-        fallbackClass: 'sortable-ghost',
-        ghostClass: 'sortable-ghost',
+        // Do NOT use fallbackOnBody — when body has overflow:hidden the ghost
+        // coordinate calculations break in WKWebView. Keep ghost in local container.
+        fallbackClass: 'sortable-fallback', // separate class; must have pointer-events:none
+        ghostClass: 'sortable-ghost',       // placeholder where card came from
         chosenClass: 'sortable-chosen',
-        delay: 120,             // brief delay prevents accidental drags on tap
-        delayOnTouchOnly: false,
-        touchStartThreshold: 4,
+        delay: 150,             // delay before drag activates (prevents accidental drag on click)
+        delayOnTouchOnly: false, // apply delay to all input types (mouse + touch)
+        touchStartThreshold: 5,
+        emptyInsertThreshold: 20, // larger hit zone for empty columns
+        scroll: false,          // disable auto-scroll to prevent interference with overflow:hidden parents
         onStart: () => { _sortableDragging = true; },
         onEnd: async (evt) => {
-          setTimeout(() => { _sortableDragging = false; }, 100);
+          setTimeout(() => { _sortableDragging = false; }, 150);
           const cardId = evt.item.dataset.cardId;
           const fromColEl = evt.from.closest('.board-col');
           const toColEl = evt.to.closest('.board-col');
           const fromColId = fromColEl ? fromColEl.dataset.colId : null;
           const toColId = toColEl ? toColEl.dataset.colId : null;
-          if (!fromColId || !toColId) return;
+          if (!fromColId || !toColId) {
+            // Drop outside any column — reload to restore original state
+            await loadBoardColumns(boardId);
+            return;
+          }
           if (fromColId === toColId) {
             // Same-column reorder — persist the new position
             const newIndex = evt.newIndex;
             try {
               await invoke('reorder_card_cmd', { boardId, colId: fromColId, cardId, newIndex });
+              // Reload to ensure UI matches backend state (CRDT may reorder differently)
+              await loadBoardColumns(boardId);
             } catch (err) {
               await loadBoardColumns(boardId);
             }
@@ -1174,7 +1354,20 @@
     li.dataset.cardId = card.id;
     li.dataset.colId = colId;
 
-    // Label chips
+    // Cover color stripe
+    if (card.cover_color) {
+      const cover = document.createElement('div');
+      cover.className = 'kanban-card-cover';
+      cover.style.background = card.cover_color;
+      li.appendChild(cover);
+    }
+
+    // Wrap the rest of the card in a body div for padding
+    const body = document.createElement('div');
+    body.className = 'kanban-card-body';
+    li.appendChild(body);
+
+    // Label chips (Trello-style: colored pill with name)
     if (card.labels && card.labels.length > 0) {
       const labelsRow = document.createElement('div');
       labelsRow.className = 'kanban-card-labels';
@@ -1182,16 +1375,17 @@
         const chip = document.createElement('span');
         chip.className = 'card-label-chip';
         chip.style.background = LABEL_COLORS[lbl] || '#555';
+        chip.textContent = lbl;
         chip.title = lbl;
         labelsRow.appendChild(chip);
       }
-      li.appendChild(labelsRow);
+      body.appendChild(labelsRow);
     }
 
     const titleEl = document.createElement('div');
     titleEl.className = 'kanban-card-title';
     titleEl.textContent = card.title;
-    li.appendChild(titleEl);
+    body.appendChild(titleEl);
 
     // Meta row (number, description indicator, due date)
     const meta = document.createElement('div');
@@ -1220,7 +1414,9 @@
     const dueWrap = document.createElement('div');
     dueWrap.className = 'card-due-wrap';
     const dueLabel = document.createElement('span');
-    dueLabel.className = 'card-meta-due';
+    const today = new Date().toISOString().slice(0, 10);
+    const isOverdue = card.due_date && card.due_date < today;
+    dueLabel.className = 'card-meta-due' + (isOverdue ? ' overdue' : '');
     dueLabel.textContent = card.due_date ? '📅 ' + card.due_date : '📅 Set date';
     dueLabel.style.opacity = card.due_date ? '1' : '0.35';
     const dueInput = document.createElement('input');
@@ -1230,6 +1426,8 @@
     dueInput.onchange = async (e) => {
       e.stopPropagation();
       const newDate = dueInput.value || null;
+      const nowOverdue = newDate && newDate < today;
+      dueLabel.className = 'card-meta-due' + (nowOverdue ? ' overdue' : '');
       dueLabel.textContent = newDate ? '📅 ' + newDate : '📅 Set date';
       dueLabel.style.opacity = newDate ? '1' : '0.35';
       try {
@@ -1239,6 +1437,7 @@
           title: current.title, description: current.description,
           labels: current.labels, dueDate: newDate,
           assignee: current.assignee || null,
+          coverColor: current.cover_color || null,
         });
       } catch (err) { console.error('Failed to save due date', err); }
     };
@@ -1246,7 +1445,7 @@
     dueWrap.appendChild(dueLabel);
     dueWrap.appendChild(dueInput);
     meta.appendChild(dueWrap);
-    li.appendChild(meta); // always show meta row (contains due date picker)
+    body.appendChild(meta); // always show meta row (contains due date picker)
 
     // Last-move + assignee row
     const bottomRow = document.createElement('div');
@@ -1267,7 +1466,7 @@
       av.textContent = initials(card.assignee);
       bottomRow.appendChild(av);
     }
-    if (bottomRow.children.length > 0 && (card.last_move || card.assignee)) li.appendChild(bottomRow);
+    if (bottomRow.children.length > 0 && (card.last_move || card.assignee)) body.appendChild(bottomRow);
 
     // Click to open detail (suppressed during/after drag)
     li.addEventListener('click', (e) => {
@@ -1352,12 +1551,50 @@
     }
   }
 
+  const COVER_COLORS = [
+    '#b04040', '#c87030', '#a89020', '#4a8040', '#2080a0',
+    '#3050a8', '#7040a0', '#a03070', '#606060', '#2a2a4a',
+  ];
+  let _selectedCoverColor = null;
+
+  function renderCoverPicker(currentColor) {
+    _selectedCoverColor = currentColor || null;
+    const container = document.getElementById('card-detail-cover-picker');
+    container.innerHTML = '';
+    // "None" option
+    const noneEl = document.createElement('div');
+    noneEl.className = 'cover-swatch-none';
+    noneEl.title = 'No cover';
+    noneEl.textContent = '✕';
+    if (!_selectedCoverColor) noneEl.style.borderColor = '#c8962a';
+    noneEl.onclick = () => {
+      _selectedCoverColor = null;
+      container.querySelectorAll('.cover-swatch').forEach(s => s.classList.remove('selected'));
+      noneEl.style.borderColor = '#c8962a';
+    };
+    container.appendChild(noneEl);
+    for (const color of COVER_COLORS) {
+      const swatch = document.createElement('div');
+      swatch.className = 'cover-swatch' + (color === _selectedCoverColor ? ' selected' : '');
+      swatch.style.background = color;
+      swatch.title = color;
+      swatch.onclick = () => {
+        _selectedCoverColor = color;
+        container.querySelectorAll('.cover-swatch').forEach(s => s.classList.remove('selected'));
+        swatch.classList.add('selected');
+        noneEl.style.borderColor = '#2e2e5a';
+      };
+      container.appendChild(swatch);
+    }
+  }
+
   async function openCardDetail(cardId, boardId) {
     _cardDetailCtx = { boardId, cardId };
     try {
-      const [card, spaceMembers] = await Promise.all([
+      const [card, spaceMembers, boardDetail] = await Promise.all([
         invoke('get_card_cmd', { boardId, cardId }),
         currentSpaceId ? invoke('get_space_cmd', { spaceId: currentSpaceId }).then(s => s.members).catch(() => []) : Promise.resolve([]),
+        invoke('get_board_detail', { boardId }).catch(() => null),
       ]);
       document.getElementById('card-detail-title').value = card.title;
       document.getElementById('card-detail-desc').value = card.description || '';
@@ -1366,8 +1603,23 @@
       document.getElementById('comment-input').value = '';
       renderLabelPicker(card.labels || []);
       renderAssigneePicker(spaceMembers, card.assignee || null);
+      renderCoverPicker(card.cover_color || null);
       renderChecklists(card.checklists || [], boardId, cardId);
       renderActivityFeed(card, boardId, cardId);
+      // Populate "Move to column" dropdown
+      const moveColSel = document.getElementById('card-detail-move-col');
+      moveColSel.innerHTML = '';
+      if (boardDetail && boardDetail.columns) {
+        for (const col of boardDetail.columns) {
+          const opt = document.createElement('option');
+          opt.value = col.id;
+          opt.textContent = col.title;
+          moveColSel.appendChild(opt);
+        }
+        // Find current column
+        const currentCol = boardDetail.columns.find(c => c.cards && c.cards.some(card => card.id === cardId));
+        if (currentCol) moveColSel.value = currentCol.id;
+      }
       openModal('modal-card-detail');
     } catch (e) { alert('Error loading card: ' + e); }
   }
@@ -1661,9 +1913,22 @@
     const dueDate = document.getElementById('card-detail-due').value || null;
     const labels = getSelectedLabels();
     const assignee = _assigneeSelected || null;
+    const coverColor = _selectedCoverColor || null;
     if (!title) return;
     try {
-      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee });
+      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee, coverColor });
+      // Handle "Move to column" if changed
+      const moveColSel = document.getElementById('card-detail-move-col');
+      const selectedColId = moveColSel.value;
+      if (selectedColId) {
+        const boardDetail = await invoke('get_board_detail', { boardId }).catch(() => null);
+        if (boardDetail) {
+          const currentCol = boardDetail.columns.find(c => c.cards && c.cards.some(card => card.id === cardId));
+          if (currentCol && currentCol.id !== selectedColId) {
+            await invoke('move_card_cmd', { boardId, cardId, fromColId: currentCol.id, toColId: selectedColId });
+          }
+        }
+      }
       closeModal('modal-card-detail');
       _cardDetailCtx = null;
       await loadBoardColumns(boardId);
@@ -1900,6 +2165,15 @@
     openModal('modal-import-invite');
     document.getElementById('input-invite-token').focus();
   };
+  document.getElementById('btn-pick-space-file').onclick = async () => {
+    try {
+      const path = await window.__TAURI__.dialog.open({
+        filters: [{ name: 'Space Invite', extensions: ['space'] }],
+        multiple: false,
+      });
+      if (path) document.getElementById('input-invite-token').value = path;
+    } catch (e) { /* cancelled */ }
+  };
   document.getElementById('btn-import-invite-cancel').onclick = () => closeModal('modal-import-invite');
   document.getElementById('btn-import-invite-confirm').onclick = async () => {
     const tokenOrPath = document.getElementById('input-invite-token').value.trim();
@@ -1929,24 +2203,16 @@
       await renderInviteTab();
     } catch (e) { alert('Error: ' + e); }
   };
-  document.getElementById('btn-export-invite').onclick = () => {
-    document.getElementById('input-export-invite-path').value = '';
-    openModal('modal-export-invite');
-    document.getElementById('input-export-invite-path').focus();
-  };
-  document.getElementById('btn-export-invite-cancel').onclick = () => closeModal('modal-export-invite');
-  document.getElementById('btn-export-invite-confirm').onclick = async () => {
-    const path = document.getElementById('input-export-invite-path').value.trim();
-    if (!path) return;
+  document.getElementById('btn-export-invite').onclick = async () => {
     try {
+      const path = await window.__TAURI__.dialog.save({
+        defaultPath: 'invite.space',
+        filters: [{ name: 'Space Invite', extensions: ['space'] }],
+      });
+      if (!path) return; // user cancelled
       await invoke('export_invite_file', { spaceId: currentSpaceId, path });
-      closeModal('modal-export-invite');
       alert('Exported to ' + path);
     } catch (e) { alert('Error: ' + e); }
-  };
-  document.getElementById('input-export-invite-path').onkeydown = (e) => {
-    if (e.key === 'Enter') document.getElementById('btn-export-invite-confirm').click();
-    if (e.key === 'Escape') closeModal('modal-export-invite');
   };
 
   // ── Populate board select in settings ─────────────────────────────────────
@@ -2075,6 +2341,88 @@
   };
   document.getElementById('btn-close-profile').onclick = () => closeModal('modal-profile');
 
+  // ── Sync & Peers panel ──────────────────────────────────────────────────────
+  async function openSyncPanel() {
+    await renderSyncPeers();
+    document.getElementById('sync-panel').classList.add('open');
+    document.getElementById('sync-addr-input').focus();
+  }
+  function closeSyncPanel() {
+    document.getElementById('sync-panel').classList.remove('open');
+    document.getElementById('sync-status-msg').textContent = '';
+  }
+
+  async function renderSyncPeers() {
+    const list = document.getElementById('sync-peers-list');
+    list.innerHTML = '';
+    let peers = [];
+    try { peers = await invoke('get_saved_peers_cmd'); } catch (_) {}
+    if (peers.length === 0) {
+      const em = document.createElement('div');
+      em.style.cssText = 'font-size:11px;color:#333;padding:4px 0;';
+      em.textContent = 'No saved peers yet.';
+      list.appendChild(em);
+      return;
+    }
+    for (const addr of peers) {
+      const row = document.createElement('div');
+      row.className = 'sync-peer-row';
+      const label = document.createElement('span');
+      label.className = 'sync-peer-addr';
+      label.textContent = addr;
+      const rm = document.createElement('button');
+      rm.className = 'sync-peer-rm';
+      rm.title = 'Remove';
+      rm.textContent = '×';
+      rm.onclick = async () => {
+        await invoke('remove_saved_peer_cmd', { addr });
+        await renderSyncPeers();
+      };
+      row.appendChild(label);
+      row.appendChild(rm);
+      list.appendChild(row);
+    }
+  }
+
+  document.getElementById('btn-open-sync').onclick = openSyncPanel;
+  document.getElementById('btn-close-sync').onclick = closeSyncPanel;
+  document.getElementById('sync-panel').onclick = (e) => {
+    if (e.target === document.getElementById('sync-panel')) closeSyncPanel();
+  };
+
+  document.getElementById('btn-sync-add-peer').onclick = async () => {
+    const addr = document.getElementById('sync-addr-input').value.trim();
+    const statusEl = document.getElementById('sync-status-msg');
+    if (!addr) return;
+    try {
+      await invoke('force_sync_cmd', { peerAddr: addr });
+      document.getElementById('sync-addr-input').value = '';
+      statusEl.textContent = 'Peer added & sync triggered.';
+      await renderSyncPeers();
+    } catch (e) {
+      statusEl.style.color = '#c84a3a';
+      statusEl.textContent = 'Error: ' + e;
+    }
+    setTimeout(() => { statusEl.textContent = ''; statusEl.style.color = '#4a9a4a'; }, 3000);
+  };
+
+  document.getElementById('btn-sync-refresh').onclick = async () => {
+    const statusEl = document.getElementById('sync-status-msg');
+    try {
+      await invoke('force_sync_cmd', { peerAddr: null });
+      statusEl.textContent = 'Sync triggered ✓';
+    } catch (e) {
+      statusEl.style.color = '#c84a3a';
+      statusEl.textContent = 'Error: ' + e;
+    }
+    setTimeout(() => { statusEl.textContent = ''; statusEl.style.color = '#4a9a4a'; }, 3000);
+  };
+
+  // Allow Enter key in peer address input
+  document.getElementById('sync-addr-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-sync-add-peer').click();
+  });
+
   // ── Init ───────────────────────────────────────────────────────────────────
   async function init() {
     const profile = await invoke('get_my_profile').catch(() => null);
@@ -2082,9 +2430,94 @@
     await refreshAllBoards();
     await loadSpacesSidebar();
     showView('dashboard');
+
+    // Display build version in sidebar footer
+    try {
+      const v = await invoke('get_app_version');
+      const d = new Date(v.build_ts * 1000);
+      const pad = n => String(n).padStart(2, '0');
+      const label = `v${v.version} · ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      document.getElementById('app-version-badge').textContent = label;
+    } catch (_) {}
   }
 
   init();
+
+  // ── Network Status panel ───────────────────────────────────────────────────
+  let _netStatusInterval = null;
+
+  function formatTs(unix) {
+    if (!unix || unix === 0) return '—';
+    const d = new Date(unix * 1000);
+    const now = Date.now();
+    const diffMs = now - d.getTime();
+    if (diffMs < 60000) return 'just now';
+    if (diffMs < 3600000) return Math.floor(diffMs / 60000) + 'm ago';
+    if (diffMs < 86400000) return Math.floor(diffMs / 3600000) + 'h ago';
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function refreshNetStatus() {
+    try {
+      const info = await invoke('get_sync_info_cmd');
+
+      // Peers
+      const peersEl = document.getElementById('net-peers-container');
+      if (info.connected_peers.length === 0) {
+        peersEl.innerHTML = '<span style="color:#555;font-size:12px;">No connected peers</span>';
+      } else {
+        peersEl.innerHTML = info.connected_peers.map(p =>
+          `<span class="net-peer-chip"><span class="net-peer-dot"></span>${p}</span>`
+        ).join('');
+      }
+
+      // Boards
+      const tbody = document.getElementById('net-boards-tbody');
+      tbody.innerHTML = '';
+      if (info.boards.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:#444;text-align:center;padding:12px;">No boards</td></tr>';
+      } else {
+        for (const b of info.boards) {
+          const tr = document.createElement('tr');
+          const tdTitle = document.createElement('td');
+          tdTitle.textContent = b.title;
+          const tdId = document.createElement('td');
+          tdId.style.cssText = 'color:#3a3a5a;font-family:monospace;font-size:10px;';
+          tdId.textContent = b.board_id.slice(0, 8);
+          const tdTs = document.createElement('td');
+          tdTs.textContent = formatTs(b.last_modified);
+          tr.appendChild(tdTitle); tr.appendChild(tdId); tr.appendChild(tdTs);
+          tbody.appendChild(tr);
+        }
+      }
+
+      // Local peer ID
+      document.getElementById('net-local-id').textContent = info.local_peer_id || '—';
+
+      // Timestamp
+      document.getElementById('net-status-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${e}</span>`;
+    }
+  }
+
+  function openNetStatusPanel() {
+    document.getElementById('net-status-panel').classList.add('open');
+    refreshNetStatus();
+    _netStatusInterval = setInterval(refreshNetStatus, 5000);
+  }
+
+  function closeNetStatusPanel() {
+    document.getElementById('net-status-panel').classList.remove('open');
+    if (_netStatusInterval) { clearInterval(_netStatusInterval); _netStatusInterval = null; }
+  }
+
+  document.getElementById('btn-open-net-status').onclick = openNetStatusPanel;
+  document.getElementById('btn-close-net-status').onclick = closeNetStatusPanel;
+  document.getElementById('btn-net-refresh').onclick = refreshNetStatus;
+  document.getElementById('net-status-panel').onclick = (e) => {
+    if (e.target === document.getElementById('net-status-panel')) closeNetStatusPanel();
+  };
 
   // ── Sync status polling ────────────────────────────────────────────────────
   async function pollSyncStatus() {

@@ -22,13 +22,13 @@ async fn two_nodes_connect_and_emit_peer_connected() {
     let storage_b = make_storage();
 
     let mut node_a = NetworkHandle::start(
-        NetConfig { listen_port: 0, data_dir: std::path::PathBuf::from("/tmp/node_a") },
+        NetConfig { listen_port: 0, data_dir: std::path::PathBuf::from("/tmp/node_a"), bootstrap_peers: Vec::new() },
         storage_a,
         id_a,
     ).await.expect("node_a start");
 
     let node_b = NetworkHandle::start(
-        NetConfig { listen_port: 0, data_dir: std::path::PathBuf::from("/tmp/node_b") },
+        NetConfig { listen_port: 0, data_dir: std::path::PathBuf::from("/tmp/node_b"), bootstrap_peers: Vec::new() },
         storage_b,
         id_b,
     ).await.expect("node_b start");
