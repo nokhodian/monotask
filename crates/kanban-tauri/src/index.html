@@ -8,7 +8,7 @@
   <script src="sortable.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; background: #0a0a12; color: #ccc; font-family: system-ui, sans-serif; font-size: 14px; }
+    html, body { height: 100%; background: #0a0a12; color: #ddd; font-family: system-ui, sans-serif; font-size: 14px; }
 
     /* ── Layout ────────────────────────────────────────────────────────── */
     body { display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
@@ -48,12 +48,12 @@
     .space-row {
       display: flex; align-items: center; gap: 4px;
       padding: 5px 6px 5px 10px; cursor: pointer; border-radius: 4px;
-      color: #888; font-size: 13px;
+      color: #aaa; font-size: 13px;
     }
-    .space-row:hover { color: #ccc; background: #141426; }
+    .space-row:hover { color: #ddd; background: #141426; }
     .space-row.active { color: #eee; background: #1a1a2e; border-left: 2px solid #c8962a; }
     .space-row-arrow {
-      font-size: 9px; color: #444; transition: transform 0.15s; flex-shrink: 0; width: 10px;
+      font-size: 9px; color: #666; transition: transform 0.15s; flex-shrink: 0; width: 10px;
     }
     .space-row.open .space-row-arrow { transform: rotate(90deg); }
     .space-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -66,19 +66,19 @@
     .space-boards-sub.open { display: block; }
     .space-boards-sub li {
       padding: 4px 10px 4px 26px; cursor: pointer; border-radius: 4px;
-      color: #666; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       display: flex; align-items: center; gap: 6px;
     }
-    .space-boards-sub li::before { content: '▣'; font-size: 9px; color: #444; flex-shrink: 0; }
-    .space-boards-sub li:hover { color: #ccc; background: #141426; }
+    .space-boards-sub li::before { content: '▣'; font-size: 9px; color: #666; flex-shrink: 0; }
+    .space-boards-sub li:hover { color: #ddd; background: #141426; }
     .space-boards-sub li.active { color: #c8962a; background: #1a1608; }
     .sidebar-section-label {
-      font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 0.1em;
+      font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.1em;
       padding: 12px 10px 4px; margin-top: 4px;
     }
     .sidebar-footer { border-top: 1px solid #1e1e3a; padding-top: 8px; margin-top: 4px; }
     .sidebar-footer button {
-      width: 100%; background: none; border: none; color: #555; cursor: pointer;
+      width: 100%; background: none; border: none; color: #888; cursor: pointer;
       font-size: 12px; text-align: left; padding: 6px 10px; border-radius: 4px;
     }
     .sidebar-footer button:hover { color: #c8962a; background: #141426; }
@@ -95,7 +95,7 @@
     }
     .net-status-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
     .net-status-section-title {
-      font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;
+      font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;
     }
     .net-peers-section { flex-shrink: 0; }
     .net-peer-chip {
@@ -108,15 +108,15 @@
     .net-boards-section { flex: 1; overflow-y: auto; min-height: 0; }
     .net-boards-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .net-boards-table th {
-      text-align: left; color: #444; font-size: 10px; text-transform: uppercase;
+      text-align: left; color: #777; font-size: 10px; text-transform: uppercase;
       letter-spacing: 0.08em; padding: 4px 8px; border-bottom: 1px solid #1a1a2e;
       font-weight: normal;
     }
-    .net-boards-table td { padding: 6px 8px; color: #888; border-bottom: 1px solid #111120; }
-    .net-boards-table td:first-child { color: #bbb; }
+    .net-boards-table td { padding: 6px 8px; color: #aaa; border-bottom: 1px solid #111120; }
+    .net-boards-table td:first-child { color: #ddd; }
     .net-boards-table td:last-child { color: #4a9a4a; font-family: monospace; font-size: 11px; }
     .net-local-id {
-      font-size: 10px; color: #333; font-family: monospace; padding: 6px 0;
+      font-size: 10px; color: #777; font-family: monospace; padding: 6px 0;
       word-break: break-all;
     }
     .net-status-footer {
@@ -124,11 +124,11 @@
       border-top: 1px solid #1a1a2e; padding-top: 10px;
     }
     .btn-net-refresh {
-      background: none; border: 1px solid #2a2a3a; color: #666;
+      background: none; border: 1px solid #2a2a3a; color: #999;
       border-radius: 4px; padding: 5px 14px; cursor: pointer; font-size: 12px;
     }
     .btn-net-refresh:hover { color: #c8962a; border-color: #5a3a0a; }
-    .net-status-ts { font-size: 10px; color: #333; }
+    .net-status-ts { font-size: 10px; color: #666; }
 
     /* ── Sync panel ────────────────────────────────────────────────────── */
     #sync-panel {
@@ -141,13 +141,13 @@
       padding: 24px; width: 380px; display: flex; flex-direction: column; gap: 14px;
     }
     .sync-box h3 { font-size: 13px; color: #c8962a; text-transform: uppercase; letter-spacing: 0.08em; }
-    .sync-explain { font-size: 11px; color: #555; line-height: 1.6; }
-    .sync-explain strong { color: #888; }
+    .sync-explain { font-size: 11px; color: #888; line-height: 1.6; }
+    .sync-explain strong { color: #bbb; }
     .sync-peers-list { display: flex; flex-direction: column; gap: 6px; }
     .sync-peer-row { display: flex; align-items: center; gap: 8px; background: #0a0a18;
       border: 1px solid #1e1e3a; border-radius: 5px; padding: 6px 10px; }
-    .sync-peer-addr { flex: 1; font-size: 11px; color: #888; font-family: monospace; word-break: break-all; }
-    .sync-peer-rm { background: none; border: none; color: #444; cursor: pointer; font-size: 14px; padding: 0 4px; }
+    .sync-peer-addr { flex: 1; font-size: 11px; color: #aaa; font-family: monospace; word-break: break-all; }
+    .sync-peer-rm { background: none; border: none; color: #777; cursor: pointer; font-size: 14px; padding: 0 4px; }
     .sync-peer-rm:hover { color: #c84a3a; }
     .sync-input-row { display: flex; gap: 6px; }
     .sync-addr-input {
@@ -176,9 +176,9 @@
       flex: 1; padding: 32px; overflow-y: auto;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    .board-placeholder { text-align: center; color: #333; }
-    .board-placeholder h2 { font-size: 20px; color: #444; margin-bottom: 12px; }
-    .board-placeholder p { font-size: 13px; color: #333; max-width: 320px; }
+    .board-placeholder { text-align: center; color: #777; }
+    .board-placeholder h2 { font-size: 20px; color: #888; margin-bottom: 12px; }
+    .board-placeholder p { font-size: 13px; color: #666; max-width: 320px; }
 
     /* ── Space main view (boards grid + settings) ──────────────────────── */
     #space-main {
@@ -211,7 +211,7 @@
       display: flex; justify-content: space-between; align-items: center;
       margin-bottom: 20px;
     }
-    .boards-grid-header h3 { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.1em; }
+    .boards-grid-header h3 { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.1em; }
     .boards-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 14px;
@@ -224,14 +224,14 @@
       min-height: 90px;
     }
     .board-card:hover { background: #131326; border-color: #c8962a44; }
-    .board-card-title { font-size: 14px; color: #ddd; font-weight: 500; }
-    .board-card-id { font-size: 10px; color: #333; font-family: monospace; }
+    .board-card-title { font-size: 14px; color: #eee; font-weight: 500; }
+    .board-card-id { font-size: 10px; color: #666; font-family: monospace; }
     .board-card-badge {
       display: inline-block; background: #1a2a1a; color: #4a904a;
       border: 1px solid #2a502a; border-radius: 3px;
       padding: 1px 6px; font-size: 10px; align-self: flex-start;
     }
-    .boards-empty { color: #444; font-size: 13px; padding: 20px 0; }
+    .boards-empty { color: #777; font-size: 13px; padding: 20px 0; }
 
     /* Board view (columns + cards) */
     #board-view {
@@ -262,13 +262,13 @@
       display: flex; flex-direction: column; max-height: calc(100vh - 130px);
     }
     .board-col-header {
-      padding: 10px 12px 10px 14px; font-size: 11px; color: #777;
+      padding: 10px 12px 10px 14px; font-size: 11px; color: #aaa;
       text-transform: uppercase; letter-spacing: 0.08em;
       border-bottom: 1px solid #1a1a30; flex-shrink: 0;
       display: flex; align-items: center; justify-content: space-between;
     }
     .board-col-count {
-      background: #1a1a2e; color: #555; font-size: 10px;
+      background: #1a1a2e; color: #888; font-size: 10px;
       border-radius: 8px; padding: 1px 7px; font-family: monospace;
     }
     .board-col-cards {
@@ -284,8 +284,8 @@
     .kanban-card:hover { border-color: #2e2e5a; }
     .kanban-card-body { padding: 9px 11px; }
     .kanban-card-cover { height: 36px; border-radius: 0; }
-    .kanban-card-title { font-size: 13px; color: #ccc; line-height: 1.4; }
-    .kanban-card-num { font-size: 10px; color: #3a3a5a; font-family: monospace; margin-top: 5px; }
+    .kanban-card-title { font-size: 13px; color: #ddd; line-height: 1.4; }
+    .kanban-card-num { font-size: 10px; color: #5a5a8a; font-family: monospace; margin-top: 5px; }
     /* Drag and drop */
     .kanban-card.sortable-ghost { opacity: 0.25; background: #1e1e3a; border: 1px dashed #2e2e5a; }
     .kanban-card.sortable-chosen { cursor: grabbing; }
@@ -330,7 +330,7 @@
       max-width: 80px; overflow: hidden; text-overflow: ellipsis;
     }
     .kanban-card-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
-    .card-meta-desc { font-size: 10px; color: #3a3a5a; }
+    .card-meta-desc { font-size: 10px; color: #7a7aaa; }
     .card-meta-due { font-size: 10px; color: #c8962a; cursor: pointer; }
     .card-meta-due.overdue { color: #e05050; background: rgba(224,80,80,0.12); border-radius: 3px; padding: 1px 4px; }
     .card-due-wrap { position: relative; display: inline-flex; align-items: center; }
@@ -372,10 +372,10 @@
     }
     .btn-add-card {
       width: 100%; background: none; border: 1px dashed #1e1e3a;
-      color: #444; font-size: 12px; border-radius: 5px;
+      color: #777; font-size: 12px; border-radius: 5px;
       padding: 5px; cursor: pointer; text-align: left;
     }
-    .btn-add-card:hover { color: #888; border-color: #2e2e5a; background: #0f0f1e; }
+    .btn-add-card:hover { color: #aaa; border-color: #2e2e5a; background: #0f0f1e; }
     .col-add-form { display: none; flex-direction: column; gap: 5px; padding: 4px 0; }
     .col-add-form.open { display: flex; }
     .col-add-form input { font-size: 12px; padding: 5px 8px; }
@@ -416,8 +416,8 @@
       color: #c8962a; font-weight: bold; font-size: 14px;
     }
     .member-info { flex: 1; }
-    .member-name { color: #ccc; font-size: 13px; }
-    .member-pubkey { color: #444; font-size: 11px; font-family: monospace; margin-top: 2px; }
+    .member-name { color: #eee; font-size: 13px; }
+    .member-pubkey { color: #777; font-size: 11px; font-family: monospace; margin-top: 2px; }
     .member-kicked { opacity: 0.35; }
     .member-kicked .member-name::after { content: ' [kicked]'; color: #c05050; font-size: 11px; }
     .btn-kick {
@@ -436,7 +436,7 @@
 
     /* Invite tab */
     .invite-section { margin-bottom: 16px; }
-    .invite-label { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .invite-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     .token-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
     .token-row input { flex: 1; background: #0d0d1a; border: 1px solid #1e1e3a; color: #aaa; padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 11px; }
     #invite-qr { margin: 12px 0; }
@@ -457,9 +457,9 @@
 
     /* Profile modal */
     .profile-field { margin-bottom: 14px; }
-    .profile-field label { display: block; color: #777; font-size: 11px; margin-bottom: 4px; }
+    .profile-field label { display: block; color: #aaa; font-size: 11px; margin-bottom: 4px; }
     .pubkey-row { display: flex; align-items: center; gap: 8px; }
-    .pubkey-display { font-family: monospace; font-size: 12px; color: #555; flex: 1; word-break: break-all; }
+    .pubkey-display { font-family: monospace; font-size: 12px; color: #888; flex: 1; word-break: break-all; }
 
     /* ── Form controls ──────────────────────────────────────────────────── */
     input[type="text"], input:not([type]) {
@@ -515,7 +515,7 @@
     .card-detail-title:focus { border-bottom-color: #c8962a; }
     .card-detail-section { margin-bottom: 16px; }
     .card-detail-label {
-      font-size: 10px; color: #555; text-transform: uppercase;
+      font-size: 10px; color: #888; text-transform: uppercase;
       letter-spacing: 0.06em; margin-bottom: 6px;
     }
     .card-detail-desc {
@@ -543,7 +543,7 @@
 
     /* Activity feed (right panel) */
     .activity-feed-title {
-      font-size: 10px; color: #555; text-transform: uppercase;
+      font-size: 10px; color: #888; text-transform: uppercase;
       letter-spacing: 0.06em; margin-bottom: 10px; flex-shrink: 0;
     }
     .activity-feed {
@@ -556,7 +556,7 @@
     .activity-move {
       background: #0e0e1c; border-left: 2px solid #2a3a5a;
       border-radius: 0 4px 4px 0; padding: 6px 10px;
-      font-size: 11px; color: #666;
+      font-size: 11px; color: #999;
     }
     .activity-move strong { color: #4a6a9a; }
     .activity-move .activity-time { font-size: 10px; color: #3a3a5a; margin-top: 2px; }
@@ -565,9 +565,9 @@
       border-radius: 4px; padding: 8px 10px;
     }
     .comment-author { font-size: 10px; color: #4a6a9a; font-family: monospace; margin-bottom: 3px; }
-    .comment-text { font-size: 12px; color: #bbb; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .comment-text { font-size: 12px; color: #ddd; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
     .comment-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
-    .comment-time { font-size: 10px; color: #3a3a5a; }
+    .comment-time { font-size: 10px; color: #666; }
     .btn-del-comment {
       background: none; border: none; color: #2a2a4a; cursor: pointer;
       font-size: 10px; padding: 0 2px;
@@ -587,9 +587,9 @@
     /* Checklist */
     .checklist-section { margin-bottom: 16px; }
     .checklist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-    .checklist-name { font-size: 12px; font-weight: 600; color: #aaa; }
+    .checklist-name { font-size: 12px; font-weight: 600; color: #ccc; }
     .checklist-progress-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .checklist-pct { font-size: 10px; color: #555; flex-shrink: 0; width: 28px; text-align: right; }
+    .checklist-pct { font-size: 10px; color: #888; flex-shrink: 0; width: 28px; text-align: right; }
     .checklist-progress { flex: 1; height: 4px; background: #1e1e3a; border-radius: 2px; }
     .checklist-progress-bar { height: 100%; background: #4a904a; border-radius: 2px; transition: width 0.25s; }
     .checklist-progress-bar.complete { background: #4aaa4a; }
@@ -610,8 +610,13 @@
     .btn-del-checklist { background: none; border: none; color: #3a3a5a; cursor: pointer; font-size: 10px; padding: 0 3px; }
     .btn-del-checklist:hover { color: #c05050; }
     /* Card checklist progress chip */
-    .card-checklist-chip { font-size: 10px; color: #3a3a5a; background: #1a1a2e; border-radius: 3px; padding: 1px 5px; display: inline-flex; align-items: center; gap: 3px; }
+    .card-checklist-chip { font-size: 10px; color: #7a7aaa; background: #1a1a2e; border-radius: 3px; padding: 1px 5px; display: inline-flex; align-items: center; gap: 3px; }
     .card-checklist-chip.done { color: #4a904a; background: #1a2a1a; }
+    /* Delete space danger zone */
+    .danger-zone { border: 1px solid #3a1818; border-radius: 6px; padding: 14px 16px; margin-top: 24px; }
+    .danger-zone-title { font-size: 10px; color: #c05050; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .btn-delete-space { background: none; border: 1px solid #5a2020; color: #c05050; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .btn-delete-space:hover { background: #1a0808; border-color: #c05050; }
   </style>
 </head>
 <body>
@@ -637,7 +642,7 @@
     <button id="btn-import-invite-sidebar">&#8595; Join Space</button>
     <button id="btn-open-sync">&#8635; Sync / Peers</button>
     <button id="btn-open-net-status">&#128246; Network Status</button>
-    <div id="app-version-badge" style="font-size:9px;color:#2a2a4a;padding:6px 10px 2px;font-family:monospace;letter-spacing:0.03em;"></div>
+    <div id="app-version-badge" style="font-size:9px;color:#5a5a9a;padding:6px 10px 2px;font-family:monospace;letter-spacing:0.03em;"></div>
   </div>
 </div>
 
@@ -754,6 +759,11 @@
     <!-- Members tab -->
     <div id="tab-members" class="space-tab-content active">
       <ul id="space-members-list"></ul>
+      <div id="space-danger-zone" style="display:none;" class="danger-zone">
+        <div class="danger-zone-title">&#9888; Danger Zone</div>
+        <button id="btn-delete-space" class="btn-delete-space">&#128465; Delete this Space</button>
+        <p style="font-size:11px;color:#777;margin-top:8px;">This permanently deletes the space and all its data. Other members will keep their local copies.</p>
+      </div>
     </div>
 
     <!-- Boards tab -->
@@ -1999,6 +2009,9 @@
     const isOwner = space.owner_pubkey === myPubkey;
     const ul = document.getElementById('space-members-list');
     ul.innerHTML = '';
+    // Show/hide danger zone for owner only
+    const dangerZone = document.getElementById('space-danger-zone');
+    dangerZone.style.display = isOwner ? 'block' : 'none';
     for (const m of space.members) {
       const li = document.createElement('li');
       if (m.kicked) li.classList.add('member-kicked');
@@ -2038,6 +2051,16 @@
         } catch (e) { alert('Error kicking member: ' + e); }
       };
     });
+    document.getElementById('btn-delete-space').onclick = async () => {
+      if (!confirm('Delete "' + space.name + '"?\n\nThis removes the space from your device permanently. Other members keep their local copies.')) return;
+      try {
+        await invoke('delete_space_cmd', { spaceId: currentSpaceId });
+        currentSpaceId = null;
+        currentSpaceData = null;
+        await loadSpacesSidebar();
+        showView('dashboard');
+      } catch (e) { alert('Failed to delete space: ' + e); }
+    };
   }
 
   function renderBoardsTab(space) {

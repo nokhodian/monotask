@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "kanban-cli"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "automerge",
@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "kanban-core"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "automerge",
  "base32",
@@ -2754,7 +2754,7 @@ dependencies = [
 
 [[package]]
 name = "kanban-crypto"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "base32",
  "bs58",
@@ -2773,7 +2773,7 @@ dependencies = [
 
 [[package]]
 name = "kanban-net"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "async-trait",
  "automerge",
@@ -2793,7 +2793,7 @@ dependencies = [
 
 [[package]]
 name = "kanban-storage"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "automerge",
  "chrono",
@@ -3548,7 +3548,7 @@ dependencies = [
 
 [[package]]
 name = "monotask"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "automerge",

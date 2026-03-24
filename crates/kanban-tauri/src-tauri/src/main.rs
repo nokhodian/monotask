@@ -1003,6 +1003,19 @@ fn kick_member_cmd(space_id: String, pubkey: String, state: tauri::State<AppStat
 }
 
 #[tauri::command]
+fn delete_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    let my_pubkey = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())?;
+    if space.owner_pubkey != my_pubkey {
+        return Err("Only the space creator can delete this space".to_string());
+    }
+    kanban_storage::space::delete_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_my_profile(state: tauri::State<AppState>) -> Result<UserProfileView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let profile = kanban_storage::space::get_profile(storage.conn())
@@ -1312,6 +1325,7 @@ fn main() {
             add_board_to_space,
             remove_board_from_space,
             kick_member_cmd,
+            delete_space_cmd,
             get_my_profile,
             update_my_profile,
             import_ssh_key,
