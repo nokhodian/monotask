@@ -62,6 +62,7 @@ pub(crate) enum NetCommand {
     ForceRediscovery,
     AddPeer            { addr: String },
     GetPeers           { reply: tokio::sync::oneshot::Sender<Vec<String>> },
+    GetListenAddrs     { reply: tokio::sync::oneshot::Sender<Vec<String>> },
     Stop,
 }
 
@@ -147,6 +148,13 @@ impl NetworkHandle {
     pub fn get_peers_sync(&self) -> Vec<String> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self.cmd_tx.blocking_send(NetCommand::GetPeers { reply: tx });
+        rx.blocking_recv().unwrap_or_default()
+    }
+
+    /// Return the swarm's current listen addresses (synchronous, blocks briefly).
+    pub fn get_listen_addrs_sync(&self) -> Vec<String> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self.cmd_tx.blocking_send(NetCommand::GetListenAddrs { reply: tx });
         rx.blocking_recv().unwrap_or_default()
     }
 

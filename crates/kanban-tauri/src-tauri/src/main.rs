@@ -766,12 +766,32 @@ fn get_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<Spac
     Ok(space_to_view(space))
 }
 
+/// Embed the current swarm listen addresses into the space doc so invitees can auto-connect.
+fn embed_listen_addrs_in_doc(state: &AppState, space_id: &str) -> Result<Vec<u8>, String> {
+    let listen_addrs = {
+        let net = state.net.lock().map_err(|e| e.to_string())?;
+        net.as_ref().map(|h| h.get_listen_addrs_sync()).unwrap_or_default()
+    };
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc_bytes = kanban_storage::space::load_space_doc(storage.conn(), space_id)
+        .map_err(|e| e.to_string())?;
+    let mut doc = automerge::AutoCommit::load(&doc_bytes).map_err(|e| e.to_string())?;
+    // Only embed non-loopback addresses that look usable
+    let addrs: Vec<String> = listen_addrs.into_iter()
+        .filter(|a| !a.contains("/127.0.0.1/") && !a.contains("/::1/"))
+        .collect();
+    kanban_core::space::set_owner_peer_addrs(&mut doc, &addrs).map_err(|e| e.to_string())?;
+    let updated = doc.save();
+    kanban_storage::space::update_space_doc(storage.conn(), space_id, &updated)
+        .map_err(|e| e.to_string())?;
+    Ok(updated)
+}
+
 #[tauri::command]
 fn generate_invite(space_id: String, state: tauri::State<AppState>) -> Result<String, String> {
+    let doc_bytes = embed_listen_addrs_in_doc(&state, &space_id)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     kanban_storage::space::revoke_all_invites(storage.conn(), &space_id)
-        .map_err(|e| e.to_string())?;
-    let doc_bytes = kanban_storage::space::load_space_doc(storage.conn(), &space_id)
         .map_err(|e| e.to_string())?;
     let token = kanban_crypto::generate_invite_token(&space_id, &state.identity, Some(&doc_bytes))
         .map_err(|e| e.to_string())?;
@@ -791,6 +811,8 @@ fn revoke_invite(space_id: String, state: tauri::State<AppState>) -> Result<(), 
 
 #[tauri::command]
 fn export_invite_file(space_id: String, path: String, state: tauri::State<AppState>) -> Result<(), String> {
+    // Embed listen addrs before generating the token
+    let _ = embed_listen_addrs_in_doc(&state, &space_id)?;
     // Inline token generation (State<AppState> does not implement Clone, so we can't call generate_invite())
     let (token, space_name, doc_bytes) = {
         let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -887,6 +909,15 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
                         let _ = kanban_storage::space::update_space_doc(
                             storage.conn(), &meta.space_id, doc_bytes,
                         );
+                        // Auto-dial owner peer addrs embedded in the token
+                        if let Ok(net) = state.net.lock() {
+                            if let Some(handle) = net.as_ref() {
+                                for addr in kanban_core::space::get_owner_peer_addrs(&doc) {
+                                    save_peer_addr(&state.data_dir, &addr);
+                                    handle.add_peer_sync(addr);
+                                }
+                            }
+                        }
                     }
                 }
                 let space = kanban_storage::space::get_space(storage.conn(), &meta.space_id)
@@ -897,6 +928,12 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
             }
         }
     }
+
+    // Extract owner peer addrs before consuming space_doc_bytes
+    let owner_peer_addrs: Vec<String> = space_doc_bytes.as_ref()
+        .and_then(|b| automerge::AutoCommit::load(b).ok())
+        .map(|d| kanban_core::space::get_owner_peer_addrs(&d))
+        .unwrap_or_default();
 
     // 5–8. Create or merge space
     let (mut doc, members_to_insert, boards_to_insert, space_name) = if let Some(bytes) = space_doc_bytes {
@@ -957,6 +994,15 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
     }
     let space = kanban_storage::space::get_space(storage.conn(), &meta.space_id)
         .map_err(|e| e.to_string())?;
+    // Auto-dial owner peer addrs embedded in the token so boards sync immediately
+    if let Ok(net) = state.net.lock() {
+        if let Some(handle) = net.as_ref() {
+            for addr in &owner_peer_addrs {
+                save_peer_addr(&state.data_dir, addr);
+                handle.add_peer_sync(addr.clone());
+            }
+        }
+    }
     drop(storage);
     announce_all_spaces(&state);
     Ok(space_to_view(space))

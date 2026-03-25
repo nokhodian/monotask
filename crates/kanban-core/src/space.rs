@@ -145,6 +145,37 @@ pub fn get_space_name(doc: &AutoCommit) -> Option<String> {
     crate::get_string(doc, &automerge::ROOT, "name").ok().flatten()
 }
 
+/// Store owner's listen multiaddrs in the space doc so invitees can auto-connect.
+pub fn set_owner_peer_addrs(doc: &mut AutoCommit, addrs: &[String]) -> crate::Result<()> {
+    // Overwrite the "peer_addrs" list each time (idempotent)
+    if doc.get(automerge::ROOT, "peer_addrs")?.is_some() {
+        doc.delete(automerge::ROOT, "peer_addrs")?;
+    }
+    let list = doc.put_object(automerge::ROOT, "peer_addrs", ObjType::List)?;
+    for (i, addr) in addrs.iter().enumerate() {
+        doc.insert(&list, i, addr.as_str())?;
+    }
+    Ok(())
+}
+
+/// Extract owner peer addrs from a space doc (may be empty for old docs).
+pub fn get_owner_peer_addrs(doc: &AutoCommit) -> Vec<String> {
+    let Ok(Some((_, list))) = doc.get(automerge::ROOT, "peer_addrs") else {
+        return vec![];
+    };
+    let len = doc.length(&list);
+    (0..len)
+        .filter_map(|i| {
+            if let Ok(Some((automerge::Value::Scalar(s), _))) = doc.get(&list, i) {
+                if let automerge::ScalarValue::Str(addr) = s.as_ref() {
+                    return Some(addr.to_string());
+                }
+            }
+            None
+        })
+        .collect()
+}
+
 pub fn list_board_refs(doc: &AutoCommit) -> crate::Result<Vec<String>> {
     let boards = get_boards_map(doc)?;
     let mut result = Vec::new();
