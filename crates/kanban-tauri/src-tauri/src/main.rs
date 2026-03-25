@@ -273,6 +273,8 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
     kanban_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board.id, &state);
+    drop(storage);
+    announce_all_spaces(&state);
     Ok(BoardSummary { id: board.id, title })
 }
 
@@ -1019,7 +1021,10 @@ fn add_board_to_space(space_id: String, board_id: String, state: tauri::State<Ap
     kanban_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
         .map_err(|e| e.to_string())?;
     kanban_storage::space::add_board(storage.conn(), &space_id, &board_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    drop(storage);
+    announce_all_spaces(&state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1032,7 +1037,10 @@ fn remove_board_from_space(space_id: String, board_id: String, state: tauri::Sta
     kanban_storage::space::update_space_doc(storage.conn(), &space_id, &doc.save())
         .map_err(|e| e.to_string())?;
     kanban_storage::space::remove_board(storage.conn(), &space_id, &board_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    drop(storage);
+    announce_all_spaces(&state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1056,6 +1064,19 @@ fn delete_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<(
         .map_err(|e| e.to_string())?;
     if space.owner_pubkey != my_pubkey {
         return Err("Only the space creator can delete this space".to_string());
+    }
+    kanban_storage::space::delete_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn leave_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    let my_pubkey = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())?;
+    if space.owner_pubkey == my_pubkey {
+        return Err("You are the owner — use Delete Space instead".to_string());
     }
     kanban_storage::space::delete_space(storage.conn(), &space_id)
         .map_err(|e| e.to_string())
@@ -1168,9 +1189,10 @@ struct SyncPeerView {
 }
 
 #[tauri::command]
-fn get_sync_status_cmd(_state: tauri::State<AppState>) -> Vec<SyncPeerView> {
-    // Stub: returns empty list for now (full peer tracking requires more state)
-    vec![]
+fn get_sync_status_cmd(state: tauri::State<AppState>) -> Vec<SyncPeerView> {
+    let net = state.net.lock().unwrap();
+    let peers = net.as_ref().map(|h| h.get_peers_sync()).unwrap_or_default();
+    peers.into_iter().map(|peer_id| SyncPeerView { peer_id }).collect()
 }
 
 #[tauri::command]
@@ -1372,6 +1394,7 @@ fn main() {
             remove_board_from_space,
             kick_member_cmd,
             delete_space_cmd,
+            leave_space_cmd,
             get_my_profile,
             update_my_profile,
             import_ssh_key,
