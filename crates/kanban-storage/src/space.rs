@@ -55,7 +55,9 @@ pub fn get_space(conn: &Connection, space_id: &str) -> Result<Space, StorageErro
     })?.collect::<Result<Vec<_>, _>>()?;
 
     let mut stmt2 = conn.prepare(
-        "SELECT board_id FROM space_boards WHERE space_id = ?1"
+        "SELECT sb.board_id FROM space_boards sb
+         LEFT JOIN boards b ON b.board_id = sb.board_id
+         WHERE sb.space_id = ?1 AND (b.is_system IS NULL OR b.is_system = 0)"
     )?;
     let boards: Vec<String> = stmt2.query_map([space_id], |row| row.get(0))?
         .collect::<Result<Vec<_>, _>>()?;
