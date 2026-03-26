@@ -225,6 +225,17 @@ async fn run_inner(
                             .collect();
                         let _ = reply.send(addrs);
                     }
+                    NetCommand::GetPeerPubkeys { reply } => {
+                        let map: std::collections::HashMap<String, String> = pubkey_cache
+                            .iter()
+                            .filter_map(|(peer_id, pk)| {
+                                pk.clone().try_into_ed25519().ok().map(|ed_pk| {
+                                    (peer_id.to_string(), hex::encode(ed_pk.to_bytes()))
+                                })
+                            })
+                            .collect();
+                        let _ = reply.send(map);
+                    }
                 }
             }
 
