@@ -63,6 +63,7 @@ pub(crate) enum NetCommand {
     AddPeer            { addr: String },
     GetPeers           { reply: tokio::sync::oneshot::Sender<Vec<String>> },
     GetListenAddrs     { reply: tokio::sync::oneshot::Sender<Vec<String>> },
+    GetPeerPubkeys     { reply: tokio::sync::oneshot::Sender<std::collections::HashMap<String, String>> },
     Stop,
 }
 
@@ -151,6 +152,14 @@ impl NetworkHandle {
         rx.blocking_recv().unwrap_or_default()
     }
 
+    /// Return a map of connected peer IDs → ed25519 hex pubkeys.
+    /// Built from the swarm's Identify protocol cache.
+    pub fn get_peer_pubkeys_sync(&self) -> std::collections::HashMap<String, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self.cmd_tx.blocking_send(NetCommand::GetPeerPubkeys { reply: tx });
+        rx.blocking_recv().unwrap_or_default()
+    }
+
     /// Return the swarm's current listen addresses (synchronous, blocks briefly).
     pub fn get_listen_addrs_sync(&self) -> Vec<String> {
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -184,5 +193,12 @@ mod tests {
     fn net_event_is_debug() {
         let e = NetEvent::PeerConnected { peer_id: "abc".into() };
         assert!(format!("{e:?}").contains("PeerConnected"));
+    }
+
+    #[test]
+    fn net_command_has_get_peer_pubkeys_variant() {
+        // Compile-time check that the variant exists and has the right shape
+        let (tx, _rx) = tokio::sync::oneshot::channel::<std::collections::HashMap<String, String>>();
+        let _cmd = NetCommand::GetPeerPubkeys { reply: tx };
     }
 }

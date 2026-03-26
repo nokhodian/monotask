@@ -25,6 +25,10 @@ struct MemberView {
     pubkey: String,
     display_name: Option<String>,
     avatar_b64: Option<String>,
+    bio: Option<String>,
+    role: Option<String>,
+    color_accent: Option<String>,
+    presence: Option<String>,
     kicked: bool,
 }
 
@@ -42,7 +46,22 @@ struct UserProfileView {
     pubkey: String,
     display_name: Option<String>,
     avatar_b64: Option<String>,
+    bio: Option<String>,
+    role: Option<String>,
+    color_accent: Option<String>,
+    presence: Option<String>,
     ssh_key_path: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct PeerIdentityView {
+    peer_id: String,
+    pubkey: String,
+    display_name: Option<String>,
+    avatar_b64: Option<String>,
+    role: Option<String>,
+    color_accent: Option<String>,
+    presence: Option<String>,
 }
 
 fn load_identity(
@@ -82,6 +101,10 @@ fn load_identity(
         pubkey: id.public_key_hex(),
         display_name: None,
         avatar_blob: None,
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         ssh_key_path: None,
     };
     space_store::upsert_profile(conn, &new_profile)?;
@@ -98,10 +121,14 @@ fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
         members: space.members.into_iter().map(|m| MemberView {
             pubkey: m.pubkey,
             display_name: m.display_name,
-            avatar_b64: m.avatar_blob.map(|b| {
+            avatar_b64: m.avatar_blob.as_ref().map(|b| {
                 use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(&b)
+                base64::engine::general_purpose::STANDARD.encode(b)
             }),
+            bio: m.bio,
+            role: m.role,
+            color_accent: m.color_accent,
+            presence: m.presence,
             kicked: m.kicked,
         }).collect(),
         boards: space.boards,
@@ -119,6 +146,18 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
         avatar_b64: profile.as_ref()
             .and_then(|p| p.avatar_blob.as_ref())
             .map(|b| { use base64::Engine; base64::engine::general_purpose::STANDARD.encode(b) })
+            .unwrap_or_default(),
+        bio: profile.as_ref()
+            .and_then(|p| p.bio.clone())
+            .unwrap_or_default(),
+        role: profile.as_ref()
+            .and_then(|p| p.role.clone())
+            .unwrap_or_default(),
+        color_accent: profile.as_ref()
+            .and_then(|p| p.color_accent.clone())
+            .unwrap_or_default(),
+        presence: profile.as_ref()
+            .and_then(|p| p.presence.clone())
             .unwrap_or_default(),
         kicked: false,
     }
@@ -148,6 +187,31 @@ fn trigger_board_sync(board_id: &str, state: &tauri::State<'_, AppState>) {
     }
 }
 
+fn get_or_create_chat_doc(
+    storage: &kanban_storage::Storage,
+    space_id: &str,
+) -> Result<automerge::AutoCommit, String> {
+    let chat_doc_id = format!("{space_id}-chat");
+    match storage.load_board(&chat_doc_id) {
+        Ok(doc) => Ok(doc),
+        Err(_) => {
+            // Bootstrap: create empty chat doc
+            let mut doc = kanban_core::chat::create_chat_doc().map_err(|e| e.to_string())?;
+            let bytes = doc.save();
+            storage.save_board_bytes(&chat_doc_id, &bytes, true)
+                .map_err(|e| e.to_string())?;
+            // Register chat doc in space board refs
+            let doc_bytes = kanban_storage::space::load_space_doc(storage.conn(), space_id)
+                .map_err(|e| e.to_string())?;
+            let mut space_doc = automerge::AutoCommit::load(&doc_bytes).map_err(|e| e.to_string())?;
+            let _ = kanban_core::space::add_board_ref(&mut space_doc, &chat_doc_id);
+            let _ = kanban_storage::space::update_space_doc(storage.conn(), space_id, &space_doc.save());
+            let _ = kanban_storage::space::add_board(storage.conn(), space_id, &chat_doc_id);
+            Ok(doc)
+        }
+    }
+}
+
 // ── Space commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -171,6 +235,10 @@ fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView
             use base64::Engine;
             base64::engine::general_purpose::STANDARD.decode(&profile.avatar_b64).ok()
         },
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         kicked: false,
     };
     kanban_storage::space::upsert_member(storage.conn(), &space_id, &owner_member)
@@ -513,6 +581,18 @@ fn move_card_cmd(
 
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    // Update card_search_index with new column name
+    {
+        let columns = kanban_core::column::list_columns(&doc).unwrap_or_default();
+        let to_col_title = columns.iter()
+            .find(|c| c.id == to_col_id)
+            .map(|c| c.title.clone())
+            .unwrap_or_default();
+        let _ = storage.conn().execute(
+            "UPDATE card_search_index SET column_name = ?1 WHERE card_id = ?2",
+            rusqlite::params![to_col_title, card_id],
+        );
+    }
     trigger_board_sync(&board_id, &state);
     Ok(())
 }
@@ -527,6 +607,24 @@ fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    // Update card search index
+    let card_id = card.id.clone();
+    let column_name = kanban_core::column::list_columns(&doc)
+        .ok()
+        .and_then(|cols| cols.into_iter().find(|c| c.id == col_id).map(|c| c.title))
+        .unwrap_or_else(|| col_id.clone());
+    let space_id: Option<String> = storage.conn().query_row(
+        "SELECT space_id FROM space_boards WHERE board_id = ?1 LIMIT 1",
+        [&board_id],
+        |row| row.get(0),
+    ).ok();
+    if let Some(space_id) = space_id {
+        let _ = storage.conn().execute(
+            "INSERT OR REPLACE INTO card_search_index (card_id, board_id, space_id, title, column_name)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![card_id, board_id, space_id, title, column_name],
+        );
+    }
     trigger_board_sync(&board_id, &state);
     Ok(card.id)
 }
@@ -612,6 +710,11 @@ fn update_card_cmd(
     }
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    // Update card search index title
+    let _ = storage.conn().execute(
+        "UPDATE card_search_index SET title = ?1 WHERE card_id = ?2",
+        rusqlite::params![title, card_id],
+    );
     trigger_board_sync(&board_id, &state);
     Ok(())
 }
@@ -651,6 +754,11 @@ fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppSta
     kanban_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    // Remove from card search index
+    let _ = storage.conn().execute(
+        "DELETE FROM card_search_index WHERE card_id = ?1",
+        [&card_id],
+    );
     trigger_board_sync(&board_id, &state);
     Ok(())
 }
@@ -950,7 +1058,7 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
         let mut doc = kanban_core::space::create_space_doc(&space_name_hint, &meta.owner_pubkey)
             .map_err(|e| e.to_string())?;
         let empty = kanban_core::space::MemberProfile {
-            display_name: String::new(), avatar_b64: String::new(), kicked: false,
+            display_name: String::new(), avatar_b64: String::new(), bio: String::new(), role: String::new(), color_accent: String::new(), presence: String::new(), kicked: false,
         };
         kanban_core::space::add_member(&mut doc, &meta.owner_pubkey, &empty)
             .map_err(|e| e.to_string())?;
@@ -959,6 +1067,10 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
             pubkey: meta.owner_pubkey.clone(),
             display_name: None,
             avatar_blob: None,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             kicked: false,
         };
         (doc, vec![stub_owner], vec![], space_name_hint)
@@ -987,6 +1099,10 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
             use base64::Engine;
             base64::engine::general_purpose::STANDARD.decode(&local_profile.avatar_b64).ok()
         },
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         kicked: false,
     };
     let _ = kanban_storage::space::upsert_member(storage.conn(), &meta.space_id, &local_sql_member);
@@ -1091,15 +1207,23 @@ fn get_my_profile(state: tauri::State<AppState>) -> Result<UserProfileView, Stri
             pubkey: state.identity.public_key_hex(),
             display_name: None,
             avatar_blob: None,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             ssh_key_path: None,
         });
     Ok(UserProfileView {
         pubkey: profile.pubkey,
         display_name: profile.display_name,
-        avatar_b64: profile.avatar_blob.map(|b| {
+        avatar_b64: profile.avatar_blob.as_ref().map(|b| {
             use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(&b)
+            base64::engine::general_purpose::STANDARD.encode(b)
         }),
+        bio: profile.bio,
+        role: profile.role,
+        color_accent: profile.color_accent,
+        presence: profile.presence,
         ssh_key_path: profile.ssh_key_path,
     })
 }
@@ -1110,6 +1234,10 @@ fn get_my_profile(state: tauri::State<AppState>) -> Result<UserProfileView, Stri
 fn update_my_profile(
     display_name: String,
     avatar_b64: Option<String>,
+    bio: Option<String>,
+    role: Option<String>,
+    color_accent: Option<String>,
+    presence: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     use base64::Engine;
@@ -1121,6 +1249,10 @@ fn update_my_profile(
         pubkey: pubkey.clone(),
         display_name: if display_name.is_empty() { None } else { Some(display_name.clone()) },
         avatar_blob: avatar_blob.clone(),
+        bio: bio.clone().filter(|s| !s.is_empty()),
+        role: role.clone().filter(|s| !s.is_empty()),
+        color_accent: color_accent.clone().filter(|s| !s.is_empty()),
+        presence: presence.clone().filter(|s| !s.is_empty()),
         ssh_key_path: None, // preserved from existing profile below
     };
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -1138,6 +1270,10 @@ fn update_my_profile(
     let member_profile = kanban_core::space::MemberProfile {
         display_name: display_name.clone(),
         avatar_b64: avatar_b64.clone().unwrap_or_default(),
+        bio: bio.clone().unwrap_or_default(),
+        role: role.clone().unwrap_or_default(),
+        color_accent: color_accent.clone().unwrap_or_default(),
+        presence: presence.clone().unwrap_or_default(),
         kicked: false,
     };
     for summary in summaries {
@@ -1152,6 +1288,10 @@ fn update_my_profile(
             pubkey: pubkey.clone(),
             display_name: if display_name.is_empty() { None } else { Some(display_name.clone()) },
             avatar_blob: avatar_blob.clone(),
+            bio: bio.clone().filter(|s| !s.is_empty()),
+            role: role.clone().filter(|s| !s.is_empty()),
+            color_accent: color_accent.clone().filter(|s| !s.is_empty()),
+            presence: presence.clone().filter(|s| !s.is_empty()),
             kicked: false,
         };
         let _ = kanban_storage::space::upsert_member(storage.conn(), &summary.id, &sql_member);
@@ -1175,12 +1315,35 @@ fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result
     let updated_profile = kanban_core::space::UserProfile {
         pubkey: pubkey.clone(),
         display_name: existing.as_ref().and_then(|p| p.display_name.clone()),
-        avatar_blob: existing.and_then(|p| p.avatar_blob),
+        avatar_blob: existing.as_ref().and_then(|p| p.avatar_blob.clone()),
+        bio: existing.as_ref().and_then(|p| p.bio.clone()),
+        role: existing.as_ref().and_then(|p| p.role.clone()),
+        color_accent: existing.as_ref().and_then(|p| p.color_accent.clone()),
+        presence: existing.as_ref().and_then(|p| p.presence.clone()),
         ssh_key_path: path,
     };
     kanban_storage::space::upsert_profile(storage.conn(), &updated_profile)
         .map_err(|e| e.to_string())?;
     Ok(pubkey)
+}
+
+#[tauri::command]
+async fn upload_avatar_cmd(
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    use base64::Engine;
+    let path = app.dialog()
+        .file()
+        .add_filter("Image", &["png", "jpg", "jpeg", "gif", "webp"])
+        .blocking_pick_file();
+    match path {
+        Some(p) => {
+            let bytes = std::fs::read(p.to_string()).map_err(|e| e.to_string())?;
+            Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+        }
+        None => Err("cancelled".into()),
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -1258,6 +1421,7 @@ struct BoardSyncInfo {
 #[derive(serde::Serialize)]
 struct SyncInfo {
     connected_peers: Vec<String>,
+    peer_profiles: Vec<PeerIdentityView>,
     boards: Vec<BoardSyncInfo>,
     local_peer_id: String,
 }
@@ -1289,13 +1453,50 @@ fn get_sync_info_cmd(state: tauri::State<AppState>) -> Result<SyncInfo, String> 
     } else {
         vec![]
     };
+
+    // Cross-reference peer pubkeys with member profiles
+    let peer_pubkeys = if let Some(ref handle) = *net {
+        handle.get_peer_pubkeys_sync()
+    } else {
+        std::collections::HashMap::new()
+    };
     drop(net);
+
+    let storage2 = state.storage.lock().map_err(|e| e.to_string())?;
+    let all_spaces = kanban_storage::space::list_spaces(storage2.conn())
+        .map_err(|e| e.to_string())?;
+    let mut all_members: std::collections::HashMap<String, kanban_core::space::Member> = std::collections::HashMap::new();
+    for summary in &all_spaces {
+        if let Ok(space) = kanban_storage::space::get_space(storage2.conn(), &summary.id) {
+            for m in space.members {
+                all_members.entry(m.pubkey.clone()).or_insert(m);
+            }
+        }
+    }
+    drop(storage2);
+
+    let peer_profiles: Vec<PeerIdentityView> = connected_peers.iter().map(|peer_id| {
+        let pubkey = peer_pubkeys.get(peer_id).cloned().unwrap_or_default();
+        let member = all_members.get(&pubkey);
+        PeerIdentityView {
+            peer_id: peer_id.clone(),
+            pubkey: pubkey.clone(),
+            display_name: member.and_then(|m| m.display_name.clone()),
+            avatar_b64: member.and_then(|m| m.avatar_blob.as_ref().map(|b| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(b)
+            })),
+            role: member.and_then(|m| m.role.clone()),
+            color_accent: member.and_then(|m| m.color_accent.clone()),
+            presence: member.and_then(|m| m.presence.clone()),
+        }
+    }).collect();
 
     let local_peer_id = kanban_net::NetworkHandle::peer_id_from_identity(
         state.identity.to_secret_bytes()
     );
 
-    Ok(SyncInfo { connected_peers, boards, local_peer_id })
+    Ok(SyncInfo { connected_peers, peer_profiles, boards, local_peer_id })
 }
 
 #[tauri::command]
@@ -1305,6 +1506,219 @@ fn remove_saved_peer_cmd(addr: String, state: tauri::State<AppState>) -> Result<
     std::fs::write(peers_file(&state.data_dir), peers.join("\n") + "\n")
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ── Chat commands ─────────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct ChatRefInput {
+    kind: String,
+    id: String,
+    label: String,
+}
+
+#[tauri::command]
+fn send_chat_message_cmd(
+    space_id: String,
+    text: String,
+    refs: Vec<ChatRefInput>,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let pubkey = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = get_or_create_chat_doc(&storage, &space_id)?;
+    let msg = kanban_core::chat::ChatMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        author: pubkey,
+        text,
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        refs: refs.into_iter().map(|r| kanban_core::chat::ChatRef {
+            kind: r.kind, id: r.id, label: r.label,
+        }).collect(),
+    };
+    kanban_core::chat::append_message(&mut doc, &msg).map_err(|e| e.to_string())?;
+    let bytes = doc.save();
+    storage.save_board_bytes(&format!("{space_id}-chat"), &bytes, true).map_err(|e| e.to_string())?;
+    drop(storage);
+    // Trigger sync
+    let net = state.net.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = *net {
+        handle.trigger_sync_sync(format!("{space_id}-chat"));
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ChatRefView {
+    kind: String,
+    id: String,
+    label: String,
+}
+
+#[derive(serde::Serialize)]
+struct ChatMessageView {
+    id: String,
+    author: String,
+    display_name: Option<String>,
+    avatar_b64: Option<String>,
+    color_accent: Option<String>,
+    text: String,
+    created_at: u64,
+    refs: Vec<ChatRefView>,
+}
+
+#[tauri::command]
+fn get_chat_messages_cmd(
+    space_id: String,
+    limit: u32,
+    before_ts: Option<u64>,
+    state: tauri::State<AppState>,
+) -> Result<Vec<ChatMessageView>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = get_or_create_chat_doc(&storage, &space_id)?;
+    let msgs = kanban_core::chat::list_messages(&doc, limit as usize, before_ts)
+        .map_err(|e| e.to_string())?;
+
+    // Build author → member profile lookup
+    let space = kanban_storage::space::get_space(storage.conn(), &space_id).ok();
+    let member_map: std::collections::HashMap<String, kanban_core::space::Member> = space
+        .map(|s| s.members.into_iter().map(|m| (m.pubkey.clone(), m)).collect())
+        .unwrap_or_default();
+
+    let views = msgs.into_iter().map(|m| {
+        let member = member_map.get(&m.author);
+        ChatMessageView {
+            id: m.id,
+            author: m.author,
+            display_name: member.and_then(|mem| mem.display_name.clone()),
+            avatar_b64: member.and_then(|mem| mem.avatar_blob.as_ref().map(|b| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(b)
+            })),
+            color_accent: member.and_then(|mem| mem.color_accent.clone()),
+            text: m.text,
+            created_at: m.created_at,
+            refs: m.refs.into_iter().map(|r| ChatRefView { kind: r.kind, id: r.id, label: r.label }).collect(),
+        }
+    }).collect();
+
+    Ok(views)
+}
+
+#[derive(serde::Serialize)]
+struct MentionSuggestion {
+    kind: String,     // "member" | "card" | "board"
+    id: String,
+    label: String,
+    sublabel: Option<String>,   // role for members, column for cards
+    avatar_b64: Option<String>,
+    color_accent: Option<String>,
+}
+
+#[tauri::command]
+fn get_mention_suggestions_cmd(
+    space_id: String,
+    query: String,
+    kind: String,   // "all" | "member" | "card" | "board"
+    state: tauri::State<AppState>,
+) -> Result<Vec<MentionSuggestion>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let q = query.to_lowercase();
+    let mut results: Vec<MentionSuggestion> = Vec::new();
+
+    if kind == "all" || kind == "member" {
+        if let Ok(space) = kanban_storage::space::get_space(storage.conn(), &space_id) {
+            for m in space.members.iter().filter(|m| !m.kicked) {
+                let name = m.display_name.as_deref().unwrap_or(&m.pubkey);
+                if q.is_empty() || name.to_lowercase().contains(&q) {
+                    results.push(MentionSuggestion {
+                        kind: "member".into(),
+                        id: m.pubkey.clone(),
+                        label: name.to_string(),
+                        sublabel: m.role.clone(),
+                        avatar_b64: m.avatar_blob.as_ref().map(|b| {
+                            use base64::Engine;
+                            base64::engine::general_purpose::STANDARD.encode(b)
+                        }),
+                        color_accent: m.color_accent.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    if kind == "all" || kind == "board" {
+        let mut stmt = storage.conn().prepare(
+            "SELECT sb.board_id FROM space_boards sb
+             JOIN boards b ON b.board_id = sb.board_id
+             WHERE sb.space_id = ?1 AND b.is_system = 0"
+        ).map_err(|e| e.to_string())?;
+        let board_ids: Vec<String> = stmt.query_map([&space_id], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        for board_id in board_ids {
+            if let Ok(doc) = storage.load_board(&board_id) {
+                let title = kanban_core::board::get_board_title(&doc)
+                    .unwrap_or_else(|_| board_id[..8.min(board_id.len())].to_string());
+                if q.is_empty() || title.to_lowercase().contains(&q) {
+                    results.push(MentionSuggestion {
+                        kind: "board".into(),
+                        id: board_id,
+                        label: title,
+                        sublabel: None,
+                        avatar_b64: None,
+                        color_accent: None,
+                    });
+                }
+            }
+        }
+    }
+
+    if kind == "all" || kind == "card" {
+        let like = format!("%{q}%");
+        let mut stmt = storage.conn().prepare(
+            "SELECT card_id, board_id, title, column_name FROM card_search_index
+             WHERE space_id = ?1 AND (title LIKE ?2 OR ?2 = '%%')
+             LIMIT 20"
+        ).map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, String, String)> = stmt.query_map(
+            rusqlite::params![space_id, like],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        ).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        for (card_id, _board_id, title, column_name) in rows {
+            results.push(MentionSuggestion {
+                kind: "card".into(),
+                id: card_id,
+                label: title,
+                sublabel: Some(column_name),
+                avatar_b64: None,
+                color_accent: None,
+            });
+        }
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+fn find_card_board_cmd(space_id: String, card_id: String, state: tauri::State<AppState>) -> Result<Option<String>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let result = storage.conn().query_row(
+        "SELECT board_id FROM card_search_index WHERE card_id = ?1 AND space_id = ?2",
+        rusqlite::params![card_id, space_id],
+        |row| row.get::<_, String>(0),
+    );
+    match result {
+        Ok(board_id) => Ok(Some(board_id)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 fn main() {
@@ -1398,12 +1812,17 @@ fn main() {
             get_my_profile,
             update_my_profile,
             import_ssh_key,
+            upload_avatar_cmd,
             get_sync_status_cmd,
             get_app_version,
             force_sync_cmd,
             get_saved_peers_cmd,
             remove_saved_peer_cmd,
             get_sync_info_cmd,
+            send_chat_message_cmd,
+            get_chat_messages_cmd,
+            get_mention_suggestions_cmd,
+            find_card_board_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -111,6 +111,54 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn run_migrations_v2(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if version >= 2 {
+        return Ok(());
+    }
+    conn.execute_batch("
+        BEGIN;
+        ALTER TABLE user_profile ADD COLUMN bio TEXT;
+        ALTER TABLE user_profile ADD COLUMN role TEXT;
+        ALTER TABLE user_profile ADD COLUMN color_accent TEXT;
+        ALTER TABLE user_profile ADD COLUMN presence TEXT DEFAULT 'online';
+        ALTER TABLE space_members ADD COLUMN bio TEXT;
+        ALTER TABLE space_members ADD COLUMN role TEXT;
+        ALTER TABLE space_members ADD COLUMN color_accent TEXT;
+        ALTER TABLE space_members ADD COLUMN presence TEXT DEFAULT 'online';
+        ALTER TABLE boards ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
+        PRAGMA user_version = 2;
+        COMMIT;
+    ")?;
+    Ok(())
+}
+
+pub fn run_migrations_v3(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if version >= 3 {
+        return Ok(());
+    }
+    conn.execute_batch("
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS card_search_index (
+            card_id     TEXT PRIMARY KEY,
+            board_id    TEXT NOT NULL,
+            space_id    TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            column_name TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_card_search_space
+            ON card_search_index (space_id, title);
+        PRAGMA user_version = 3;
+        COMMIT;
+    ")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod space_schema_tests {
     use super::*;
@@ -136,5 +184,64 @@ mod space_schema_tests {
             |r| r.get(0),
         ).unwrap();
         assert_eq!(idx_count, 1);
+    }
+
+    #[test]
+    fn v2_migration_adds_profile_and_board_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations_v2(&conn).unwrap();
+        // bio column on user_profile
+        conn.execute(
+            "INSERT INTO user_profile (pk, pubkey, bio, role, color_accent, presence) VALUES ('local', 'pk', 'hi', 'dev', '#fff', 'online')",
+            [],
+        ).unwrap();
+        let bio: String = conn.query_row(
+            "SELECT bio FROM user_profile WHERE pk='local'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(bio, "hi");
+        // is_system column on boards
+        conn.execute(
+            "INSERT INTO boards (board_id, automerge_doc, is_system) VALUES ('b1', x'', 1)",
+            [],
+        ).unwrap();
+        let sys: i64 = conn.query_row(
+            "SELECT is_system FROM boards WHERE board_id='b1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(sys, 1);
+        // space_members also gets new columns
+        conn.execute(
+            "INSERT INTO spaces (id, name, owner_pubkey, created_at, automerge_bytes) VALUES ('s1', 'Test', 'pk', 0, x'')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO space_members (space_id, pubkey, display_name, avatar_blob, kicked, bio, role, color_accent, presence) VALUES ('s1', 'pk', 'Alice', x'', 0, 'hello', 'dev', '#fff', 'online')",
+            [],
+        ).unwrap();
+        let role: String = conn.query_row(
+            "SELECT role FROM space_members WHERE space_id='s1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(role, "dev");
+        // idempotent
+        run_migrations_v2(&conn).unwrap();
+    }
+
+    #[test]
+    fn v3_migration_adds_card_search_index() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations_v2(&conn).unwrap();
+        run_migrations_v3(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO card_search_index (card_id, board_id, space_id, title, column_name)
+             VALUES ('c1', 'b1', 's1', 'Fix login bug', 'In Progress')",
+            [],
+        ).unwrap();
+        let title: String = conn.query_row(
+            "SELECT title FROM card_search_index WHERE card_id='c1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(title, "Fix login bug");
+        // idempotent
+        run_migrations_v3(&conn).unwrap();
     }
 }
