@@ -82,6 +82,10 @@ fn load_identity(
         pubkey: id.public_key_hex(),
         display_name: None,
         avatar_blob: None,
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         ssh_key_path: None,
     };
     space_store::upsert_profile(conn, &new_profile)?;
@@ -120,6 +124,10 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
             .and_then(|p| p.avatar_blob.as_ref())
             .map(|b| { use base64::Engine; base64::engine::general_purpose::STANDARD.encode(b) })
             .unwrap_or_default(),
+        bio: "".into(),
+        role: "".into(),
+        color_accent: "".into(),
+        presence: "".into(),
         kicked: false,
     }
 }
@@ -171,6 +179,10 @@ fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView
             use base64::Engine;
             base64::engine::general_purpose::STANDARD.decode(&profile.avatar_b64).ok()
         },
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         kicked: false,
     };
     kanban_storage::space::upsert_member(storage.conn(), &space_id, &owner_member)
@@ -950,7 +962,7 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
         let mut doc = kanban_core::space::create_space_doc(&space_name_hint, &meta.owner_pubkey)
             .map_err(|e| e.to_string())?;
         let empty = kanban_core::space::MemberProfile {
-            display_name: String::new(), avatar_b64: String::new(), kicked: false,
+            display_name: String::new(), avatar_b64: String::new(), bio: String::new(), role: String::new(), color_accent: String::new(), presence: String::new(), kicked: false,
         };
         kanban_core::space::add_member(&mut doc, &meta.owner_pubkey, &empty)
             .map_err(|e| e.to_string())?;
@@ -959,6 +971,10 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
             pubkey: meta.owner_pubkey.clone(),
             display_name: None,
             avatar_blob: None,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             kicked: false,
         };
         (doc, vec![stub_owner], vec![], space_name_hint)
@@ -987,6 +1003,10 @@ fn import_invite(token_or_path: String, state: tauri::State<AppState>) -> Result
             use base64::Engine;
             base64::engine::general_purpose::STANDARD.decode(&local_profile.avatar_b64).ok()
         },
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         kicked: false,
     };
     let _ = kanban_storage::space::upsert_member(storage.conn(), &meta.space_id, &local_sql_member);
@@ -1091,6 +1111,10 @@ fn get_my_profile(state: tauri::State<AppState>) -> Result<UserProfileView, Stri
             pubkey: state.identity.public_key_hex(),
             display_name: None,
             avatar_blob: None,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             ssh_key_path: None,
         });
     Ok(UserProfileView {
@@ -1121,6 +1145,10 @@ fn update_my_profile(
         pubkey: pubkey.clone(),
         display_name: if display_name.is_empty() { None } else { Some(display_name.clone()) },
         avatar_blob: avatar_blob.clone(),
+        bio: None,
+        role: None,
+        color_accent: None,
+        presence: None,
         ssh_key_path: None, // preserved from existing profile below
     };
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
@@ -1138,6 +1166,10 @@ fn update_my_profile(
     let member_profile = kanban_core::space::MemberProfile {
         display_name: display_name.clone(),
         avatar_b64: avatar_b64.clone().unwrap_or_default(),
+        bio: "".into(),
+        role: "".into(),
+        color_accent: "".into(),
+        presence: "".into(),
         kicked: false,
     };
     for summary in summaries {
@@ -1152,6 +1184,10 @@ fn update_my_profile(
             pubkey: pubkey.clone(),
             display_name: if display_name.is_empty() { None } else { Some(display_name.clone()) },
             avatar_blob: avatar_blob.clone(),
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             kicked: false,
         };
         let _ = kanban_storage::space::upsert_member(storage.conn(), &summary.id, &sql_member);
@@ -1175,7 +1211,11 @@ fn import_ssh_key(path: Option<String>, state: tauri::State<AppState>) -> Result
     let updated_profile = kanban_core::space::UserProfile {
         pubkey: pubkey.clone(),
         display_name: existing.as_ref().and_then(|p| p.display_name.clone()),
-        avatar_blob: existing.and_then(|p| p.avatar_blob),
+        avatar_blob: existing.as_ref().and_then(|p| p.avatar_blob.clone()),
+        bio: existing.as_ref().and_then(|p| p.bio.clone()),
+        role: existing.as_ref().and_then(|p| p.role.clone()),
+        color_accent: existing.as_ref().and_then(|p| p.color_accent.clone()),
+        presence: existing.as_ref().and_then(|p| p.presence.clone()),
         ssh_key_path: path,
     };
     kanban_storage::space::upsert_profile(storage.conn(), &updated_profile)

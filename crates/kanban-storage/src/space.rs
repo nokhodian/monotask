@@ -45,6 +45,10 @@ pub fn get_space(conn: &Connection, space_id: &str) -> Result<Space, StorageErro
             pubkey: row.get(0)?,
             display_name: display_name.filter(|s| !s.is_empty()),
             avatar_blob,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             kicked,
         })
     })?.collect::<Result<Vec<_>, _>>()?;
@@ -263,6 +267,10 @@ pub fn get_profile(conn: &Connection) -> Result<Option<UserProfile>, StorageErro
             pubkey: row.get(0)?,
             display_name: row.get(1)?,
             avatar_blob: row.get(2)?,
+            bio: None,
+            role: None,
+            color_accent: None,
+            presence: None,
             ssh_key_path: row.get(3)?,
         }),
     ) {
