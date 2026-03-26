@@ -3567,8 +3567,20 @@
         dot.title = peers.length > 0 ? `${peers.length} peer(s) connected` : 'No peers';
       });
     } catch (e) { /* ignore */ }
+
+    // Auto-refresh current board view (picks up peer-synced cards/columns)
+    if (currentBoardId) {
+      try { await loadBoardColumns(currentBoardId); } catch (e) { /* ignore */ }
+    }
+
+    // Auto-refresh space boards list + sidebar (picks up new/removed boards)
+    if (currentSpaceId) {
+      try { await refreshSpaceMain(); } catch (e) { /* ignore */ }
+      const sub = document.querySelector('.space-boards-sub[data-space-id="' + currentSpaceId + '"]');
+      if (sub) { try { await populateSpaceBoardsSub(sub, currentSpaceId); } catch (e) { /* ignore */ } }
+    }
   }
-  setInterval(pollSyncStatus, 5000);
+  setInterval(pollSyncStatus, 4000);
   pollSyncStatus();
 </script>
 </body>
