@@ -1515,7 +1515,7 @@
     const grid = document.getElementById('boards-grid');
     grid.innerHTML = '';
 
-    const displayBoards = (space.boards || []).filter(b => !b.endsWith('-chat'));
+    const displayBoards = (space.boards || []);
 
     if (displayBoards.length === 0) {
       const empty = document.createElement('p');
@@ -3193,12 +3193,20 @@
   function updateChatPresenceDots() {
     const container = document.getElementById('chat-presence-dots');
     if (!container) return;
-    if (!lastSyncInfo || !lastSyncInfo.peer_profiles) { container.innerHTML = ''; return; }
-    container.innerHTML = lastSyncInfo.peer_profiles.map(p => {
-      const color = p.color_accent || '#4a9a4a';
-      const name = p.display_name || p.pubkey.slice(0,8);
-      return `<div class="chat-presence-dot" style="background:${color}" title="${escapeHtml(name)}"></div>`;
-    }).join('');
+    if (!currentSpaceData || !currentSpaceData.members) { container.innerHTML = ''; return; }
+    const connectedPubkeys = new Set(
+      (lastSyncInfo && lastSyncInfo.peer_profiles ? lastSyncInfo.peer_profiles.map(p => p.pubkey) : [])
+    );
+    container.innerHTML = currentSpaceData.members
+      .filter(m => m.presence !== 'dnd')
+      .slice(0, 5)
+      .map(m => {
+        const color = m.color_accent || '#4a9a8a';
+        const isLive = connectedPubkeys.has(m.pubkey_hex);
+        const name = m.display_name || m.pubkey_hex.slice(0,8);
+        const opacity = isLive ? '1' : '0.5';
+        return `<div class="chat-presence-dot" style="background:${color};opacity:${opacity}" title="${escapeHtml(name)}"></div>`;
+      }).join('');
   }
 
   function relativeTime(ts) {
@@ -3256,9 +3264,11 @@
     (refs || []).forEach(ref => {
       const escaped = escapeHtml(ref.label);
       if (ref.kind === 'member') {
+        const mentionMember = findMemberByPubkey(ref.id);
+        const mentionColor = mentionMember?.color_accent || '#7a8acc';
         html = html.replace(
           new RegExp('@' + escapeRegex(ref.label), 'g'),
-          `<span class="chat-mention-chip" onclick="openMentionProfile('${escapeHtml(ref.id)}')">@${escaped}</span>`
+          `<span class="chat-mention-chip" style="color:${mentionColor}" onclick="openMentionProfile('${escapeHtml(ref.id)}')">@${escaped}</span>`
         );
       } else {
         html = html.replace(
@@ -3279,11 +3289,15 @@
     return currentSpaceData.members.find(m => m.pubkey_hex === pubkey) || null;
   }
 
-  function navigateToChatRef(kind, id) {
+  async function navigateToChatRef(kind, id) {
     if (kind === 'board') {
       openBoardView(id, allBoards[id] || id);
     } else if (kind === 'card') {
-      console.log('Navigate to card', id);
+      if (!currentSpaceId) return;
+      try {
+        const boardId = await invoke('find_card_board_cmd', { spaceId: currentSpaceId, cardId: id });
+        if (boardId) openBoardView(boardId, allBoards[boardId] || boardId);
+      } catch(e) { console.error('find_card_board_cmd failed', e); }
     }
   }
 

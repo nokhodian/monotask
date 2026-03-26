@@ -1693,6 +1693,21 @@ fn get_mention_suggestions_cmd(
     Ok(results)
 }
 
+#[tauri::command]
+fn find_card_board_cmd(space_id: String, card_id: String, state: tauri::State<AppState>) -> Result<Option<String>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let result = storage.conn().query_row(
+        "SELECT board_id FROM card_search_index WHERE card_id = ?1 AND space_id = ?2",
+        rusqlite::params![card_id, space_id],
+        |row| row.get::<_, String>(0),
+    );
+    match result {
+        Ok(board_id) => Ok(Some(board_id)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1794,6 +1809,7 @@ fn main() {
             send_chat_message_cmd,
             get_chat_messages_cmd,
             get_mention_suggestions_cmd,
+            find_card_board_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
