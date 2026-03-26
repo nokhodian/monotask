@@ -111,6 +111,30 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn run_migrations_v2(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if version >= 2 {
+        return Ok(());
+    }
+    conn.execute_batch("
+        BEGIN;
+        ALTER TABLE user_profile ADD COLUMN bio TEXT;
+        ALTER TABLE user_profile ADD COLUMN role TEXT;
+        ALTER TABLE user_profile ADD COLUMN color_accent TEXT;
+        ALTER TABLE user_profile ADD COLUMN presence TEXT DEFAULT 'online';
+        ALTER TABLE space_members ADD COLUMN bio TEXT;
+        ALTER TABLE space_members ADD COLUMN role TEXT;
+        ALTER TABLE space_members ADD COLUMN color_accent TEXT;
+        ALTER TABLE space_members ADD COLUMN presence TEXT DEFAULT 'online';
+        ALTER TABLE boards ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
+        COMMIT;
+    ")?;
+    conn.execute_batch("PRAGMA user_version = 2")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod space_schema_tests {
     use super::*;
@@ -136,5 +160,32 @@ mod space_schema_tests {
             |r| r.get(0),
         ).unwrap();
         assert_eq!(idx_count, 1);
+    }
+
+    #[test]
+    fn v2_migration_adds_profile_and_board_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations_v2(&conn).unwrap();
+        // bio column on user_profile
+        conn.execute(
+            "INSERT INTO user_profile (pk, pubkey, bio, role, color_accent, presence) VALUES ('local', 'pk', 'hi', 'dev', '#fff', 'online')",
+            [],
+        ).unwrap();
+        let bio: String = conn.query_row(
+            "SELECT bio FROM user_profile WHERE pk='local'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(bio, "hi");
+        // is_system column on boards
+        conn.execute(
+            "INSERT INTO boards (board_id, automerge_doc, is_system) VALUES ('b1', x'', 1)",
+            [],
+        ).unwrap();
+        let sys: i64 = conn.query_row(
+            "SELECT is_system FROM boards WHERE board_id='b1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(sys, 1);
+        // idempotent
+        run_migrations_v2(&conn).unwrap();
     }
 }

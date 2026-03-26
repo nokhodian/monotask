@@ -69,12 +69,14 @@ impl Storage {
         let db_path = dir.join("kanban.db");
         let conn = Connection::open(&db_path)?;
         schema::run_migrations(&conn)?;
+        crate::schema::run_migrations_v2(&conn)?;
         Ok(Self { conn })
     }
 
     pub fn open_in_memory() -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
         schema::run_migrations(&conn)?;
+        crate::schema::run_migrations_v2(&conn)?;
         Ok(Self { conn })
     }
 
