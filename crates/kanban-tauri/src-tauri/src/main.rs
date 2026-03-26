@@ -147,10 +147,18 @@ fn local_member_profile(state: &AppState) -> kanban_core::space::MemberProfile {
             .and_then(|p| p.avatar_blob.as_ref())
             .map(|b| { use base64::Engine; base64::engine::general_purpose::STANDARD.encode(b) })
             .unwrap_or_default(),
-        bio: "".into(),
-        role: "".into(),
-        color_accent: "".into(),
-        presence: "".into(),
+        bio: profile.as_ref()
+            .and_then(|p| p.bio.clone())
+            .unwrap_or_default(),
+        role: profile.as_ref()
+            .and_then(|p| p.role.clone())
+            .unwrap_or_default(),
+        color_accent: profile.as_ref()
+            .and_then(|p| p.color_accent.clone())
+            .unwrap_or_default(),
+        presence: profile.as_ref()
+            .and_then(|p| p.presence.clone())
+            .unwrap_or_default(),
         kicked: false,
     }
 }
