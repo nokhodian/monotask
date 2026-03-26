@@ -1495,6 +1495,8 @@
     // Enable/disable chat button
     const btnChat = document.getElementById('btn-chat');
     if (btnChat) { btnChat.disabled = false; btnChat.style.opacity = ''; btnChat.style.pointerEvents = ''; }
+    // Start background polling for unread badge
+    startChatBgPolling();
   }
 
   async function refreshSpaceMain() {
@@ -2548,6 +2550,8 @@
     // Disable chat button when no space selected
     const btnChat = document.getElementById('btn-chat');
     if (btnChat) { btnChat.disabled = true; btnChat.style.opacity = '0.4'; btnChat.style.pointerEvents = 'none'; }
+    // Stop background chat polling when leaving a space
+    stopChatBgPolling();
   };
   // Settings button in space main
   document.getElementById('btn-space-settings').onclick = () => openSpaceSettings();
@@ -3110,6 +3114,7 @@
   let chatAcTrigger = null; // '@' or '#'
   let chatAcQuery = '';
   let chatPollingTimer = null;
+  let chatBgPollingTimer = null;
 
   function toggleChatPanel() {
     chatOpen = !chatOpen;
@@ -3187,6 +3192,34 @@
     if (chatPollingTimer) {
       clearInterval(chatPollingTimer);
       chatPollingTimer = null;
+    }
+  }
+
+  function startChatBgPolling() {
+    stopChatBgPolling();
+    chatBgPollingTimer = setInterval(async () => {
+      if (!currentSpaceId || chatOpen) return; // skip if panel is open (foreground polling handles it)
+      try {
+        const msgs = await invoke('get_chat_messages_cmd', {
+          spaceId: currentSpaceId,
+          limit: 50,
+          beforeTs: null
+        });
+        const prevCount = chatMessages.length;
+        if (msgs.length > prevCount && prevCount > 0) {
+          // Only count as unread if we had messages before (not first load)
+          chatUnread += msgs.length - prevCount;
+          updateChatUnreadBadge();
+        }
+        chatMessages = msgs;
+      } catch(e) {}
+    }, 5000);
+  }
+
+  function stopChatBgPolling() {
+    if (chatBgPollingTimer) {
+      clearInterval(chatBgPollingTimer);
+      chatBgPollingTimer = null;
     }
   }
 
