@@ -37,9 +37,16 @@ pub fn list_board_ids(conn: &rusqlite::Connection) -> Result<Vec<String>, Storag
     Ok(ids)
 }
 
-/// Returns (board_id, last_modified unix timestamp) for all boards.
+/// Returns (board_id, last_modified unix timestamp) for boards in active spaces only.
 pub fn list_boards_with_timestamps(conn: &rusqlite::Connection) -> Result<Vec<(String, i64)>, StorageError> {
-    let mut stmt = conn.prepare("SELECT board_id, COALESCE(last_modified, 0) FROM boards WHERE is_system = 0 ORDER BY last_modified DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT b.board_id, COALESCE(b.last_modified, 0)
+         FROM boards b
+         JOIN space_boards sb ON sb.board_id = b.board_id
+         JOIN spaces s ON s.space_id = sb.space_id
+         WHERE b.is_system = 0
+         ORDER BY b.last_modified DESC"
+    )?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
