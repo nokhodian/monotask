@@ -31,7 +31,7 @@ pub fn load_board(conn: &rusqlite::Connection, board_id: &str) -> Result<AutoCom
 }
 
 pub fn list_board_ids(conn: &rusqlite::Connection) -> Result<Vec<String>, StorageError> {
-    let mut stmt = conn.prepare("SELECT board_id FROM boards ORDER BY last_modified DESC")?;
+    let mut stmt = conn.prepare("SELECT board_id FROM boards WHERE is_system = 0 ORDER BY last_modified DESC")?;
     let ids = stmt.query_map([], |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<String>>>()?;
     Ok(ids)
@@ -39,7 +39,7 @@ pub fn list_board_ids(conn: &rusqlite::Connection) -> Result<Vec<String>, Storag
 
 /// Returns (board_id, last_modified unix timestamp) for all boards.
 pub fn list_boards_with_timestamps(conn: &rusqlite::Connection) -> Result<Vec<(String, i64)>, StorageError> {
-    let mut stmt = conn.prepare("SELECT board_id, COALESCE(last_modified, 0) FROM boards ORDER BY last_modified DESC")?;
+    let mut stmt = conn.prepare("SELECT board_id, COALESCE(last_modified, 0) FROM boards WHERE is_system = 0 ORDER BY last_modified DESC")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)

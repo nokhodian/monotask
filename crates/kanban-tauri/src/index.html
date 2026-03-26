@@ -1261,7 +1261,9 @@
     const grid = document.getElementById('boards-grid');
     grid.innerHTML = '';
 
-    if (!space.boards || space.boards.length === 0) {
+    const displayBoards = (space.boards || []).filter(b => !b.endsWith('-chat'));
+
+    if (displayBoards.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'boards-empty';
       empty.textContent = 'No boards in this space yet. Add one via Settings.';
@@ -1269,7 +1271,7 @@
       return;
     }
 
-    for (const boardId of space.boards) {
+    for (const boardId of displayBoards) {
       const isLocal = boardId in allBoards;
       const title = isLocal ? allBoards[boardId] : boardId.slice(0, 16);
       const card = document.createElement('div');
