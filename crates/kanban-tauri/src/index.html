@@ -106,6 +106,30 @@
       margin: 3px 4px 3px 0;
     }
     .net-peer-dot { width: 6px; height: 6px; border-radius: 50%; background: #4a9a4a; flex-shrink: 0; }
+    /* ── Identity chips (replaces raw peer ID chips) ────────────────────── */
+    .peer-identity-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #0f0f1c; border: 1px solid #2a3a2a; border-radius: 5px;
+      padding: 5px 10px; margin: 3px 4px 3px 0;
+    }
+    .peer-avatar-sm {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: #000; flex-shrink: 0;
+      background-size: cover; background-position: center;
+      position: relative;
+    }
+    .peer-presence-sm {
+      position: absolute; bottom: -1px; right: -1px;
+      width: 7px; height: 7px; border-radius: 50%; border: 1px solid #0f0f1c;
+    }
+    .peer-info { display: flex; flex-direction: column; }
+    .peer-name { font-size: 11px; color: #ddd; font-weight: 500; }
+    .peer-role { font-size: 9px; color: #666; }
+    .peer-status-txt { font-size: 9px; }
+    .peer-status-txt.online { color: #4a9a4a; }
+    .peer-status-txt.away { color: #c8962a; }
+    .peer-status-txt.dnd { color: #777; }
     .net-boards-section { flex-shrink: 0; }
     .net-boards-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .net-boards-table th {
@@ -1669,12 +1693,15 @@
       chip.dataset.pubkey = m.pubkey;
       const av = document.createElement('div');
       av.className = 'assignee-chip-avatar';
+      const color = m.color_accent || '#5a6a9a';
       if (m.avatar_b64) {
-        av.style.cssText = `background-image:url(data:image/png;base64,${m.avatar_b64});background-size:cover;`;
+        av.style.cssText = `background-image:url(data:image/png;base64,${m.avatar_b64});background-size:cover;background-position:center;`;
         av.textContent = '';
       } else {
-        av.textContent = initials(name);
+        av.style.background = color;
+        av.textContent = (m.display_name || m.pubkey)[0].toUpperCase();
       }
+      av.title = m.display_name || m.pubkey;
       chip.appendChild(av);
       chip.appendChild(document.createTextNode(name));
       chip.onclick = () => {
@@ -2143,22 +2170,20 @@
       const li = document.createElement('li');
       if (m.kicked) li.classList.add('member-kicked');
 
-      const avatar = document.createElement('div');
-      avatar.className = 'member-avatar';
-      avatar.textContent = (m.display_name || m.pubkey).charAt(0).toUpperCase();
-
-      const info = document.createElement('div');
-      info.className = 'member-info';
-      const nameEl = document.createElement('div');
-      nameEl.className = 'member-name';
-      nameEl.textContent = m.display_name || '(unnamed)';
-      const pkEl = document.createElement('div');
-      pkEl.className = 'member-pubkey';
-      pkEl.textContent = m.pubkey.slice(0, 20) + '\u2026';
-      info.appendChild(nameEl);
-      info.appendChild(pkEl);
-      li.appendChild(avatar);
-      li.appendChild(info);
+      const color = m.color_accent || '#5a6a9a';
+      const initial = (m.display_name || m.pubkey)[0].toUpperCase();
+      const avatarHtml = m.avatar_b64
+        ? `<div class="member-avatar" style="background-image:url(data:image/png;base64,${m.avatar_b64});background-size:cover;background-position:center;"></div>`
+        : `<div class="member-avatar" style="background:${color};">${initial}</div>`;
+      const roleHtml = m.role ? `<span style="font-size:9px;color:#666;background:#111120;border-radius:2px;padding:1px 5px;margin-left:4px;">${m.role}</span>` : '';
+      const presenceDot = m.presence === 'away' ? '\uD83D\uDFE1' : m.presence === 'dnd' ? '\u26AB' : '\uD83D\uDFE2';
+      li.innerHTML = `
+        ${avatarHtml}
+        <div class="member-info" style="flex:1;">
+          <div class="member-name">${m.display_name || '(unnamed)'}${roleHtml}</div>
+          <div class="member-pubkey">${m.pubkey.slice(0, 16)}\u2026 ${presenceDot}</div>
+          ${m.bio ? `<div style="font-size:10px;color:#666;font-style:italic;margin-top:2px;">${m.bio}</div>` : ''}
+        </div>`;
 
       if (isOwner && !m.kicked && m.pubkey !== myPubkey) {
         const btn = document.createElement('button');
@@ -2675,14 +2700,33 @@
         invoke('list_spaces').catch(() => []),
       ]);
 
-      // Connected Peers
+      // Connected Peers — use peer_profiles if available, fall back to raw IDs
       const peersEl = document.getElementById('net-peers-container');
-      if (info.connected_peers.length === 0) {
+      if (!info.connected_peers || info.connected_peers.length === 0) {
         peersEl.innerHTML = '<span style="color:#555;font-size:12px;">No connected peers</span>';
       } else {
-        peersEl.innerHTML = info.connected_peers.map(p =>
-          `<span class="net-peer-chip"><span class="net-peer-dot"></span>${p}</span>`
-        ).join('');
+        const profileMap = {};
+        (info.peer_profiles || []).forEach(p => { profileMap[p.peer_id] = p; });
+        peersEl.innerHTML = info.connected_peers.map(peerId => {
+          const p = profileMap[peerId];
+          const color = (p && p.color_accent) || '#5a6a9a';
+          const name = (p && p.display_name) || peerId.slice(0, 12) + '\u2026';
+          const role = (p && p.role) || '';
+          const presence = (p && p.presence) || 'online';
+          const presenceColor = presence === 'online' ? '#4a9a4a' : presence === 'away' ? '#c8962a' : '#555';
+          const avatarStyle = (p && p.avatar_b64)
+            ? `background-image:url(data:image/png;base64,${p.avatar_b64});background-size:cover;`
+            : `background:${color};`;
+          const initial = (p && p.display_name) ? p.display_name[0].toUpperCase() : '?';
+          return `<span class="peer-identity-chip">
+            <span class="peer-avatar-sm" style="${avatarStyle}">${(p && p.avatar_b64) ? '' : initial}<span class="peer-presence-sm" style="background:${presenceColor};"></span></span>
+            <span class="peer-info">
+              <span class="peer-name">${name}</span>
+              ${role ? `<span class="peer-role">${role}</span>` : ''}
+            </span>
+            <span class="peer-status-txt ${presence}">${presence}</span>
+          </span>`;
+        }).join('');
       }
 
       // Active Spaces
