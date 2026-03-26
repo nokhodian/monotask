@@ -698,6 +698,228 @@
     .danger-zone-title { font-size: 10px; color: #c05050; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
     .btn-delete-space { background: none; border: 1px solid #5a2020; color: #c05050; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .btn-delete-space:hover { background: #1a0808; border-color: #c05050; }
+
+    /* Chat panel */
+    #chat-panel {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      width: 280px;
+      max-height: 420px;
+      background: #0d1a1a;
+      border: 1px solid #1a5a4a;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.7);
+      display: flex;
+      flex-direction: column;
+      z-index: 300;
+      display: none;
+    }
+    #chat-panel.open { display: flex; }
+    .chat-header {
+      padding: 8px 12px;
+      border-bottom: 1px solid #1a4a3a;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .chat-header-title {
+      font-size: 12px;
+      color: #4a9a8a;
+      font-weight: 600;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-presence-dots {
+      display: flex;
+      align-items: center;
+    }
+    .chat-presence-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid #0d1a1a;
+      margin-left: -3px;
+    }
+    .chat-close-btn {
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .chat-close-btn:hover { color: #aaa; }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+    .chat-empty {
+      font-size: 11px;
+      color: #444;
+      text-align: center;
+      padding: 16px 8px;
+    }
+    .chat-msg {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .chat-msg-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      color: #000;
+      overflow: hidden;
+    }
+    .chat-msg-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+    .chat-msg-body { flex: 1; min-width: 0; }
+    .chat-msg-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+    .chat-msg-author {
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .chat-msg-time {
+      font-size: 9px;
+      color: #444;
+    }
+    .chat-msg-text {
+      font-size: 11px;
+      color: #ccc;
+      background: #0a1412;
+      border-radius: 0 4px 4px 4px;
+      padding: 4px 7px;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .chat-ref-chip {
+      display: inline;
+      color: #4a9a8a;
+      background: #0a1a18;
+      border-radius: 3px;
+      padding: 0 3px;
+      cursor: pointer;
+      font-size: 10px;
+    }
+    .chat-ref-chip:hover { color: #6abcaa; }
+    .chat-mention-chip {
+      display: inline;
+      color: #7a8acc;
+      background: #0a0a1a;
+      border-radius: 3px;
+      padding: 0 3px;
+      cursor: pointer;
+      font-size: 10px;
+    }
+    .chat-mention-chip:hover { color: #9aaafa; }
+    .chat-input-wrap {
+      padding: 8px;
+      border-top: 1px solid #1a4a3a;
+      position: relative;
+      flex-shrink: 0;
+    }
+    #chat-input {
+      width: 100%;
+      background: #0a1412;
+      border: 1px solid #1a4a3a;
+      border-radius: 4px;
+      color: #ccc;
+      font-size: 11px;
+      padding: 5px 8px;
+      resize: none;
+      outline: none;
+      box-sizing: border-box;
+      font-family: inherit;
+      line-height: 1.4;
+      max-height: 80px;
+      overflow-y: auto;
+    }
+    #chat-input::placeholder { color: #3a5a4a; }
+    #chat-input:focus { border-color: #2a7a6a; }
+    .chat-autocomplete {
+      position: absolute;
+      bottom: calc(100% - 4px);
+      left: 8px;
+      right: 8px;
+      background: #0d0d1c;
+      border: 1px solid #2a2a4a;
+      border-radius: 4px;
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 310;
+      display: none;
+    }
+    .chat-autocomplete.open { display: block; }
+    .chat-ac-group-label {
+      font-size: 9px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 5px 10px 3px;
+      border-bottom: 1px solid #1a1a2e;
+    }
+    .chat-ac-item {
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 10px;
+      color: #aaa;
+    }
+    .chat-ac-item:hover, .chat-ac-item.selected { background: #131326; color: #ddd; }
+    .chat-ac-avatar {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      font-weight: 700;
+      color: #000;
+      flex-shrink: 0;
+    }
+    .chat-ac-role { margin-left: auto; font-size: 9px; color: #555; }
+    .chat-unread-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: #c84a4a;
+      color: #fff;
+      font-size: 8px;
+      font-weight: 700;
+      border-radius: 8px;
+      padding: 1px 4px;
+      min-width: 14px;
+      text-align: center;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -721,6 +943,10 @@
   <div class="sidebar-footer">
     <button id="btn-profile">&#9881; Profile</button>
     <button id="btn-import-invite-sidebar">&#8595; Join Space</button>
+    <div style="position:relative">
+      <button id="btn-chat" class="sidebar-footer-btn" title="Chat" onclick="toggleChatPanel()">&#128172; Chat</button>
+      <span id="chat-unread-badge" class="chat-unread-badge"></span>
+    </div>
     <button id="btn-open-net-sync">&#128246; Network &amp; Sync</button>
     <div id="app-version-badge" style="font-size:9px;color:#5a5a9a;padding:6px 10px 2px;font-family:monospace;letter-spacing:0.03em;"></div>
   </div>
@@ -1109,6 +1335,22 @@
   </div>
 </div>
 
+<!-- ── Chat Panel ──────────────────────────────────────────────────────────── -->
+<div id="chat-panel">
+  <div class="chat-header">
+    <span class="chat-header-title" id="chat-panel-title">Chat</span>
+    <div class="chat-presence-dots" id="chat-presence-dots"></div>
+    <button class="chat-close-btn" onclick="toggleChatPanel()">×</button>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-empty">No messages yet — send one to start the conversation.</div>
+  </div>
+  <div class="chat-input-wrap">
+    <div class="chat-autocomplete" id="chat-autocomplete"></div>
+    <textarea id="chat-input" rows="1" placeholder="Message... (@mention, #ref)"></textarea>
+  </div>
+</div>
+
 <script>
   const invoke = (...args) => window.__TAURI__.core.invoke(...args);
 
@@ -1118,6 +1360,8 @@
   let currentBoardId = null;
   // allBoards: map of boardId → title (loaded once, refreshed as needed)
   let allBoards = {};
+  let currentSpaceName = '';
+  let lastSyncInfo = null;
 
   // ── View switcher ──────────────────────────────────────────────────────────
   // views: 'dashboard' | 'space-main' | 'board-view' | 'space-settings'
@@ -1242,6 +1486,15 @@
     showView('space-main');
     await Promise.all([refreshAllBoards(), refreshSpaceMain()]);
     await loadSpacesSidebar();
+    // Update chat panel title if open
+    if (currentSpaceName) {
+      const titleEl = document.getElementById('chat-panel-title');
+      if (titleEl) titleEl.textContent = currentSpaceName;
+    }
+    updateChatPresenceDots();
+    // Enable/disable chat button
+    const btnChat = document.getElementById('btn-chat');
+    if (btnChat) { btnChat.disabled = false; btnChat.style.opacity = ''; btnChat.style.pointerEvents = ''; }
   }
 
   async function refreshSpaceMain() {
@@ -1250,6 +1503,7 @@
       const space = await invoke('get_space_cmd', { spaceId });
       if (spaceId !== currentSpaceId) return;
       currentSpaceData = space;
+      currentSpaceName = space.name || '';
       document.getElementById('space-main-name').textContent = space.name;
       renderBoardsGrid(space);
     } catch (e) {
@@ -2291,6 +2545,9 @@
     currentBoardId = null;
     showView('dashboard');
     loadSpacesSidebar();
+    // Disable chat button when no space selected
+    const btnChat = document.getElementById('btn-chat');
+    if (btnChat) { btnChat.disabled = true; btnChat.style.opacity = '0.4'; btnChat.style.pointerEvents = 'none'; }
   };
   // Settings button in space main
   document.getElementById('btn-space-settings').onclick = () => openSpaceSettings();
@@ -2702,6 +2959,9 @@
         invoke('list_spaces').catch(() => []),
       ]);
 
+      lastSyncInfo = info;
+      updateChatPresenceDots();
+
       // Connected Peers — use peer_profiles if available, fall back to raw IDs
       const peersEl = document.getElementById('net-peers-container');
       if (!info.connected_peers || info.connected_peers.length === 0) {
@@ -2826,6 +3086,421 @@
   document.getElementById('sync-addr-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('btn-sync-add-peer').click();
   });
+
+  // ── HTML escape helper ─────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // ——————————————————————————————————
+  // Chat Panel
+  // ——————————————————————————————————
+
+  let chatOpen = false;
+  let chatMessages = [];
+  let chatUnread = 0;
+  let chatAcItems = [];
+  let chatAcIndex = -1;
+  let chatAcTrigger = null; // '@' or '#'
+  let chatAcQuery = '';
+  let chatPollingTimer = null;
+
+  function toggleChatPanel() {
+    chatOpen = !chatOpen;
+    const panel = document.getElementById('chat-panel');
+    panel.classList.toggle('open', chatOpen);
+    if (chatOpen) {
+      chatUnread = 0;
+      updateChatUnreadBadge();
+      refreshChatPanel();
+      document.getElementById('chat-input').focus();
+    } else {
+      stopChatPolling();
+    }
+  }
+
+  function updateChatUnreadBadge() {
+    const badge = document.getElementById('chat-unread-badge');
+    if (chatUnread > 0) {
+      badge.textContent = chatUnread > 99 ? '99+' : String(chatUnread);
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  async function refreshChatPanel() {
+    if (!currentSpaceId) return;
+
+    // Update title
+    const titleEl = document.getElementById('chat-panel-title');
+    if (currentSpaceName) titleEl.textContent = currentSpaceName;
+
+    // Update presence dots from sync info
+    updateChatPresenceDots();
+
+    // Load messages
+    try {
+      const msgs = await invoke('get_chat_messages_cmd', {
+        spaceId: currentSpaceId,
+        limit: 50,
+        beforeTs: null
+      });
+      const prevCount = chatMessages.length;
+      chatMessages = msgs;
+      if (!chatOpen && msgs.length > prevCount) {
+        chatUnread += msgs.length - prevCount;
+        updateChatUnreadBadge();
+      }
+      renderChatMessages();
+    } catch (e) {
+      console.error('get_chat_messages_cmd failed', e);
+    }
+
+    // Start polling
+    startChatPolling();
+  }
+
+  function startChatPolling() {
+    stopChatPolling();
+    chatPollingTimer = setInterval(async () => {
+      if (!currentSpaceId || !chatOpen) return;
+      try {
+        const msgs = await invoke('get_chat_messages_cmd', {
+          spaceId: currentSpaceId,
+          limit: 50,
+          beforeTs: null
+        });
+        chatMessages = msgs;
+        renderChatMessages();
+      } catch (e) {}
+    }, 3000);
+  }
+
+  function stopChatPolling() {
+    if (chatPollingTimer) {
+      clearInterval(chatPollingTimer);
+      chatPollingTimer = null;
+    }
+  }
+
+  function updateChatPresenceDots() {
+    const container = document.getElementById('chat-presence-dots');
+    if (!container) return;
+    if (!lastSyncInfo || !lastSyncInfo.peer_profiles) { container.innerHTML = ''; return; }
+    container.innerHTML = lastSyncInfo.peer_profiles.map(p => {
+      const color = p.color_accent || '#4a9a4a';
+      const name = p.display_name || p.pubkey.slice(0,8);
+      return `<div class="chat-presence-dot" style="background:${color}" title="${escapeHtml(name)}"></div>`;
+    }).join('');
+  }
+
+  function relativeTime(ts) {
+    const now = Math.floor(Date.now() / 1000);
+    const diff = now - ts;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  }
+
+  function renderChatMessages() {
+    const container = document.getElementById('chat-messages');
+    if (!chatMessages || chatMessages.length === 0) {
+      container.innerHTML = '<div class="chat-empty">No messages yet — send one to start the conversation.</div>';
+      return;
+    }
+
+    // messages come newest-first from backend; display oldest-first
+    const sorted = [...chatMessages].reverse();
+    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+
+    container.innerHTML = sorted.map(msg => {
+      // Use pre-resolved fields from ChatMessageView if available, otherwise fall back to member lookup
+      const memberInfo = findMemberByPubkey(msg.author);
+      const name = msg.author_name || memberInfo?.display_name || msg.author.slice(0,8);
+      const color = msg.author_color || memberInfo?.color_accent || '#4a9a8a';
+      const avatarB64 = msg.author_avatar_b64 || memberInfo?.avatar_b64 || null;
+      const avatar = avatarB64
+        ? `<img src="data:image/png;base64,${avatarB64}" />`
+        : `<span>${(name[0]||'?').toUpperCase()}</span>`;
+
+      const renderedText = renderChatText(msg.text, msg.refs || []);
+
+      return `<div class="chat-msg">
+        <div class="chat-msg-avatar" style="background:${color}">${avatar}</div>
+        <div class="chat-msg-body">
+          <div class="chat-msg-meta">
+            <span class="chat-msg-author" style="color:${color}">${escapeHtml(name)}</span>
+            <span class="chat-msg-time">${relativeTime(msg.created_at)}</span>
+          </div>
+          <div class="chat-msg-text">${renderedText}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    if (wasAtBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function renderChatText(text, refs) {
+    // Replace @mentions and #refs with chips
+    let html = escapeHtml(text);
+    (refs || []).forEach(ref => {
+      const escaped = escapeHtml(ref.label);
+      if (ref.kind === 'member') {
+        html = html.replace(
+          new RegExp('@' + escapeRegex(ref.label), 'g'),
+          `<span class="chat-mention-chip" onclick="openMentionProfile('${escapeHtml(ref.id)}')">@${escaped}</span>`
+        );
+      } else {
+        html = html.replace(
+          new RegExp('#' + escapeRegex(ref.label), 'g'),
+          `<span class="chat-ref-chip" onclick="navigateToChatRef('${escapeHtml(ref.kind)}','${escapeHtml(ref.id)}')"> #${escaped}</span>`
+        );
+      }
+    });
+    return html;
+  }
+
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function findMemberByPubkey(pubkey) {
+    if (!currentSpaceData || !currentSpaceData.members) return null;
+    return currentSpaceData.members.find(m => m.pubkey_hex === pubkey) || null;
+  }
+
+  function navigateToChatRef(kind, id) {
+    if (kind === 'board') {
+      openBoardView(id, allBoards[id] || id);
+    } else if (kind === 'card') {
+      console.log('Navigate to card', id);
+    }
+  }
+
+  function openMentionProfile(pubkeyHex) {
+    if (!currentSpaceData) return;
+    const member = currentSpaceData.members && currentSpaceData.members.find(m => m.pubkey_hex === pubkeyHex);
+    if (!member) return;
+    showReadOnlyProfile(member);
+  }
+
+  function showReadOnlyProfile(member) {
+    const modal = document.getElementById('modal-profile');
+    if (!modal) return;
+    document.getElementById('profile-name').value = member.display_name || '';
+    document.getElementById('profile-role').value = member.role || '';
+    document.getElementById('profile-bio').value = member.bio || '';
+    updateAvatarPreview(member.avatar_b64 || null, member.display_name || '', member.color_accent || null);
+    // Mark read-only by disabling save
+    const saveBtn = document.getElementById('btn-save-profile');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.4'; }
+    modal.style.display = 'flex';
+    modal.dataset.readOnly = '1';
+  }
+
+  // Restore save button when profile modal is closed normally
+  const _origCloseProfile = document.getElementById('btn-close-profile') ? document.getElementById('btn-close-profile').onclick : null;
+  function _restoreProfileSaveBtn() {
+    const saveBtn = document.getElementById('btn-save-profile');
+    const modal = document.getElementById('modal-profile');
+    if (saveBtn && modal && modal.dataset.readOnly) {
+      saveBtn.disabled = false;
+      saveBtn.style.opacity = '';
+      delete modal.dataset.readOnly;
+    }
+  }
+  document.getElementById('btn-close-profile').addEventListener('click', _restoreProfileSaveBtn);
+  document.getElementById('btn-cancel-profile').addEventListener('click', _restoreProfileSaveBtn);
+
+  // Chat input handling
+  document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    _setupChatInput(input);
+  });
+  // Also run immediately in case DOMContentLoaded already fired
+  (function() {
+    const input = document.getElementById('chat-input');
+    if (input) _setupChatInput(input);
+  })();
+
+  function _setupChatInput(input) {
+    input.addEventListener('keydown', async (e) => {
+      if (chatAcItems.length > 0) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); chatAcIndex = Math.min(chatAcIndex+1, chatAcItems.length-1); renderAcDropdown(); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); chatAcIndex = Math.max(chatAcIndex-1, 0); renderAcDropdown(); return; }
+        if (e.key === 'Enter' && !e.shiftKey && chatAcIndex >= 0) { e.preventDefault(); selectAcItem(chatAcItems[chatAcIndex]); return; }
+        if (e.key === 'Escape') { closeAcDropdown(); return; }
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        await sendChatMessage();
+      }
+    });
+
+    input.addEventListener('input', () => {
+      const val = input.value;
+      const cursor = input.selectionStart;
+      // Find last @ or # before cursor
+      const before = val.slice(0, cursor);
+      const atMatch = before.match(/@(\w*)$/);
+      const hashMatch = before.match(/#(\w*)$/);
+      if (atMatch) {
+        chatAcTrigger = '@';
+        chatAcQuery = atMatch[1];
+        fetchAcSuggestions('member');
+      } else if (hashMatch) {
+        chatAcTrigger = '#';
+        chatAcQuery = hashMatch[1];
+        fetchAcSuggestions('all');
+      } else {
+        closeAcDropdown();
+      }
+      // auto-grow textarea
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 80) + 'px';
+    });
+  }
+
+  async function fetchAcSuggestions(kind) {
+    if (!currentSpaceId) return;
+    try {
+      const results = await invoke('get_mention_suggestions_cmd', {
+        spaceId: currentSpaceId,
+        query: chatAcQuery,
+        kind
+      });
+      chatAcItems = results;
+      chatAcIndex = results.length > 0 ? 0 : -1;
+      renderAcDropdown();
+    } catch(e) { closeAcDropdown(); }
+  }
+
+  function renderAcDropdown() {
+    const container = document.getElementById('chat-autocomplete');
+    if (!chatAcItems.length) { closeAcDropdown(); return; }
+
+    // Group by kind
+    const groups = {};
+    chatAcItems.forEach((item, i) => {
+      if (!groups[item.kind]) groups[item.kind] = [];
+      groups[item.kind].push({ item, i });
+    });
+
+    const kindLabels = { member: 'People', card: 'Cards', board: 'Boards' };
+    let html = '';
+    for (const [kind, entries] of Object.entries(groups)) {
+      html += `<div class="chat-ac-group-label">${kindLabels[kind] || kind}</div>`;
+      entries.forEach(({ item, i }) => {
+        const selected = i === chatAcIndex ? ' selected' : '';
+        if (kind === 'member') {
+          const color = item.color_accent || '#4a9a8a';
+          const initial = (item.label[0] || '?').toUpperCase();
+          const avatarHtml = item.avatar_b64
+            ? `<img src="data:image/png;base64,${item.avatar_b64}" style="width:14px;height:14px;border-radius:50%;object-fit:cover">`
+            : `<span>${initial}</span>`;
+          html += `<div class="chat-ac-item${selected}" data-index="${i}" onclick="selectAcItemByIndex(${i})">
+            <div class="chat-ac-avatar" style="background:${color}">${avatarHtml}</div>
+            <span>${escapeHtml(item.label)}</span>
+            <span class="chat-ac-role">${escapeHtml(item.sublabel || '')}</span>
+          </div>`;
+        } else {
+          html += `<div class="chat-ac-item${selected}" data-index="${i}" onclick="selectAcItemByIndex(${i})">
+            <span style="color:#4a9a8a;font-size:10px">${kind === 'card' ? '🃏' : '📋'}</span>
+            <span>${escapeHtml(item.label)}</span>
+            <span class="chat-ac-role">${escapeHtml(item.sublabel || '')}</span>
+          </div>`;
+        }
+      });
+    }
+
+    container.innerHTML = html;
+    container.classList.add('open');
+  }
+
+  function selectAcItemByIndex(i) {
+    selectAcItem(chatAcItems[i]);
+  }
+
+  function selectAcItem(item) {
+    const input = document.getElementById('chat-input');
+    const val = input.value;
+    const cursor = input.selectionStart;
+    const before = val.slice(0, cursor);
+    const after = val.slice(cursor);
+    const trigger = chatAcTrigger;
+    // Replace the partial @query or #query with the full label
+    const replaced = before.replace(new RegExp('[' + trigger + ']\\w*$'), trigger + item.label + ' ');
+    input.value = replaced + after;
+    const newCursor = replaced.length;
+    input.setSelectionRange(newCursor, newCursor);
+    closeAcDropdown();
+    input.focus();
+  }
+
+  function closeAcDropdown() {
+    const container = document.getElementById('chat-autocomplete');
+    if (container) container.classList.remove('open');
+    chatAcItems = [];
+    chatAcIndex = -1;
+    chatAcTrigger = null;
+  }
+
+  async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text || !currentSpaceId) return;
+
+    // Parse refs from text: find @name and #name and resolve them
+    const refs = [];
+    if (currentSpaceData && currentSpaceData.members) {
+      const atMatches = [...text.matchAll(/@(\w+)/g)];
+      for (const m of atMatches) {
+        const member = currentSpaceData.members.find(mem =>
+          (mem.display_name || '').toLowerCase().startsWith(m[1].toLowerCase())
+        );
+        if (member) refs.push({ kind: 'member', id: member.pubkey_hex, label: member.display_name || m[1] });
+      }
+    }
+
+    input.value = '';
+    input.style.height = 'auto';
+    closeAcDropdown();
+
+    try {
+      await invoke('send_chat_message_cmd', {
+        spaceId: currentSpaceId,
+        text,
+        refs
+      });
+      // reload messages
+      const msgs = await invoke('get_chat_messages_cmd', {
+        spaceId: currentSpaceId,
+        limit: 50,
+        beforeTs: null
+      });
+      chatMessages = msgs;
+      renderChatMessages();
+    } catch(e) {
+      console.error('send_chat_message_cmd failed', e);
+    }
+  }
+
+  // Disable chat button when no space is selected (init state)
+  (function() {
+    const btnChat = document.getElementById('btn-chat');
+    if (btnChat) { btnChat.disabled = true; btnChat.style.opacity = '0.4'; btnChat.style.pointerEvents = 'none'; }
+  })();
 
   // ── Sync status polling ────────────────────────────────────────────────────
   async function pollSyncStatus() {
