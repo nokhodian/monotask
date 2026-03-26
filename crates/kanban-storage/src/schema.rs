@@ -129,9 +129,9 @@ pub fn run_migrations_v2(conn: &Connection) -> Result<()> {
         ALTER TABLE space_members ADD COLUMN color_accent TEXT;
         ALTER TABLE space_members ADD COLUMN presence TEXT DEFAULT 'online';
         ALTER TABLE boards ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
+        PRAGMA user_version = 2;
         COMMIT;
     ")?;
-    conn.execute_batch("PRAGMA user_version = 2")?;
     Ok(())
 }
 
@@ -185,6 +185,19 @@ mod space_schema_tests {
             "SELECT is_system FROM boards WHERE board_id='b1'", [], |r| r.get(0)
         ).unwrap();
         assert_eq!(sys, 1);
+        // space_members also gets new columns
+        conn.execute(
+            "INSERT INTO spaces (id, name, owner_pubkey, created_at, automerge_bytes) VALUES ('s1', 'Test', 'pk', 0, x'')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO space_members (space_id, pubkey, display_name, avatar_blob, kicked, bio, role, color_accent, presence) VALUES ('s1', 'pk', 'Alice', x'', 0, 'hello', 'dev', '#fff', 'online')",
+            [],
+        ).unwrap();
+        let role: String = conn.query_row(
+            "SELECT role FROM space_members WHERE space_id='s1'", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(role, "dev");
         // idempotent
         run_migrations_v2(&conn).unwrap();
     }
