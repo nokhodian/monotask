@@ -507,6 +507,60 @@ fn get_card_history_cmd(
     Ok(get_card_history(&doc, &card_id))
 }
 
+#[tauri::command]
+fn export_board_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+) -> Result<String, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let title = kanban_core::board::get_board_title(&doc)
+        .unwrap_or_else(|_| board_id.clone());
+    let columns = kanban_core::column::list_columns(&doc).map_err(|e| e.to_string())?;
+    let mut col_views = Vec::with_capacity(columns.len());
+    for col in &columns {
+        let card_ids = get_column_card_ids(&doc, &col.id);
+        let mut cards = Vec::new();
+        for cid in card_ids {
+            if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
+                if !card.deleted && !card.archived {
+                    let labels = get_card_labels(&doc, &cid);
+                    let history: Vec<MoveEvent> = vec![];
+                    let last_move = history.into_iter().last();
+                    let assignee = get_card_str_field(&doc, &cid, "assignee");
+                    let cover_color = get_card_str_field(&doc, &cid, "cover_color");
+                    let priority = get_card_str_field(&doc, &cid, "priority");
+                    let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
+                        .unwrap_or_default()
+                        .iter()
+                        .flat_map(|cl| cl.items.iter())
+                        .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
+                    cards.push(CardView {
+                        id: card.id.clone(),
+                        title: card.title,
+                        number: card.number.map(|n| n.to_display()),
+                        has_description: !card.description.is_empty(),
+                        due_date: card.due_date,
+                        assignee,
+                        labels,
+                        last_move,
+                        checklist_total,
+                        checklist_done,
+                        cover_color,
+                        priority,
+                    });
+                }
+            }
+        }
+        col_views.push(ColumnView { id: col.id.clone(), title: col.title.clone(), cards });
+    }
+    let detail = BoardDetail { id: board_id, title, columns: col_views };
+    // suppress unused mut warning — doc may be mutated by auto-column init in get_board_detail
+    let _ = &mut doc;
+    serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
+}
+
 fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<String> {
     use automerge::ReadDoc;
     let card_obj = kanban_core::card::get_card_obj(doc, card_id).ok()?;
@@ -2219,6 +2273,7 @@ fn main() {
             undo_cmd,
             redo_cmd,
             get_card_history_cmd,
+            export_board_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
