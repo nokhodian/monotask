@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 use kanban_storage::Storage;
 use kanban_crypto::Identity;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 struct AppState {
     storage: Mutex<Storage>,
@@ -1784,9 +1784,38 @@ fn main() {
                 data_dir: data_dir.clone(),
                 bootstrap_peers: load_saved_peers(&data_dir),
             };
-            let net_handle = tauri::async_runtime::block_on(
+            let mut net_handle = tauri::async_runtime::block_on(
                 kanban_net::NetworkHandle::start(net_config, net_storage, identity_bytes)
             ).ok();
+
+            // Drain P2P network events and emit to frontend as Tauri events
+            let app_handle_for_events = app.app_handle().clone();
+            if let Some(ref mut handle) = net_handle {
+                if let Some(mut event_rx) = handle.take_event_rx() {
+                    tauri::async_runtime::spawn(async move {
+                        while let Some(event) = event_rx.recv().await {
+                            match event {
+                                kanban_net::NetEvent::BoardSynced { board_id, peer_id } => {
+                                    let _ = app_handle_for_events.emit("board-synced",
+                                        serde_json::json!({"board_id": board_id, "peer_id": peer_id}));
+                                }
+                                kanban_net::NetEvent::PeerConnected { peer_id } => {
+                                    let _ = app_handle_for_events.emit("peer-connected",
+                                        serde_json::json!({"peer_id": peer_id}));
+                                }
+                                kanban_net::NetEvent::PeerDisconnected { peer_id } => {
+                                    let _ = app_handle_for_events.emit("peer-disconnected",
+                                        serde_json::json!({"peer_id": peer_id}));
+                                }
+                                kanban_net::NetEvent::SyncError { board_id, error } => {
+                                    let _ = app_handle_for_events.emit("sync-error",
+                                        serde_json::json!({"board_id": board_id, "error": error}));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
 
             // Announce existing spaces so peers can find us immediately on startup.
             if let Some(ref handle) = net_handle {
