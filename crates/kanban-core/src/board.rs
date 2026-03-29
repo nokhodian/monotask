@@ -26,3 +26,8 @@ pub fn get_board_title(doc: &AutoCommit) -> Result<String> {
     crate::get_string(doc, &ROOT, "title")?
         .ok_or_else(|| crate::Error::InvalidDocument("board missing title".into()))
 }
+
+pub fn set_board_title(doc: &mut AutoCommit, title: &str) -> Result<()> {
+    doc.put(ROOT, "title", title)?;
+    Ok(())
+}
