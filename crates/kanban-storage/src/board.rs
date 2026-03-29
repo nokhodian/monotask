@@ -37,6 +37,20 @@ pub fn list_board_ids(conn: &rusqlite::Connection) -> Result<Vec<String>, Storag
     Ok(ids)
 }
 
+pub fn set_cached_title(conn: &rusqlite::Connection, board_id: &str, title: &str) -> Result<(), StorageError> {
+    conn.execute(
+        "UPDATE boards SET cached_title = ?1 WHERE board_id = ?2",
+        rusqlite::params![title, board_id],
+    )?;
+    Ok(())
+}
+
+pub fn list_boards_with_titles(conn: &rusqlite::Connection) -> Result<Vec<(String, Option<String>)>, StorageError> {
+    let mut stmt = conn.prepare("SELECT board_id, cached_title FROM boards WHERE is_system = 0 ORDER BY last_modified DESC")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
 /// Returns (board_id, last_modified unix timestamp) for boards in active spaces only.
 pub fn list_boards_with_timestamps(conn: &rusqlite::Connection) -> Result<Vec<(String, i64)>, StorageError> {
     let mut stmt = conn.prepare(

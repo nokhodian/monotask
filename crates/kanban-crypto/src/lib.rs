@@ -151,7 +151,7 @@ pub fn verify_invite_token_signature(token: &str) -> Result<InviteMetadata, Cryp
     let pubkey_bytes: [u8; 32] = bytes[16..48].try_into().unwrap();
     let timestamp = u64::from_le_bytes(bytes[48..56].try_into().unwrap());
 
-    let (space_doc, sig_bytes) = if bytes.len() == 120 {
+    let (space_doc, _sig_bytes) = if bytes.len() == 120 {
         // Legacy v1: no doc
         let sig = &bytes[56..120];
         Identity::verify(&pubkey_bytes, &bytes[0..56], sig)
