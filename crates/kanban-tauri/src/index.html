@@ -3058,7 +3058,7 @@
           const presence = (p && p.presence) || 'online';
           const presenceColor = presence === 'online' ? '#4a9a4a' : presence === 'away' ? '#c8962a' : '#555';
           const avatarStyle = (p && p.avatar_b64)
-            ? `background-image:url(data:image/png;base64,${p.avatar_b64});background-size:cover;`
+            ? `background-image:url(data:image/png;base64,${p.avatar_b64.replace(/"/g, '').replace(/[);]/g, '')});background-size:cover;`
             : `background:${color};`;
           const initial = (p && p.display_name) ? p.display_name[0].toUpperCase() : '?';
           return `<span class="peer-identity-chip">
@@ -3080,7 +3080,7 @@
         spacesEl.innerHTML = spaces.map(s =>
           `<div class="net-sync-space-row">
             <span class="net-sync-space-dot"></span>
-            <span class="net-sync-space-name">${s.name || 'Unnamed'}</span>
+            <span class="net-sync-space-name">${escapeHtml(s.name || 'Unnamed')}</span>
             <span class="net-sync-space-id">${(s.id || '').slice(0, 8)}</span>
           </div>`
         ).join('');
@@ -3110,7 +3110,7 @@
       // Timestamp
       document.getElementById('net-status-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (e) {
-      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${e}</span>`;
+      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${escapeHtml(String(e))}</span>`;
     }
 
     await renderSyncPeers();
@@ -3351,7 +3351,7 @@
       const color = safeCssColor(msg.author_color || memberInfo?.color_accent || '#4a9a8a');
       const avatarB64 = msg.author_avatar_b64 || memberInfo?.avatar_b64 || null;
       const avatar = avatarB64
-        ? `<img src="data:image/png;base64,${avatarB64}" />`
+        ? `<img src="data:image/png;base64,${avatarB64.replace(/"/g, '')}" />`
         : `<span>${(name[0]||'?').toUpperCase()}</span>`;
 
       const renderedText = renderChatText(msg.text, msg.refs || []);
@@ -3653,7 +3653,7 @@
       if (sub) { try { await populateSpaceBoardsSub(sub, currentSpaceId); } catch (e) { /* ignore */ } }
     }
   }
-  setInterval(pollSyncStatus, 4000);
+  window._syncStatusInterval = setInterval(pollSyncStatus, 4000);
   pollSyncStatus();
 
   // ── Auto-update ──────────────────────────────────────────────────────────
@@ -3665,12 +3665,12 @@
         document.getElementById('update-banner').classList.add('visible');
       }
     } catch (e) { /* network unavailable — ignore */ }
+    window._updateCheckTimer = setTimeout(checkForUpdate, 60 * 60 * 1000);
   }
 
   function dismissUpdateBanner() {
     document.getElementById('update-banner').classList.remove('visible');
-    // Snooze: re-check in 1h
-    setTimeout(checkForUpdate, 60 * 60 * 1000);
+    // Snooze: re-check in 1h (checkForUpdate reschedules itself, no extra timer needed)
   }
 
   async function doUpdate() {
@@ -3684,9 +3684,8 @@
     }
   }
 
-  // Check on startup (after 3s delay so app is settled), then every hour
-  setTimeout(checkForUpdate, 3000);
-  setInterval(checkForUpdate, 60 * 60 * 1000);
+  // Check on startup (after 3s delay so app is settled); checkForUpdate reschedules itself every hour
+  window._updateCheckTimer = setTimeout(checkForUpdate, 3000);
 </script>
 </body>
 </html>
