@@ -3817,7 +3817,13 @@
   }
 
   // Check on startup (after 3s delay so app is settled); checkForUpdate reschedules itself every hour
+  clearTimeout(window._updateCheckTimer);
   window._updateCheckTimer = setTimeout(checkForUpdate, 3000);
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(window._syncStatusInterval);
+    clearTimeout(window._updateCheckTimer);
+  });
 
   // ── Global Search Panel ──────────────────────────────────────────────────
 
@@ -3836,6 +3842,16 @@
   // Close on overlay background click
   document.getElementById('search-overlay').addEventListener('click', (e) => {
     if (e.target === document.getElementById('search-overlay')) closeSearch();
+  });
+
+  // Delegated click handler for search results (attached once — avoids per-item listener leaks)
+  document.getElementById('search-results').addEventListener('click', (e) => {
+    const item = e.target.closest('.search-result-item');
+    if (!item) return;
+    closeSearch();
+    if (item.dataset.boardId) {
+      navigateToBoard(item.dataset.boardId, item.dataset.cardId);
+    }
   });
 
   let _searchTimer = null;
@@ -3861,13 +3877,9 @@
         const item = document.createElement('div');
         item.className = 'search-result-item';
         item.dataset.index = i;
+        item.dataset.boardId = r.board_id || '';
+        item.dataset.cardId = r.card_id || '';
         item.innerHTML = `<span class="search-result-title">${escapeHtml(r.title)}</span><span class="search-result-sub">${escapeHtml(r.column_name)}</span>`;
-        item.addEventListener('click', () => {
-          closeSearch();
-          if (r.board_id) {
-            navigateToBoard(r.board_id, r.card_id);
-          }
-        });
         container.appendChild(item);
       });
     }, 250);
