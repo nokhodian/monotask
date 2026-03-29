@@ -1022,7 +1022,7 @@ fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, Str
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
     ).ok();
 
-    let (seq, action_tag, forward_bytes) = match row {
+    let (seq, _action_tag, forward_bytes) = match row {
         None => return Ok(false),
         Some(r) => r,
     };

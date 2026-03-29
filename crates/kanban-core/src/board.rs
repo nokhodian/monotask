@@ -1,4 +1,4 @@
-use automerge::{AutoCommit, ObjType, ReadDoc, transaction::Transactable, ROOT};
+use automerge::{AutoCommit, transaction::Transactable, ROOT};
 use serde::{Deserialize, Serialize};
 use crate::Result;
 
