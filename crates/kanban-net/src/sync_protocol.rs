@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_NAME: &str = "/monotask/board-sync/1.0.0";
 
+const MAX_MSG_SIZE: u32 = 10 * 1024 * 1024; // 10 MB
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncRequest {
     /// Prove Space membership and share which boards this peer has.
@@ -61,6 +63,12 @@ impl request_response::Codec for MonotaskCodec {
     {
         use futures::AsyncReadExt;
         let len = read_u32(io).await?;
+        if len > MAX_MSG_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("message too large: {} bytes (max {})", len, MAX_MSG_SIZE),
+            ));
+        }
         let mut buf = vec![0u8; len as usize];
         io.read_exact(&mut buf).await?;
         ciborium::from_reader(buf.as_slice())
@@ -73,6 +81,12 @@ impl request_response::Codec for MonotaskCodec {
     {
         use futures::AsyncReadExt;
         let len = read_u32(io).await?;
+        if len > MAX_MSG_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("message too large: {} bytes (max {})", len, MAX_MSG_SIZE),
+            ));
+        }
         let mut buf = vec![0u8; len as usize];
         io.read_exact(&mut buf).await?;
         ciborium::from_reader(buf.as_slice())

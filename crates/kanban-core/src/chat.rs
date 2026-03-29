@@ -54,6 +54,13 @@ pub fn list_messages(doc: &AutoCommit, limit: usize, before_ts: Option<u64>) -> 
             Some(v) => v,
             None => continue,
         };
+        // Skip soft-deleted messages
+        let deleted = matches!(
+            doc.get(&entry, "deleted")?,
+            Some((automerge::Value::Scalar(s), _)) if matches!(s.as_ref(), automerge::ScalarValue::Boolean(true))
+        );
+        if deleted { continue; }
+
         let id = crate::get_string(doc, &entry, "id")?.unwrap_or_default();
         let author = crate::get_string(doc, &entry, "author")?.unwrap_or_default();
         let text = crate::get_string(doc, &entry, "text")?.unwrap_or_default();

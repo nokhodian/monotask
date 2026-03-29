@@ -83,7 +83,8 @@ impl SyncTrigger {
 pub struct NetworkHandle {
     pub(crate) cmd_tx: mpsc::Sender<NetCommand>,
     /// Receive sync events. Poll this in your event loop.
-    pub event_rx: mpsc::Receiver<NetEvent>,
+    /// Wrapped in Option so it can be taken out via `take_event_rx`.
+    pub event_rx: Option<mpsc::Receiver<NetEvent>>,
 }
 
 impl NetworkHandle {
@@ -102,7 +103,7 @@ impl NetworkHandle {
 
         tokio::spawn(swarm::run(config, storage, identity_bytes, cmd_rx, event_tx));
 
-        Ok(Self { cmd_tx, event_rx })
+        Ok(Self { cmd_tx, event_rx: Some(event_rx) })
     }
 
     /// Tell the node which Spaces this peer belongs to (re-call after join/leave).
@@ -128,6 +129,12 @@ impl NetworkHandle {
     /// Return a cloneable sender so you can trigger sync while also receiving events.
     pub fn sync_trigger(&self) -> SyncTrigger {
         SyncTrigger(self.cmd_tx.clone())
+    }
+
+    /// Take the event receiver so a background task can drain it.
+    /// Returns None if already taken.
+    pub fn take_event_rx(&mut self) -> Option<mpsc::Receiver<NetEvent>> {
+        self.event_rx.take()
     }
 
     /// Synchronous version of announce_spaces — safe to call from non-async Tauri commands.

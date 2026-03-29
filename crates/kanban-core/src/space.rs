@@ -32,7 +32,7 @@ pub struct Member {
 }
 
 /// Profile embedded into SpaceDoc.members map entries.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MemberProfile {
     pub display_name: String,  // empty string if not set
     pub avatar_b64: String,    // base64-encoded bytes; empty string if not set

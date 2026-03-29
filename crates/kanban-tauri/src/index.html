@@ -358,6 +358,10 @@
       position: absolute; inset: 0; opacity: 0; cursor: pointer;
       width: 100%; height: 100%; font-size: 0;
     }
+    .card-priority-badge { display:inline-block; font-size:10px; font-weight:600; border-radius:3px; padding:1px 6px; margin-top:3px; }
+    .priority-low { background:rgba(74,130,220,0.2); color:#4a82dc; }
+    .priority-medium { background:rgba(200,150,42,0.2); color:#c8962a; }
+    .priority-high { background:rgba(220,70,70,0.2); color:#dc4646; }
     .card-last-move { font-size: 10px; color: #888; margin-top: 5px; opacity: 0.75; }
     .card-assignee-avatar {
       width: 20px; height: 20px; border-radius: 50%;
@@ -979,6 +983,26 @@
     }
     .update-overlay-msg { color: #8aca8a; font-size: 14px; }
     .update-overlay-sub { color: #4a6a4a; font-size: 11px; }
+    .search-result-item {
+      padding: 8px 16px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-radius: 4px;
+      margin: 2px 8px;
+    }
+    .search-result-item:hover, .search-result-item.selected {
+      background: #1e1e3a;
+    }
+    .search-result-title {
+      color: #d0d0f0;
+      font-size: 13px;
+    }
+    .search-result-sub {
+      color: #666;
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>
@@ -1286,6 +1310,15 @@
         <div class="card-detail-section">
           <div class="card-detail-label">Assignee</div>
           <div id="card-detail-assignee-picker" class="assignee-picker"></div>
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Priority</div>
+          <select id="card-detail-priority" style="background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:6px 10px;border-radius:4px;font-size:13px;outline:none;width:100%;">
+            <option value="">No priority</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
         </div>
         <div class="card-detail-section">
           <div class="card-detail-label">Cover Color</div>
@@ -1881,6 +1914,14 @@
     titleEl.textContent = card.title;
     body.appendChild(titleEl);
 
+    // Priority badge
+    if (card.priority) {
+      const pBadge = document.createElement('span');
+      pBadge.className = 'card-priority-badge priority-' + card.priority;
+      pBadge.textContent = card.priority.charAt(0).toUpperCase() + card.priority.slice(1);
+      body.appendChild(pBadge);
+    }
+
     // Meta row (number, description indicator, due date)
     const meta = document.createElement('div');
     meta.className = 'kanban-card-meta';
@@ -1932,6 +1973,7 @@
           labels: current.labels, dueDate: newDate,
           assignee: current.assignee || null,
           coverColor: current.cover_color || null,
+          priority: current.priority || null,
         });
       } catch (err) { console.error('Failed to save due date', err); }
     };
@@ -2097,6 +2139,7 @@
       document.getElementById('card-detail-desc').value = card.description || '';
       document.getElementById('card-detail-due').value = card.due_date || '';
       document.getElementById('card-detail-num').textContent = card.number ? '#' + card.number : '';
+      document.getElementById('card-detail-priority').value = card.priority || '';
       document.getElementById('comment-input').value = '';
       renderLabelPicker(card.labels || []);
       renderAssigneePicker(spaceMembers, card.assignee || null);
@@ -2198,6 +2241,50 @@
           } catch (err) { alert('Error deleting comment: ' + err); }
         };
         footer.appendChild(time);
+        // Edit button — only for own comments
+        const myPubkey = window._myPubkey || '';
+        if (item.data.author === myPubkey) {
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn-del-comment';
+          editBtn.title = 'Edit comment';
+          editBtn.textContent = '✎';
+          editBtn.style.marginRight = '4px';
+          editBtn.onclick = () => {
+            // Replace text div with inline editor
+            const editor = document.createElement('textarea');
+            editor.className = 'comment-edit-textarea';
+            editor.value = item.data.text;
+            editor.rows = 2;
+            editor.style.cssText = 'width:100%;resize:vertical;background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;border-radius:4px;padding:4px;font-size:13px;box-sizing:border-box;margin-bottom:4px;';
+            const saveEditBtn = document.createElement('button');
+            saveEditBtn.className = 'btn-primary';
+            saveEditBtn.style.cssText = 'font-size:11px;padding:2px 8px;';
+            saveEditBtn.textContent = 'Save';
+            const cancelEditBtn = document.createElement('button');
+            cancelEditBtn.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:4px;';
+            cancelEditBtn.textContent = 'Cancel';
+            saveEditBtn.onclick = async () => {
+              const newText = editor.value.trim();
+              if (!newText) return;
+              try {
+                await invoke('edit_comment_cmd', { boardId, cardId, commentId: item.data.id, text: newText });
+                const refreshed = await invoke('get_card_cmd', { boardId, cardId });
+                renderActivityFeed(refreshed, boardId, cardId);
+              } catch (err) { alert('Error editing comment: ' + err); }
+            };
+            cancelEditBtn.onclick = async () => {
+              const refreshed = await invoke('get_card_cmd', { boardId, cardId });
+              renderActivityFeed(refreshed, boardId, cardId);
+            };
+            div.replaceChild(editor, text);
+            const editActions = document.createElement('div');
+            editActions.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;';
+            editActions.appendChild(saveEditBtn);
+            editActions.appendChild(cancelEditBtn);
+            div.insertBefore(editActions, footer);
+          };
+          footer.appendChild(editBtn);
+        }
         footer.appendChild(delBtn);
         div.appendChild(author);
         div.appendChild(text);
@@ -2411,9 +2498,10 @@
     const labels = getSelectedLabels();
     const assignee = _assigneeSelected || null;
     const coverColor = _selectedCoverColor || null;
+    const priority = document.getElementById('card-detail-priority').value || null;
     if (!title) return;
     try {
-      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee, coverColor });
+      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee, coverColor, priority });
       // Handle "Move to column" if changed
       const moveColSel = document.getElementById('card-detail-move-col');
       const selectedColId = moveColSel.value;
@@ -3058,7 +3146,7 @@
           const presence = (p && p.presence) || 'online';
           const presenceColor = presence === 'online' ? '#4a9a4a' : presence === 'away' ? '#c8962a' : '#555';
           const avatarStyle = (p && p.avatar_b64)
-            ? `background-image:url(data:image/png;base64,${p.avatar_b64});background-size:cover;`
+            ? `background-image:url(data:image/png;base64,${p.avatar_b64.replace(/"/g, '').replace(/[);]/g, '')});background-size:cover;`
             : `background:${color};`;
           const initial = (p && p.display_name) ? p.display_name[0].toUpperCase() : '?';
           return `<span class="peer-identity-chip">
@@ -3080,7 +3168,7 @@
         spacesEl.innerHTML = spaces.map(s =>
           `<div class="net-sync-space-row">
             <span class="net-sync-space-dot"></span>
-            <span class="net-sync-space-name">${s.name || 'Unnamed'}</span>
+            <span class="net-sync-space-name">${escapeHtml(s.name || 'Unnamed')}</span>
             <span class="net-sync-space-id">${(s.id || '').slice(0, 8)}</span>
           </div>`
         ).join('');
@@ -3110,7 +3198,7 @@
       // Timestamp
       document.getElementById('net-status-ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (e) {
-      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${e}</span>`;
+      document.getElementById('net-peers-container').innerHTML = `<span style="color:#c84a3a;font-size:12px;">Error: ${escapeHtml(String(e))}</span>`;
     }
 
     await renderSyncPeers();
@@ -3343,30 +3431,74 @@
     // messages come newest-first from backend; display oldest-first
     const sorted = [...chatMessages].reverse();
     const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+    const myPubkey = window._myPubkey || '';
 
-    container.innerHTML = sorted.map(msg => {
-      // Use pre-resolved fields from ChatMessageView if available, otherwise fall back to member lookup
+    container.innerHTML = '';
+    for (const msg of sorted) {
       const memberInfo = findMemberByPubkey(msg.author);
-      const name = msg.author_name || memberInfo?.display_name || msg.author.slice(0,8);
-      const color = safeCssColor(msg.author_color || memberInfo?.color_accent || '#4a9a8a');
-      const avatarB64 = msg.author_avatar_b64 || memberInfo?.avatar_b64 || null;
-      const avatar = avatarB64
-        ? `<img src="data:image/png;base64,${avatarB64}" />`
-        : `<span>${(name[0]||'?').toUpperCase()}</span>`;
+      const name = msg.display_name || memberInfo?.display_name || msg.author.slice(0,8);
+      const color = safeCssColor(msg.color_accent || memberInfo?.color_accent || '#4a9a8a');
+      const avatarB64 = msg.avatar_b64 || memberInfo?.avatar_b64 || null;
 
-      const renderedText = renderChatText(msg.text, msg.refs || []);
+      const msgEl = document.createElement('div');
+      msgEl.className = 'chat-msg';
 
-      return `<div class="chat-msg">
-        <div class="chat-msg-avatar" style="background:${color}">${avatar}</div>
-        <div class="chat-msg-body">
-          <div class="chat-msg-meta">
-            <span class="chat-msg-author" style="color:${color}">${escapeHtml(name)}</span>
-            <span class="chat-msg-time">${relativeTime(msg.created_at)}</span>
-          </div>
-          <div class="chat-msg-text">${renderedText}</div>
-        </div>
-      </div>`;
-    }).join('');
+      const avatarEl = document.createElement('div');
+      avatarEl.className = 'chat-msg-avatar';
+      avatarEl.style.background = color;
+      if (avatarB64) {
+        const img = document.createElement('img');
+        img.src = 'data:image/png;base64,' + avatarB64.replace(/"/g, '');
+        avatarEl.appendChild(img);
+      } else {
+        avatarEl.textContent = (name[0] || '?').toUpperCase();
+      }
+
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'chat-msg-body';
+
+      const metaEl = document.createElement('div');
+      metaEl.className = 'chat-msg-meta';
+      const authorSpan = document.createElement('span');
+      authorSpan.className = 'chat-msg-author';
+      authorSpan.style.color = color;
+      authorSpan.textContent = name;
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'chat-msg-time';
+      timeSpan.textContent = relativeTime(msg.created_at);
+      metaEl.appendChild(authorSpan);
+      metaEl.appendChild(timeSpan);
+
+      // Delete button — only for own messages
+      if (msg.author === myPubkey) {
+        const delMsgBtn = document.createElement('button');
+        delMsgBtn.className = 'btn-del-comment';
+        delMsgBtn.title = 'Delete message';
+        delMsgBtn.textContent = '×';
+        delMsgBtn.style.cssText = 'margin-left:auto;opacity:0.5;';
+        delMsgBtn.onmouseenter = () => { delMsgBtn.style.opacity = '1'; };
+        delMsgBtn.onmouseleave = () => { delMsgBtn.style.opacity = '0.5'; };
+        delMsgBtn.onclick = async () => {
+          if (!confirm('Delete this message?')) return;
+          try {
+            await invoke('delete_chat_message_cmd', { spaceId: currentSpaceId, messageId: msg.id });
+            chatMessages = chatMessages.filter(m => m.id !== msg.id);
+            renderChatMessages();
+          } catch (err) { alert('Error deleting message: ' + err); }
+        };
+        metaEl.appendChild(delMsgBtn);
+      }
+
+      const textEl = document.createElement('div');
+      textEl.className = 'chat-msg-text';
+      textEl.innerHTML = renderChatText(msg.text, msg.refs || []);
+
+      bodyEl.appendChild(metaEl);
+      bodyEl.appendChild(textEl);
+      msgEl.appendChild(avatarEl);
+      msgEl.appendChild(bodyEl);
+      container.appendChild(msgEl);
+    }
 
     if (wasAtBottom) {
       container.scrollTop = container.scrollHeight;
@@ -3653,7 +3785,7 @@
       if (sub) { try { await populateSpaceBoardsSub(sub, currentSpaceId); } catch (e) { /* ignore */ } }
     }
   }
-  setInterval(pollSyncStatus, 4000);
+  window._syncStatusInterval = setInterval(pollSyncStatus, 4000);
   pollSyncStatus();
 
   // ── Auto-update ──────────────────────────────────────────────────────────
@@ -3665,12 +3797,12 @@
         document.getElementById('update-banner').classList.add('visible');
       }
     } catch (e) { /* network unavailable — ignore */ }
+    window._updateCheckTimer = setTimeout(checkForUpdate, 60 * 60 * 1000);
   }
 
   function dismissUpdateBanner() {
     document.getElementById('update-banner').classList.remove('visible');
-    // Snooze: re-check in 1h
-    setTimeout(checkForUpdate, 60 * 60 * 1000);
+    // Snooze: re-check in 1h (checkForUpdate reschedules itself, no extra timer needed)
   }
 
   async function doUpdate() {
@@ -3684,9 +3816,185 @@
     }
   }
 
-  // Check on startup (after 3s delay so app is settled), then every hour
-  setTimeout(checkForUpdate, 3000);
-  setInterval(checkForUpdate, 60 * 60 * 1000);
+  // Check on startup (after 3s delay so app is settled); checkForUpdate reschedules itself every hour
+  window._updateCheckTimer = setTimeout(checkForUpdate, 3000);
+
+  // ── Global Search Panel ──────────────────────────────────────────────────
+
+  function openSearch() {
+    const overlay = document.getElementById('search-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>';
+    document.getElementById('search-input').focus();
+  }
+
+  function closeSearch() {
+    document.getElementById('search-overlay').style.display = 'none';
+  }
+
+  // Close on overlay background click
+  document.getElementById('search-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('search-overlay')) closeSearch();
+  });
+
+  let _searchTimer = null;
+  let _searchSelected = -1;
+
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    clearTimeout(_searchTimer);
+    _searchSelected = -1;
+    _searchTimer = setTimeout(async () => {
+      const q = e.target.value.trim();
+      if (!q) {
+        document.getElementById('search-results').innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>';
+        return;
+      }
+      const results = await invoke('search_cards_cmd', { query: q });
+      const container = document.getElementById('search-results');
+      if (results.length === 0) {
+        container.innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">No cards found</div>';
+        return;
+      }
+      container.innerHTML = '';
+      results.forEach((r, i) => {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.dataset.index = i;
+        item.innerHTML = `<span class="search-result-title">${escapeHtml(r.title)}</span><span class="search-result-sub">${escapeHtml(r.column_name)}</span>`;
+        item.addEventListener('click', () => {
+          closeSearch();
+          if (r.board_id) {
+            navigateToBoard(r.board_id, r.card_id);
+          }
+        });
+        container.appendChild(item);
+      });
+    }, 250);
+  });
+
+  document.getElementById('search-input').addEventListener('keydown', (e) => {
+    const items = document.querySelectorAll('.search-result-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      _searchSelected = Math.min(_searchSelected + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      _searchSelected = Math.max(_searchSelected - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
+    } else if (e.key === 'Enter') {
+      if (_searchSelected >= 0 && items[_searchSelected]) {
+        items[_searchSelected].click();
+      }
+    } else if (e.key === 'Escape') {
+      closeSearch();
+    }
+  });
+
+  // Function to navigate to a board and open a card
+  async function navigateToBoard(boardId, cardId) {
+    await loadBoardColumns(boardId);
+    if (cardId) {
+      setTimeout(() => {
+        const cardEl = document.querySelector(`[data-card-id="${cardId}"]`);
+        if (cardEl) cardEl.click();
+      }, 300);
+    }
+  }
+
+  // ── Global Keyboard Shortcuts ─────────────────────────────────────────────
+
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+    // Cmd+Z / Ctrl+Z — undo
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey && currentBoardId) {
+      e.preventDefault();
+      invoke('undo_cmd', { boardId: currentBoardId }).then(success => {
+        if (success) loadBoardColumns(currentBoardId);
+      }).catch(() => {});
+      return;
+    }
+
+    // Cmd+Shift+Z / Ctrl+Y — redo
+    if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) ||
+        ((e.metaKey || e.ctrlKey) && e.key === 'y')) {
+      if (!currentBoardId) return;
+      e.preventDefault();
+      invoke('redo_cmd', { boardId: currentBoardId }).then(success => {
+        if (success) loadBoardColumns(currentBoardId);
+      }).catch(() => {});
+      return;
+    }
+
+    // Cmd+K / Ctrl+K — open global search
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      openSearch();
+      return;
+    }
+
+    // Escape — close any open modal/panel
+    if (e.key === 'Escape' && !isTyping) {
+      // Close search overlay
+      if (document.getElementById('search-overlay').style.display !== 'none') {
+        closeSearch();
+        return;
+      }
+      // Close card detail modal
+      const cardModal = document.getElementById('modal-card-detail');
+      if (cardModal && cardModal.style.display !== 'none') {
+        closeModal('modal-card-detail');
+        return;
+      }
+      // Close net sync panel
+      const syncPanel = document.getElementById('net-sync-panel');
+      if (syncPanel && syncPanel.classList.contains('open')) {
+        closeNetSyncPanel();
+        return;
+      }
+    }
+
+    // N — new card (when a board is active and not typing)
+    if (e.key === 'n' && !isTyping && currentBoardId) {
+      e.preventDefault();
+      const firstAddBtn = document.querySelector('.btn-add-card');
+      if (firstAddBtn) firstAddBtn.click();
+    }
+  });
+
+  // Listen for real-time P2P events from backend
+  if (window.__TAURI__ && window.__TAURI__.event) {
+    const { listen } = window.__TAURI__.event;
+    // On board sync, refresh the current board if it matches
+    listen('board-synced', (e) => {
+      const { board_id } = e.payload;
+      if (board_id === currentBoardId) {
+        loadBoardColumns(board_id).catch(() => {});
+      }
+    }).catch(() => {});
+    // On peer connect/disconnect, refresh sync status display
+    listen('peer-connected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
+    listen('peer-disconnected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
+  }
 </script>
+
+<!-- Global Search Panel -->
+<div id="search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:flex-start;justify-content:center;padding-top:80px;">
+  <div id="search-box" style="background:#16162a;border:1px solid #2a2a4a;border-radius:10px;width:560px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    <div style="padding:12px 16px;border-bottom:1px solid #2a2a4a;">
+      <input id="search-input" type="text" placeholder="Search cards..." autocomplete="off"
+        style="width:100%;background:transparent;border:none;outline:none;color:#e0e0f0;font-size:16px;">
+    </div>
+    <div id="search-results" style="max-height:360px;overflow-y:auto;padding:8px 0;">
+      <div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>
+    </div>
+    <div style="padding:8px 16px;border-top:1px solid #1a1a30;font-size:11px;color:#444;">
+      ↑↓ navigate &nbsp;·&nbsp; ↵ open &nbsp;·&nbsp; Esc close
+    </div>
+  </div>
+</div>
 </body>
 </html>
