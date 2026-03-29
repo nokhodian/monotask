@@ -524,7 +524,7 @@ async fn cmd_sync(
     println!("Sync daemon running. Press Ctrl+C to stop.");
     loop {
         tokio::select! {
-            Some(event) = handle.event_rx.recv() => {
+            Some(event) = async { if let Some(rx) = handle.event_rx.as_mut() { rx.recv().await } else { None } } => {
                 match event {
                     NetEvent::PeerConnected { peer_id } =>
                         println!("connected: {peer_id}"),
