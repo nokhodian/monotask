@@ -388,6 +388,8 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
         .map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
+    kanban_storage::board::set_cached_title(storage.conn(), &board.id, &title)
+        .map_err(|e| e.to_string())?;
     trigger_board_sync(&board.id, &state);
     drop(storage);
     announce_all_spaces(&state);
@@ -397,16 +399,12 @@ fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<Boar
 #[tauri::command]
 fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
-    let ids = kanban_storage::board::list_board_ids(storage.conn())
+    let rows = kanban_storage::board::list_boards_with_titles(storage.conn())
         .map_err(|e| e.to_string())?;
-    let mut boards = Vec::with_capacity(ids.len());
-    for id in ids {
-        let title = kanban_storage::board::load_board(storage.conn(), &id)
-            .ok()
-            .and_then(|doc| kanban_core::board::get_board_title(&doc).ok())
-            .unwrap_or_else(|| id.clone());
-        boards.push(BoardSummary { id, title });
-    }
+    let boards = rows.into_iter().map(|(id, cached_title)| {
+        let title = cached_title.unwrap_or_else(|| id.clone());
+        BoardSummary { id, title }
+    }).collect();
     Ok(boards)
 }
 
@@ -441,7 +439,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
             if let Ok(card) = kanban_core::card::read_card(&doc, &cid) {
                 if !card.deleted && !card.archived {
                     let labels = get_card_labels(&doc, &cid);
-                    let history = get_card_history(&doc, &cid);
+                    let history: Vec<MoveEvent> = vec![];
                     let last_move = history.into_iter().last();
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
@@ -495,6 +493,18 @@ fn get_card_history(doc: &automerge::AutoCommit, card_id: &str) -> Vec<MoveEvent
             })
         })
         .collect()
+}
+
+#[tauri::command]
+fn get_card_history_cmd(
+    state: tauri::State<AppState>,
+    board_id: String,
+    card_id: String,
+) -> Result<Vec<MoveEvent>, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    Ok(get_card_history(&doc, &card_id))
 }
 
 fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<String> {
@@ -2148,6 +2158,7 @@ fn main() {
             install_update_cmd,
             undo_cmd,
             redo_cmd,
+            get_card_history_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
