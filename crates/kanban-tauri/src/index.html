@@ -3909,6 +3909,26 @@
     const tag = document.activeElement?.tagName?.toLowerCase();
     const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select';
 
+    // Cmd+Z / Ctrl+Z — undo
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey && currentBoardId) {
+      e.preventDefault();
+      invoke('undo_cmd', { boardId: currentBoardId }).then(success => {
+        if (success) loadBoardColumns(currentBoardId);
+      }).catch(() => {});
+      return;
+    }
+
+    // Cmd+Shift+Z / Ctrl+Y — redo
+    if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) ||
+        ((e.metaKey || e.ctrlKey) && e.key === 'y')) {
+      if (!currentBoardId) return;
+      e.preventDefault();
+      invoke('redo_cmd', { boardId: currentBoardId }).then(success => {
+        if (success) loadBoardColumns(currentBoardId);
+      }).catch(() => {});
+      return;
+    }
+
     // Cmd+K / Ctrl+K — open global search
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault();

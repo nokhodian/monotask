@@ -201,6 +201,37 @@ fn trigger_board_sync(board_id: &str, state: &tauri::State<'_, AppState>) {
     }
 }
 
+/// Push current board state onto undo stack before a mutation.
+/// Clears the redo stack for this board (new action invalidates redo history).
+fn push_undo(conn: &rusqlite::Connection, board_id: &str, actor_key: &str, action_tag: &str, doc_bytes: &[u8]) {
+    // Get next seq (max + 1)
+    let seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+        |r| r.get(0),
+    ).unwrap_or(1);
+    // Keep max 20 undo steps per board per user
+    let _ = conn.execute(
+        "DELETE FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq IN (
+            SELECT seq FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 ORDER BY seq ASC LIMIT MAX(0, (SELECT COUNT(*) FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2) - 19)
+         )",
+        rusqlite::params![board_id, actor_key],
+    );
+    let hlc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+    let _ = conn.execute(
+        "INSERT INTO undo_stack (board_id, actor_key, seq, action_tag, inverse_op, hlc) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![board_id, actor_key, seq, action_tag, doc_bytes, hlc],
+    );
+    // Clear redo for this board (new action invalidates redo history)
+    let _ = conn.execute(
+        "DELETE FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+    );
+}
+
 fn get_or_create_chat_doc(
     storage: &kanban_storage::Storage,
     space_id: &str,
@@ -711,6 +742,7 @@ fn update_card_cmd(
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
+    let pre_bytes = doc.save();
     let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
     doc.put(&card_obj, "title", title.as_str()).map_err(|e| e.to_string())?;
     doc.put(&card_obj, "description", description.as_str()).map_err(|e| e.to_string())?;
@@ -736,6 +768,7 @@ fn update_card_cmd(
     }
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "update_card", &pre_bytes);
     // Update card search index title
     let _ = storage.conn().execute(
         "UPDATE card_search_index SET title = ?1 WHERE card_id = ?2",
@@ -816,9 +849,11 @@ fn delete_card_cmd(board_id: String, card_id: String, state: tauri::State<AppSta
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
+    let pre_bytes = doc.save();
     kanban_core::card::delete_card(&mut doc, &card_id).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "delete_card", &pre_bytes);
     // Remove from card search index
     let _ = storage.conn().execute(
         "DELETE FROM card_search_index WHERE card_id = ?1",
@@ -905,6 +940,7 @@ fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppSt
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
+    let pre_bytes = doc.save();
     let cols = match doc.get(automerge::ROOT, "columns").map_err(|e| e.to_string())? {
         Some((_, id)) => id,
         None => return Err("board has no columns".into()),
@@ -919,8 +955,106 @@ fn delete_column_cmd(board_id: String, col_id: String, state: tauri::State<AppSt
     doc.delete(&cols, idx).map_err(|e| e.to_string())?;
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
+    push_undo(storage.conn(), &board_id, &state.identity.public_key_hex(), "delete_column", &pre_bytes);
     trigger_board_sync(&board_id, &state);
     Ok(())
+}
+
+#[tauri::command]
+fn undo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, String> {
+    let actor_key = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let conn = storage.conn();
+
+    // Get most recent undo entry
+    let row: Option<(i64, String, Vec<u8>)> = conn.query_row(
+        "SELECT seq, action_tag, inverse_op FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 ORDER BY seq DESC LIMIT 1",
+        rusqlite::params![board_id, actor_key],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).ok();
+
+    let (seq, action_tag, prev_bytes) = match row {
+        None => return Ok(false), // nothing to undo
+        Some(r) => r,
+    };
+
+    // Save current board state to redo stack
+    let mut current_doc = kanban_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
+    let current_bytes = current_doc.save();
+    let redo_seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+        |r| r.get(0),
+    ).unwrap_or(1);
+    let hlc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+    let _ = conn.execute(
+        "INSERT INTO redo_stack (board_id, actor_key, seq, action_tag, forward_op, hlc) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![board_id, actor_key, redo_seq, action_tag, &current_bytes, hlc],
+    );
+
+    // Restore previous state
+    let mut prev_doc = automerge::AutoCommit::load(&prev_bytes).map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(conn, &board_id, &mut prev_doc).map_err(|e| e.to_string())?;
+
+    // Remove the undo entry
+    let _ = conn.execute(
+        "DELETE FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq = ?3",
+        rusqlite::params![board_id, actor_key, seq],
+    );
+
+    drop(storage);
+    trigger_board_sync(&board_id, &state);
+    Ok(true)
+}
+
+#[tauri::command]
+fn redo_cmd(board_id: String, state: tauri::State<AppState>) -> Result<bool, String> {
+    let actor_key = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let conn = storage.conn();
+
+    let row: Option<(i64, String, Vec<u8>)> = conn.query_row(
+        "SELECT seq, action_tag, forward_op FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2 ORDER BY seq DESC LIMIT 1",
+        rusqlite::params![board_id, actor_key],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).ok();
+
+    let (seq, action_tag, forward_bytes) = match row {
+        None => return Ok(false),
+        Some(r) => r,
+    };
+
+    // Save current state back to undo stack
+    let mut current_doc = kanban_storage::board::load_board(conn, &board_id).map_err(|e| e.to_string())?;
+    let current_bytes = current_doc.save();
+    let undo_seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM undo_stack WHERE board_id = ?1 AND actor_key = ?2",
+        rusqlite::params![board_id, actor_key],
+        |r| r.get(0),
+    ).unwrap_or(1);
+    let hlc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_default();
+    let _ = conn.execute(
+        "INSERT INTO undo_stack (board_id, actor_key, seq, action_tag, inverse_op, hlc) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![board_id, actor_key, undo_seq, "redo", &current_bytes, hlc],
+    );
+
+    let mut forward_doc = automerge::AutoCommit::load(&forward_bytes).map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(conn, &board_id, &mut forward_doc).map_err(|e| e.to_string())?;
+
+    let _ = conn.execute(
+        "DELETE FROM redo_stack WHERE board_id = ?1 AND actor_key = ?2 AND seq = ?3",
+        rusqlite::params![board_id, actor_key, seq],
+    );
+
+    drop(storage);
+    trigger_board_sync(&board_id, &state);
+    Ok(true)
 }
 
 #[tauri::command]
@@ -2012,6 +2146,8 @@ fn main() {
             search_cards_cmd,
             check_for_update_cmd,
             install_update_cmd,
+            undo_cmd,
+            redo_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
