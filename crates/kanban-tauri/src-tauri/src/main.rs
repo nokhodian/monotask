@@ -1449,6 +1449,24 @@ fn leave_space_cmd(space_id: String, state: tauri::State<AppState>) -> Result<()
 }
 
 #[tauri::command]
+fn rename_space_cmd(
+    space_id: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    validate_text(&new_name, "Space name", 100)?;
+    let my_pubkey = state.identity.public_key_hex();
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let space = kanban_storage::space::get_space(storage.conn(), &space_id)
+        .map_err(|e| e.to_string())?;
+    if space.owner_pubkey != my_pubkey {
+        return Err("Only the space owner can rename the space".into());
+    }
+    kanban_storage::space::rename_space(storage.conn(), &space_id, &new_name)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_my_profile(state: tauri::State<AppState>) -> Result<UserProfileView, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let profile = kanban_storage::space::get_profile(storage.conn())
@@ -2178,6 +2196,7 @@ fn main() {
             kick_member_cmd,
             delete_space_cmd,
             leave_space_cmd,
+            rename_space_cmd,
             get_my_profile,
             update_my_profile,
             import_ssh_key,
