@@ -111,6 +111,17 @@ fn load_identity(
     Ok(id)
 }
 
+/// Validates that a user-supplied string field is non-empty and within reasonable length.
+fn validate_text(s: &str, field: &str, max_len: usize) -> Result<(), String> {
+    if s.trim().is_empty() {
+        return Err(format!("{} cannot be empty", field));
+    }
+    if s.len() > max_len {
+        return Err(format!("{} is too long (max {} bytes)", field, max_len));
+    }
+    Ok(())
+}
+
 // ── Space helpers ─────────────────────────────────────────────────────────────
 
 fn space_to_view(space: kanban_core::space::Space) -> SpaceView {
@@ -219,6 +230,7 @@ fn get_or_create_chat_doc(
 
 #[tauri::command]
 fn create_space(name: String, state: tauri::State<AppState>) -> Result<SpaceView, String> {
+    validate_text(&name, "Space name", 200)?;
     let space_id = uuid::Uuid::new_v4().to_string();
     let owner_pubkey = state.identity.public_key_hex();
     let mut doc = kanban_core::space::create_space_doc(&name, &owner_pubkey)
@@ -513,6 +525,7 @@ fn get_column_card_ids(doc: &automerge::AutoCommit, col_id: &str) -> Vec<String>
 
 #[tauri::command]
 fn create_column_cmd(board_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
+    validate_text(&title, "Column title", 200)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
@@ -602,6 +615,7 @@ fn move_card_cmd(
 
 #[tauri::command]
 fn create_card_cmd(board_id: String, col_id: String, title: String, state: tauri::State<AppState>) -> Result<String, String> {
+    validate_text(&title, "Card title", 500)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
@@ -724,6 +738,7 @@ fn update_card_cmd(
 
 #[tauri::command]
 fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri::State<AppState>) -> Result<CommentView, String> {
+    validate_text(&text, "Comment", 10_000)?;
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
         .map_err(|e| e.to_string())?;
@@ -1245,10 +1260,19 @@ fn update_my_profile(
     presence: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
+    if !display_name.is_empty() {
+        validate_text(&display_name, "Display name", 100)?;
+    }
     use base64::Engine;
-    let avatar_blob = avatar_b64.as_deref()
-        .filter(|s| !s.is_empty())
-        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok());
+    let avatar_blob = if let Some(b64) = avatar_b64.as_deref().filter(|s| !s.is_empty()) {
+        // base64 string for 512KB decoded = ~700KB encoded
+        if b64.len() > 700_000 {
+            return Err("Avatar is too large (max 512 KB)".into());
+        }
+        base64::engine::general_purpose::STANDARD.decode(b64).ok()
+    } else {
+        None
+    };
     let pubkey = state.identity.public_key_hex();
     let new_profile = kanban_core::space::UserProfile {
         pubkey: pubkey.clone(),
