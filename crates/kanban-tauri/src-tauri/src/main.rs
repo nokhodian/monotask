@@ -2312,34 +2312,104 @@ async fn check_for_update_cmd() -> Result<Option<String>, String> {
 
 #[tauri::command]
 async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
-    // Find brew regardless of shell PATH
-    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        .iter()
-        .find(|p| std::path::Path::new(p).exists())
-        .copied()
-        .ok_or("Homebrew not found")?;
+    // Step 1: Fetch the latest release metadata to find the DMG URL.
+    // This bypasses Homebrew entirely — the cask may lag behind the actual release.
+    let api_out = tokio::process::Command::new("curl")
+        .args([
+            "-sfL", "--max-time", "15",
+            "-H", "User-Agent: monotask-updater",
+            "-H", "Accept: application/vnd.github.v3+json",
+            "https://api.github.com/repos/nokhodian/monotask/releases/latest",
+        ])
+        .output().await
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
 
-    let status = std::process::Command::new(brew)
-        .args(["upgrade", "--cask", "monotask", "--force"])
-        .status()
-        .map_err(|e| e.to_string())?;
-
-    if !status.success() {
-        return Err("brew upgrade failed".into());
+    if !api_out.status.success() {
+        return Err("GitHub API returned an error".into());
     }
 
-    // Clear Gatekeeper quarantine and self-sign
-    let _ = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("find /Applications/Monotask.app -print0 | xargs -0 xattr -c; codesign --force --deep --sign - /Applications/Monotask.app")
-        .status();
+    let body = String::from_utf8_lossy(&api_out.stdout);
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse release JSON: {e}"))?;
 
-    // Relaunch new version then exit
-    let _ = std::process::Command::new("open")
+    let tag = json["tag_name"].as_str().unwrap_or("latest").to_string();
+
+    // Find the aarch64 DMG asset
+    let dmg_url = json["assets"].as_array()
+        .and_then(|assets| {
+            assets.iter().find(|a| {
+                a["name"].as_str()
+                    .map(|n| n.ends_with(".dmg") && n.contains("aarch64"))
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|a| a["browser_download_url"].as_str())
+        .ok_or("No aarch64 DMG asset found in the release — check the GitHub release")?
+        .to_string();
+
+    // Step 2: Download the DMG
+    let tmp_dmg = format!("/tmp/Monotask-{}.dmg", tag);
+    let dl = tokio::process::Command::new("curl")
+        .args([
+            "-sfL", "--max-time", "300",
+            "-o", &tmp_dmg,
+            "-H", "User-Agent: monotask-updater",
+            &dmg_url,
+        ])
+        .status().await
+        .map_err(|e| format!("Download failed: {e}"))?;
+
+    if !dl.success() {
+        return Err("Failed to download DMG — check network connection".into());
+    }
+
+    // Step 3: Mount the DMG
+    let mount_out = tokio::process::Command::new("hdiutil")
+        .args(["attach", "-nobrowse", "-quiet", &tmp_dmg])
+        .output().await
+        .map_err(|e| format!("hdiutil attach failed: {e}"))?;
+
+    if !mount_out.status.success() {
+        let _ = tokio::fs::remove_file(&tmp_dmg).await;
+        return Err("Failed to mount DMG".into());
+    }
+
+    // Parse mount point from hdiutil output (last token on last line)
+    let mount_point = String::from_utf8_lossy(&mount_out.stdout)
+        .lines()
+        .last()
+        .and_then(|l| l.split_whitespace().last())
+        .ok_or("Could not determine DMG mount point")?
+        .to_string();
+
+    // Step 4: Copy app to /Applications (overwrite existing)
+    let cp = tokio::process::Command::new("cp")
+        .args(["-rf", &format!("{}/Monotask.app", mount_point), "/Applications/"])
+        .status().await
+        .map_err(|e| format!("cp failed: {e}"))?;
+
+    // Step 5: Unmount and clean up regardless of copy result
+    let _ = tokio::process::Command::new("hdiutil")
+        .args(["detach", "-quiet", &mount_point])
+        .status().await;
+    let _ = tokio::fs::remove_file(&tmp_dmg).await;
+
+    if !cp.success() {
+        return Err("Failed to copy Monotask.app to /Applications — try running with elevated permissions".into());
+    }
+
+    // Step 6: Clear Gatekeeper quarantine and ad-hoc sign
+    let _ = tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg("find /Applications/Monotask.app -print0 | xargs -0 xattr -c 2>/dev/null; codesign --force --deep --sign - /Applications/Monotask.app 2>/dev/null")
+        .status().await;
+
+    // Step 7: Relaunch the new version then exit this one
+    let _ = tokio::process::Command::new("open")
         .args(["-n", "/Applications/Monotask.app"])
         .spawn();
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     app.exit(0);
     Ok(())
 }
