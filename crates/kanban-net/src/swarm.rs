@@ -102,6 +102,7 @@ async fn run_inner(
 
     let mut pubkey_cache: HashMap<PeerId, libp2p::identity::PublicKey> = HashMap::new();
     let mut connected_peers: std::collections::HashSet<PeerId> = std::collections::HashSet::new();
+    let mut hello_sent_peers: std::collections::HashSet<PeerId> = std::collections::HashSet::new();
     let mut my_spaces: Vec<String> = Vec::new();
     let mut reannounce = tokio::time::interval(Duration::from_secs(20 * 3600));
     // Reconnect to saved peers every 10 seconds when not connected.
@@ -126,8 +127,11 @@ async fn run_inner(
                                 space_id,
                             );
                         }
-                        // Push the updated space list to already-connected peers
+                        // Push the updated space list to already-connected peers.
+                        // Clear hello_sent_peers first so the updated space doc is sent.
                         for &peer_id in &connected_peers {
+                            hello_sent_peers.remove(&peer_id);
+                            hello_sent_peers.insert(peer_id);
                             initiate_hello(&mut swarm, &storage, &my_spaces, identity_bytes, peer_id);
                         }
                     }
@@ -192,8 +196,11 @@ async fn run_inner(
                                 crate::discovery::query_space_peers(&mut swarm.behaviour_mut().kademlia, space_id);
                             }
                         }
-                        // Re-Hello all currently connected peers to trigger a fresh sync round
+                        // Re-Hello all currently connected peers to trigger a fresh sync round.
+                        // Clear hello_sent_peers so the dedup guard doesn't block forced re-hellos.
                         for &peer_id in &connected_peers {
+                            hello_sent_peers.remove(&peer_id);
+                            hello_sent_peers.insert(peer_id);
                             initiate_hello(&mut swarm, &storage, &my_spaces, identity_bytes, peer_id);
                         }
                     }
@@ -247,6 +254,7 @@ async fn run_inner(
                     &storage,
                     &mut pubkey_cache,
                     &mut connected_peers,
+                    &mut hello_sent_peers,
                     &my_spaces,
                     identity_bytes,
                     event_tx,
@@ -288,6 +296,7 @@ async fn handle_swarm_event(
     storage: &Arc<Mutex<Storage>>,
     pubkey_cache: &mut HashMap<PeerId, libp2p::identity::PublicKey>,
     connected_peers: &mut std::collections::HashSet<PeerId>,
+    hello_sent_peers: &mut std::collections::HashSet<PeerId>,
     my_spaces: &[String],
     identity_bytes: [u8; 32],
     event_tx: &mpsc::Sender<NetEvent>,
@@ -303,7 +312,11 @@ async fn handle_swarm_event(
                 swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
             }
             // Send Hello only after Identify so the remote peer has our pubkey cached.
-            initiate_hello(swarm, storage, my_spaces, identity_bytes, peer_id);
+            // H8: skip if we already said hello to this peer (dedup on reconnect).
+            if !hello_sent_peers.contains(&peer_id) {
+                hello_sent_peers.insert(peer_id);
+                initiate_hello(swarm, storage, my_spaces, identity_bytes, peer_id);
+            }
         }
 
         SwarmEvent::Behaviour(ComposedBehaviourEvent::Mdns(
@@ -319,11 +332,20 @@ async fn handle_swarm_event(
         SwarmEvent::ConnectionEstablished { peer_id, .. } => {
             connected_peers.insert(peer_id);
             let _ = event_tx.send(NetEvent::PeerConnected { peer_id: peer_id.to_string() }).await;
-            // Hello is sent from Identify::Received so the remote has our pubkey cached by then.
+            // H7: If we already know our spaces and haven't said hello to this peer yet,
+            // send Hello now. On first connect Identify::Received fires shortly after and
+            // also sends Hello (guarded by hello_sent_peers). On reconnect, Identify may
+            // not re-fire, so this ensures the peer gets our current space doc.
+            if !my_spaces.is_empty() && !hello_sent_peers.contains(&peer_id) {
+                hello_sent_peers.insert(peer_id);
+                initiate_hello(swarm, storage, my_spaces, identity_bytes, peer_id);
+            }
         }
 
         SwarmEvent::ConnectionClosed { peer_id, .. } => {
             connected_peers.remove(&peer_id);
+            // H8: clear hello state so the peer gets a fresh Hello on next connect.
+            hello_sent_peers.remove(&peer_id);
             // Prune sync states for this peer to prevent unbounded growth
             let peer_str = peer_id.to_string();
             sync_states.retain(|k, _| !k.contains(&peer_str));
