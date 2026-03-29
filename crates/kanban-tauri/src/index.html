@@ -1441,6 +1441,17 @@
   </div>
 </div>
 
+<!-- Confirm/Alert modal (replaces native alert/confirm) -->
+<div id="modal-confirm" class="modal">
+  <div class="modal-box" style="max-width:420px;">
+    <p id="modal-confirm-msg" style="margin:0 0 20px;line-height:1.5;"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button id="modal-confirm-cancel" class="btn btn-secondary" style="display:none;">Cancel</button>
+      <button id="modal-confirm-ok" class="btn btn-primary">OK</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Chat Panel ──────────────────────────────────────────────────────────── -->
 <div id="chat-panel">
   <div class="chat-header">
@@ -1491,6 +1502,28 @@
   // ── Modal helpers ──────────────────────────────────────────────────────────
   function openModal(id) { document.getElementById(id).classList.add('open'); }
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  function showConfirm(message, onConfirm, onCancel) {
+    document.getElementById('modal-confirm-msg').textContent = message;
+    document.getElementById('modal-confirm-cancel').style.display = '';
+    const modal = document.getElementById('modal-confirm');
+    modal.classList.add('open');
+    const okBtn = document.getElementById('modal-confirm-ok');
+    const cancelBtn = document.getElementById('modal-confirm-cancel');
+    const cleanup = () => { modal.classList.remove('open'); okBtn.onclick = null; cancelBtn.onclick = null; };
+    okBtn.onclick = () => { cleanup(); if (onConfirm) onConfirm(); };
+    cancelBtn.onclick = () => { cleanup(); if (onCancel) onCancel(); };
+  }
+
+  function showAlert(message, onOk) {
+    document.getElementById('modal-confirm-msg').textContent = message;
+    document.getElementById('modal-confirm-cancel').style.display = 'none';
+    const modal = document.getElementById('modal-confirm');
+    modal.classList.add('open');
+    const okBtn = document.getElementById('modal-confirm-ok');
+    const cleanup = () => { modal.classList.remove('open'); okBtn.onclick = null; };
+    okBtn.onclick = () => { cleanup(); if (onOk) onOk(); };
+  }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
   // Track which spaces are expanded in the sidebar
@@ -1740,13 +1773,14 @@
     delBtn.className = 'btn-delete-col';
     delBtn.title = 'Delete column';
     delBtn.textContent = '×';
-    delBtn.onclick = async (e) => {
+    delBtn.onclick = (e) => {
       e.stopPropagation();
-      if (!confirm(`Delete column "${col.title}" and all its cards?`)) return;
-      try {
-        await invoke('delete_column_cmd', { boardId, colId: col.id });
-        await loadBoardColumns(boardId);
-      } catch (err) { alert('Error deleting column: ' + err); }
+      showConfirm(`Delete column "${col.title}" and all its cards?`, async () => {
+        try {
+          await invoke('delete_column_cmd', { boardId, colId: col.id });
+          await loadBoardColumns(boardId);
+        } catch (err) { showAlert('Error deleting column: ' + err); }
+      });
     };
     rightGroup.appendChild(countBadge);
     rightGroup.appendChild(delBtn);
@@ -1808,7 +1842,7 @@
             await invoke('move_card_cmd', { boardId, cardId, fromColId, toColId });
             await loadBoardColumns(boardId);
           } catch (err) {
-            alert('Error moving card: ' + err);
+            showAlert('Error moving card: ' + err);
             await loadBoardColumns(boardId);
           }
         },
@@ -1859,7 +1893,7 @@
         addForm.classList.remove('open');
         addBtn.style.display = '';
         await loadBoardColumns(boardId);
-      } catch (err) { alert('Error adding card: ' + err); }
+      } catch (err) { showAlert('Error adding card: ' + err); }
     };
     addInput.onkeydown = (e) => {
       if (e.key === 'Enter') confirmBtn.click();
@@ -2161,7 +2195,7 @@
         if (currentCol) moveColSel.value = currentCol.id;
       }
       openModal('modal-card-detail');
-    } catch (e) { alert('Error loading card: ' + e); }
+    } catch (e) { showAlert('Error loading card: ' + e); }
   }
 
   function renderActivityFeed(card, boardId, cardId) {
@@ -2238,7 +2272,7 @@
             await invoke('delete_comment_cmd', { boardId, cardId, commentId: item.data.id });
             const refreshed = await invoke('get_card_cmd', { boardId, cardId });
             renderActivityFeed(refreshed, boardId, cardId);
-          } catch (err) { alert('Error deleting comment: ' + err); }
+          } catch (err) { showAlert('Error deleting comment: ' + err); }
         };
         footer.appendChild(time);
         // Edit button — only for own comments
@@ -2270,7 +2304,7 @@
                 await invoke('edit_comment_cmd', { boardId, cardId, commentId: item.data.id, text: newText });
                 const refreshed = await invoke('get_card_cmd', { boardId, cardId });
                 renderActivityFeed(refreshed, boardId, cardId);
-              } catch (err) { alert('Error editing comment: ' + err); }
+              } catch (err) { showAlert('Error editing comment: ' + err); }
             };
             cancelEditBtn.onclick = async () => {
               const refreshed = await invoke('get_card_cmd', { boardId, cardId });
@@ -2318,17 +2352,18 @@
       delClBtn.className = 'btn-del-checklist';
       delClBtn.title = 'Delete checklist';
       delClBtn.textContent = 'Delete';
-      delClBtn.onclick = async () => {
+      delClBtn.onclick = () => {
         // soft-delete by removing all items then the checklist (no full delete API yet, just hide)
-        if (!confirm('Delete this checklist?')) return;
-        // We don't have a delete_checklist cmd — delete all items to clear it
-        for (const item of cl.items) {
-          try { await invoke('delete_checklist_item_cmd', { boardId, cardId, clId: cl.id, itemId: item.id }); } catch (_) {}
-        }
-        const card = await invoke('get_card_cmd', { boardId, cardId });
-        renderChecklists(card.checklists, boardId, cardId);
-        // Refresh board tile checklist count
-        refreshBoardTileChecklists(boardId);
+        showConfirm('Delete this checklist?', async () => {
+          // We don't have a delete_checklist cmd — delete all items to clear it
+          for (const item of cl.items) {
+            try { await invoke('delete_checklist_item_cmd', { boardId, cardId, clId: cl.id, itemId: item.id }); } catch (_) {}
+          }
+          const card = await invoke('get_card_cmd', { boardId, cardId });
+          renderChecklists(card.checklists, boardId, cardId);
+          // Refresh board tile checklist count
+          refreshBoardTileChecklists(boardId);
+        });
       };
       header.appendChild(nameEl);
       header.appendChild(delClBtn);
@@ -2380,7 +2415,7 @@
           const card = await invoke('get_card_cmd', { boardId, cardId });
           renderChecklists(card.checklists, boardId, cardId);
           refreshBoardTileChecklists(boardId);
-        } catch (e) { alert('Error: ' + e); }
+        } catch (e) { showAlert('Error: ' + e); }
       };
       addInput.onkeydown = (e) => { if (e.key === 'Enter') addBtn.click(); };
       addRow.appendChild(addInput);
@@ -2436,7 +2471,7 @@
         if (pctEl) pctEl.textContent = pct + '%';
         if (fillEl) { fillEl.style.width = pct + '%'; fillEl.classList.toggle('complete', pct === 100); }
         refreshBoardTileChecklists(boardId);
-      } catch (e) { alert('Error: ' + e); }
+      } catch (e) { showAlert('Error: ' + e); }
     };
 
     li.appendChild(cb);
@@ -2480,7 +2515,7 @@
       document.getElementById('comment-input').value = '';
       const refreshed = await invoke('get_card_cmd', { boardId, cardId });
       renderActivityFeed(refreshed, boardId, cardId);
-    } catch (e) { alert('Error adding comment: ' + e); }
+    } catch (e) { showAlert('Error adding comment: ' + e); }
   };
 
   document.getElementById('comment-input').addEventListener('keydown', (e) => {
@@ -2517,7 +2552,7 @@
       closeModal('modal-card-detail');
       _cardDetailCtx = null;
       await loadBoardColumns(boardId);
-    } catch (e) { alert('Error saving card: ' + e); }
+    } catch (e) { showAlert('Error saving card: ' + e); }
   };
 
   document.getElementById('btn-card-detail-cancel').onclick = () => {
@@ -2533,19 +2568,20 @@
       await invoke('add_checklist_cmd', { boardId, cardId, title });
       const card = await invoke('get_card_cmd', { boardId, cardId });
       renderChecklists(card.checklists || [], boardId, cardId);
-    } catch (e) { alert('Error: ' + e); }
+    } catch (e) { showAlert('Error: ' + e); }
   };
 
-  document.getElementById('btn-delete-card').onclick = async () => {
+  document.getElementById('btn-delete-card').onclick = () => {
     if (!_cardDetailCtx) return;
-    if (!confirm('Delete this card? This cannot be undone.')) return;
-    const { boardId, cardId } = _cardDetailCtx;
-    try {
-      await invoke('delete_card_cmd', { boardId, cardId });
-      closeModal('modal-card-detail');
-      _cardDetailCtx = null;
-      await loadBoardColumns(boardId);
-    } catch (e) { alert('Error deleting card: ' + e); }
+    showConfirm('Delete this card? This cannot be undone.', async () => {
+      const { boardId, cardId } = _cardDetailCtx;
+      try {
+        await invoke('delete_card_cmd', { boardId, cardId });
+        closeModal('modal-card-detail');
+        _cardDetailCtx = null;
+        await loadBoardColumns(boardId);
+      } catch (e) { showAlert('Error deleting card: ' + e); }
+    });
   };
 
   // Reload board when closing card detail (to refresh checklist chips)
@@ -2618,33 +2654,36 @@
       ul.appendChild(li);
     }
     ul.querySelectorAll('.btn-kick').forEach(btn => {
-      btn.onclick = async () => {
-        if (!confirm('Kick ' + btn.dataset.pubkey.slice(0, 16) + '\u2026?')) return;
-        try {
-          await invoke('kick_member_cmd', { spaceId: currentSpaceId, pubkey: btn.dataset.pubkey });
-          await refreshSpaceSettings();
-        } catch (e) { alert('Error kicking member: ' + e); }
+      btn.onclick = () => {
+        showConfirm('Kick ' + btn.dataset.pubkey.slice(0, 16) + '\u2026?', async () => {
+          try {
+            await invoke('kick_member_cmd', { spaceId: currentSpaceId, pubkey: btn.dataset.pubkey });
+            await refreshSpaceSettings();
+          } catch (e) { showAlert('Error kicking member: ' + e); }
+        });
       };
     });
-    document.getElementById('btn-delete-space').onclick = async () => {
-      if (!confirm('Delete "' + space.name + '"?\n\nThis removes the space from your device permanently. Other members keep their local copies.')) return;
-      try {
-        await invoke('delete_space_cmd', { spaceId: currentSpaceId });
-        currentSpaceId = null;
-        currentSpaceData = null;
-        await loadSpacesSidebar();
-        showView('dashboard');
-      } catch (e) { alert('Failed to delete space: ' + e); }
+    document.getElementById('btn-delete-space').onclick = () => {
+      showConfirm('Delete "' + space.name + '"?\n\nThis removes the space from your device permanently. Other members keep their local copies.', async () => {
+        try {
+          await invoke('delete_space_cmd', { spaceId: currentSpaceId });
+          currentSpaceId = null;
+          currentSpaceData = null;
+          await loadSpacesSidebar();
+          showView('dashboard');
+        } catch (e) { showAlert('Failed to delete space: ' + e); }
+      });
     };
-    document.getElementById('btn-leave-space').onclick = async () => {
-      if (!confirm('Leave "' + space.name + '"?\n\nThis removes the space from your device. You can rejoin with an invite.')) return;
-      try {
-        await invoke('leave_space_cmd', { spaceId: currentSpaceId });
-        currentSpaceId = null;
-        currentSpaceData = null;
-        await loadSpacesSidebar();
-        showView('dashboard');
-      } catch (e) { alert('Failed to leave space: ' + e); }
+    document.getElementById('btn-leave-space').onclick = () => {
+      showConfirm('Leave "' + space.name + '"?\n\nThis removes the space from your device. You can rejoin with an invite.', async () => {
+        try {
+          await invoke('leave_space_cmd', { spaceId: currentSpaceId });
+          currentSpaceId = null;
+          currentSpaceData = null;
+          await loadSpacesSidebar();
+          showView('dashboard');
+        } catch (e) { showAlert('Failed to leave space: ' + e); }
+      });
     };
   }
 
@@ -2671,7 +2710,7 @@
           await invoke('remove_board_from_space', { spaceId: currentSpaceId, boardId: btn.dataset.board });
           await refreshSpaceSettings();
           await refreshSpaceMain();
-        } catch (e) { alert('Error removing board: ' + e); }
+        } catch (e) { showAlert('Error removing board: ' + e); }
       };
     });
   }
@@ -2747,7 +2786,7 @@
       await invoke('create_column_cmd', { boardId: currentBoardId, title });
       closeModal('modal-add-column');
       await loadBoardColumns(currentBoardId);
-    } catch (e) { alert('Error creating column: ' + e); }
+    } catch (e) { showAlert('Error creating column: ' + e); }
   };
   document.getElementById('input-add-column-title').onkeydown = (e) => {
     if (e.key === 'Enter') document.getElementById('btn-add-column-confirm').click();
@@ -2769,7 +2808,7 @@
       closeModal('modal-create-space');
       await loadSpacesSidebar();
       await openSpaceMain(space.id);
-    } catch (e) { alert('Error: ' + e); }
+    } catch (e) { showAlert('Error: ' + e); }
   };
 
   // ── Import Invite (Join Space) ─────────────────────────────────────────────
@@ -2796,7 +2835,7 @@
       closeModal('modal-import-invite');
       await loadSpacesSidebar();
       await openSpaceMain(space.id);
-    } catch (e) { alert('Error joining space: ' + e); }
+    } catch (e) { showAlert('Error joining space: ' + e); }
   };
 
   // ── Invite tab actions ─────────────────────────────────────────────────────
@@ -2804,7 +2843,7 @@
     try {
       await invoke('generate_invite', { spaceId: currentSpaceId });
       await renderInviteTab();
-    } catch (e) { alert('Error: ' + e); }
+    } catch (e) { showAlert('Error: ' + e); }
   };
   document.getElementById('btn-copy-token').onclick = () => {
     navigator.clipboard.writeText(document.getElementById('invite-token-input').value).catch(() => {});
@@ -2814,7 +2853,7 @@
       await invoke('revoke_invite', { spaceId: currentSpaceId });
       await invoke('generate_invite', { spaceId: currentSpaceId });
       await renderInviteTab();
-    } catch (e) { alert('Error: ' + e); }
+    } catch (e) { showAlert('Error: ' + e); }
   };
   document.getElementById('btn-export-invite').onclick = async () => {
     try {
@@ -2824,8 +2863,8 @@
       });
       if (!path) return; // user cancelled
       await invoke('export_invite_file', { spaceId: currentSpaceId, path });
-      alert('Exported to ' + path);
-    } catch (e) { alert('Error: ' + e); }
+      showAlert('Exported to ' + path);
+    } catch (e) { showAlert('Error: ' + e); }
   };
 
   // ── Populate board select in settings ─────────────────────────────────────
@@ -2863,7 +2902,7 @@
       await refreshAllBoards();
       await refreshSpaceSettings();
       await refreshSpaceMain();
-    } catch (e) { alert('Error: ' + e); }
+    } catch (e) { showAlert('Error: ' + e); }
   };
 
   // ── Create new board and add to space (from settings) ─────────────────────
@@ -2877,7 +2916,7 @@
         await refreshSpaceMain();
         const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
         if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
-      } catch (e) { alert('Error: ' + e); }
+      } catch (e) { showAlert('Error: ' + e); }
     });
   };
 
@@ -2911,7 +2950,7 @@
         await refreshSpaceMain();
         const sub = document.querySelector(`.space-boards-sub[data-space-id="${currentSpaceId}"]`);
         if (sub) populateSpaceBoardsSub(sub, currentSpaceId);
-      } catch (e) { alert('Error: ' + e); }
+      } catch (e) { showAlert('Error: ' + e); }
     });
   };
 
@@ -2977,8 +3016,8 @@
       const pubkey = await invoke('import_ssh_key', { path });
       document.getElementById('profile-pubkey').textContent = pubkey.slice(0, 20) + '\u2026';
       window._myPubkey = pubkey;
-      alert('SSH key imported.');
-    } catch (e) { alert('Error importing SSH key: ' + e); }
+      showAlert('SSH key imported.');
+    } catch (e) { showAlert('Error importing SSH key: ' + e); }
   };
 
   document.getElementById('btn-save-profile').onclick = async () => {
@@ -2994,7 +3033,7 @@
       });
       closeModal('modal-profile');
       await loadSpacesSidebar();
-    } catch (e) { alert('Error saving profile: ' + e); }
+    } catch (e) { showAlert('Error saving profile: ' + e); }
   };
 
   document.getElementById('btn-close-profile').onclick = () => closeModal('modal-profile');
@@ -3007,7 +3046,7 @@
       window._profileAvatarB64 = b64;
       updateAvatarPreview(b64, document.getElementById('profile-name').value, window._profileAccentColor);
     } catch (e) {
-      if (e !== 'cancelled') alert('Error: ' + e);
+      if (e !== 'cancelled') showAlert('Error: ' + e);
     }
   };
 
@@ -3478,13 +3517,14 @@
         delMsgBtn.style.cssText = 'margin-left:auto;opacity:0.5;';
         delMsgBtn.onmouseenter = () => { delMsgBtn.style.opacity = '1'; };
         delMsgBtn.onmouseleave = () => { delMsgBtn.style.opacity = '0.5'; };
-        delMsgBtn.onclick = async () => {
-          if (!confirm('Delete this message?')) return;
-          try {
-            await invoke('delete_chat_message_cmd', { spaceId: currentSpaceId, messageId: msg.id });
-            chatMessages = chatMessages.filter(m => m.id !== msg.id);
-            renderChatMessages();
-          } catch (err) { alert('Error deleting message: ' + err); }
+        delMsgBtn.onclick = () => {
+          showConfirm('Delete this message?', async () => {
+            try {
+              await invoke('delete_chat_message_cmd', { spaceId: currentSpaceId, messageId: msg.id });
+              chatMessages = chatMessages.filter(m => m.id !== msg.id);
+              renderChatMessages();
+            } catch (err) { showAlert('Error deleting message: ' + err); }
+          });
         };
         metaEl.appendChild(delMsgBtn);
       }
@@ -3812,7 +3852,7 @@
       await invoke('install_update_cmd');
     } catch (e) {
       document.getElementById('update-overlay').classList.remove('visible');
-      alert('Update failed: ' + e + '\n\nRun: brew upgrade --cask monotask --force');
+      showAlert('Update failed: ' + e + '\n\nRun: brew upgrade --cask monotask --force');
     }
   }
 
