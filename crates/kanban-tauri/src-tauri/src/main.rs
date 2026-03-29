@@ -284,6 +284,7 @@ struct CardView {
     checklist_total: usize,
     checklist_done: usize,
     cover_color: Option<String>,
+    priority: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -329,6 +330,7 @@ struct CardDetailView {
     history: Vec<MoveEvent>,
     checklists: Vec<ChecklistView>,
     cover_color: Option<String>,
+    priority: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -412,6 +414,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let last_move = history.into_iter().last();
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
+                    let priority = get_card_str_field(&doc, &cid, "priority");
                     let (checklist_total, checklist_done) = kanban_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
@@ -429,6 +432,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         checklist_total,
                         checklist_done,
                         cover_color,
+                        priority,
                     });
                 }
             }
@@ -655,6 +659,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
     let labels = get_card_labels(&doc, &card_id);
     let assignee = get_card_str_field(&doc, &card_id, "assignee");
     let cover_color = get_card_str_field(&doc, &card_id, "cover_color");
+    let priority = get_card_str_field(&doc, &card_id, "priority");
     let history = get_card_history(&doc, &card_id);
     let comments = kanban_core::comment::list_comments(&doc, &card_id)
         .unwrap_or_default()
@@ -685,6 +690,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         history,
         checklists,
         cover_color,
+        priority,
     })
 }
 
@@ -698,6 +704,7 @@ fn update_card_cmd(
     due_date: Option<String>,
     assignee: Option<String>,
     cover_color: Option<String>,
+    priority: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
     use automerge::{ReadDoc, ObjType, transaction::Transactable};
@@ -713,6 +720,8 @@ fn update_card_cmd(
     doc.put(&card_obj, "assignee", assignee_val).map_err(|e| e.to_string())?;
     let cover = cover_color.as_deref().unwrap_or("");
     doc.put(&card_obj, "cover_color", cover).map_err(|e| e.to_string())?;
+    let priority_val = priority.as_deref().unwrap_or("");
+    doc.put(&card_obj, "priority", priority_val).map_err(|e| e.to_string())?;
     // Replace labels list
     let labels_obj = match doc.get(&card_obj, "labels").map_err(|e| e.to_string())? {
         Some((_, id)) => id,
@@ -758,6 +767,44 @@ fn delete_comment_cmd(board_id: String, card_id: String, comment_id: String, sta
         .map_err(|e| e.to_string())?;
     kanban_core::comment::delete_comment(&mut doc, &card_id, &comment_id)
         .map_err(|e| e.to_string())?;
+    kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
+}
+
+#[tauri::command]
+fn edit_comment_cmd(
+    board_id: String,
+    card_id: String,
+    comment_id: String,
+    text: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    validate_text(&text, "Comment", 10_000)?;
+    use automerge::transaction::Transactable;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = kanban_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let card_obj = kanban_core::card::get_card_obj(&doc, &card_id).map_err(|e| e.to_string())?;
+    let comments = kanban_core::comment::get_comments_list(&doc, &card_obj).map_err(|e| e.to_string())?;
+    use automerge::ReadDoc;
+    let len = doc.length(&comments);
+    let mut found = false;
+    for i in 0..len {
+        if let Ok(Some((_, c_obj))) = doc.get(&comments, i) {
+            if let Ok(Some(id)) = kanban_core::get_string(&doc, &c_obj, "id") {
+                if id == comment_id {
+                    doc.put(&c_obj, "text", text.as_str()).map_err(|e| e.to_string())?;
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !found {
+        return Err(format!("Comment not found: {comment_id}"));
+    }
     kanban_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
@@ -1637,6 +1684,45 @@ fn get_chat_messages_cmd(
     Ok(views)
 }
 
+#[tauri::command]
+fn delete_chat_message_cmd(
+    space_id: String,
+    message_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    use automerge::{ReadDoc, transaction::Transactable};
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = get_or_create_chat_doc(&storage, &space_id)?;
+    let (_, list_id) = doc.get(automerge::ROOT, "messages")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "chat missing messages list".to_string())?;
+    let len = doc.length(&list_id);
+    let mut found = false;
+    for i in 0..len {
+        if let Ok(Some((_, entry))) = doc.get(&list_id, i) {
+            if let Ok(Some(id)) = kanban_core::get_string(&doc, &entry, "id") {
+                if id == message_id {
+                    doc.put(&entry, "deleted", true).map_err(|e| e.to_string())?;
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !found {
+        return Err(format!("Message not found: {message_id}"));
+    }
+    let bytes = doc.save();
+    storage.save_board_bytes(&format!("{space_id}-chat"), &bytes, true)
+        .map_err(|e| e.to_string())?;
+    drop(storage);
+    let net = state.net.lock().map_err(|e| e.to_string())?;
+    if let Some(ref handle) = *net {
+        handle.trigger_sync_sync(format!("{space_id}-chat"));
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 struct MentionSuggestion {
     kind: String,     // "member" | "card" | "board"
@@ -1879,6 +1965,8 @@ fn main() {
             get_sync_info_cmd,
             send_chat_message_cmd,
             get_chat_messages_cmd,
+            delete_chat_message_cmd,
+            edit_comment_cmd,
             get_mention_suggestions_cmd,
             find_card_board_cmd,
             check_for_update_cmd,
