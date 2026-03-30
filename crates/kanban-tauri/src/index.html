@@ -4019,7 +4019,7 @@
       await invoke('install_update_cmd');
     } catch (e) {
       document.getElementById('update-overlay').classList.remove('visible');
-      showAlert('Update failed: ' + e + '\n\nRun: brew upgrade --cask monotask --force');
+      showAlert('Update failed: ' + e);
     }
   }
 
