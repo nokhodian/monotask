@@ -98,7 +98,24 @@ brew tap nokhodian/tap
 brew install monotask
 ```
 
-### Desktop App — Direct DMG download
+### Desktop App — Windows
+
+Download the installer from the [Releases page](https://github.com/nokhodian/monotask/releases/latest):
+
+| Platform | Download |
+|----------|----------|
+| Windows 10/11 x64 | `Monotask-<version>-x64-setup.exe` |
+
+Run the installer — it installs Monotask and creates a Start Menu shortcut.
+
+> **⚠️ Windows SmartScreen warning**
+>
+> Monotask is not code-signed with a Microsoft certificate. Windows may show
+> **"Windows protected your PC"** on first launch. Click **"More info"** then
+> **"Run anyway"** to proceed. The app is safe — the warning appears because
+> the binary is unsigned, not because it is malicious.
+
+### Desktop App — Direct DMG download (macOS)
 
 Grab the DMG from the [Releases page](https://github.com/nokhodian/monotask/releases/latest), open it, and drag `Monotask.app` to Applications.
 
@@ -405,7 +422,7 @@ cd crates/kanban-tauri && cargo tauri dev
 
 ### Cutting a release
 
-Releases are automated via `.github/workflows/release.yml`. Push a version tag and CI builds macOS arm64 + x86_64 and Linux x86_64 (musl static), creates a GitHub release, and updates the Homebrew formula in `nokhodian/homebrew-tap` automatically.
+Releases are automated via `.github/workflows/release.yml`. Push a version tag and CI builds macOS arm64, Windows x64, and Linux x86_64 (musl static), creates a GitHub release, and updates the Homebrew formula in `nokhodian/homebrew-tap` automatically.
 
 ```bash
 git tag v0.2.0
