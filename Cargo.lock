@@ -3573,7 +3573,7 @@ dependencies = [
 
 [[package]]
 name = "monotask"
-version = "0.3.14"
+version = "0.3.15"
 dependencies = [
  "anyhow",
  "automerge",
