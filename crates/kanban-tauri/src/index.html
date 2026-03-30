@@ -1515,6 +1515,7 @@
   let allBoards = {};
   let currentSpaceName = '';
   let lastSyncInfo = null;
+  let _activeFilters = { priority: null };
 
   // ── View switcher ──────────────────────────────────────────────────────────
   // views: 'dashboard' | 'space-main' | 'board-view' | 'space-settings'
@@ -4186,7 +4187,6 @@
 
   // Listen for real-time P2P events from backend
   // ── Board filter bar ──────────────────────────────────────────────────────
-  let _activeFilters = { priority: null }; // null = no filter
 
   function applyBoardFilters() {
     const cards = document.querySelectorAll('#board-columns-area .kanban-card');
