@@ -2384,11 +2384,14 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
             return Err(format!("Failed to mount DMG: {}", stderr.trim()));
         }
 
-        let mount_point = String::from_utf8_lossy(&mount_out.stdout)
+        // hdiutil output is tab-separated; the mount path (last field) may contain spaces.
+        // Find the first line whose last tab-field starts with /Volumes/.
+        let stdout = String::from_utf8_lossy(&mount_out.stdout);
+        let mount_point = stdout
             .lines()
-            .last()
-            .and_then(|l| l.split_whitespace().last())
-            .ok_or("Could not determine DMG mount point")?
+            .filter_map(|l| l.split('\t').last().map(|s| s.trim()))
+            .find(|s| s.starts_with("/Volumes/"))
+            .ok_or_else(|| format!("Could not determine DMG mount point. hdiutil output: {}", stdout.trim()))?
             .to_string();
 
         // Step 4: Remove old bundle then copy new one.
