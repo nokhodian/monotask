@@ -2886,7 +2886,13 @@
       const qrDiv = document.getElementById('invite-qr');
       qrDiv.innerHTML = '';
       if (window.QRCode) {
-        new QRCode(qrDiv, { text: token, width: 160, height: 160, colorDark: '#c8962a', colorLight: '#0d0d1a' });
+        try {
+          new QRCode(qrDiv, { text: token, width: 160, height: 160, colorDark: '#c8962a', colorLight: '#0d0d1a' });
+        } catch (_) {
+          // Token is too long for QR (v2 tokens embed the space doc).
+          // Show a small notice — user can still copy/export the token.
+          qrDiv.innerHTML = '<div style="font-size:10px;color:#888;padding:8px 0;">Token too long for QR — use Copy or Export instead.</div>';
+        }
       }
     } else {
       tokenSection.style.display = 'none';
