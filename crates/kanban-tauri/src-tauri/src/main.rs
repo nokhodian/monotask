@@ -401,10 +401,22 @@ fn list_boards(state: tauri::State<AppState>) -> Result<Vec<BoardSummary>, Strin
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let rows = kanban_storage::board::list_boards_with_titles(storage.conn())
         .map_err(|e| e.to_string())?;
-    let boards = rows.into_iter().map(|(id, cached_title)| {
-        let title = cached_title.unwrap_or_else(|| id.clone());
-        BoardSummary { id, title }
-    }).collect();
+    let mut boards = Vec::with_capacity(rows.len());
+    for (id, cached_title) in rows {
+        let title = match cached_title {
+            Some(t) => t,
+            None => {
+                // Board predates the cached_title column — load the doc once to backfill.
+                let title = kanban_storage::board::load_board(storage.conn(), &id)
+                    .ok()
+                    .and_then(|doc| kanban_core::board::get_board_title(&doc).ok())
+                    .unwrap_or_else(|| id.clone());
+                let _ = kanban_storage::board::set_cached_title(storage.conn(), &id, &title);
+                title
+            }
+        };
+        boards.push(BoardSummary { id, title });
+    }
     Ok(boards)
 }
 
