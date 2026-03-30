@@ -2312,8 +2312,7 @@ async fn check_for_update_cmd() -> Result<Option<String>, String> {
 
 #[tauri::command]
 async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
-    // Step 1: Fetch the latest release metadata to find the DMG URL.
-    // This bypasses Homebrew entirely — the cask may lag behind the actual release.
+    // Step 1: Fetch the latest release metadata from GitHub.
     let api_out = tokio::process::Command::new("curl")
         .args([
             "-sfL", "--max-time", "15",
@@ -2334,82 +2333,122 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
 
     let tag = json["tag_name"].as_str().unwrap_or("latest").to_string();
 
-    // Find the aarch64 DMG asset
-    let dmg_url = json["assets"].as_array()
-        .and_then(|assets| {
-            assets.iter().find(|a| {
-                a["name"].as_str()
-                    .map(|n| n.ends_with(".dmg") && n.contains("aarch64"))
-                    .unwrap_or(false)
+    #[cfg(target_os = "macos")]
+    {
+        // Find the aarch64 DMG asset
+        let dmg_url = json["assets"].as_array()
+            .and_then(|assets| {
+                assets.iter().find(|a| {
+                    a["name"].as_str()
+                        .map(|n| n.ends_with(".dmg") && n.contains("aarch64"))
+                        .unwrap_or(false)
+                })
             })
-        })
-        .and_then(|a| a["browser_download_url"].as_str())
-        .ok_or("No aarch64 DMG asset found in the release — check the GitHub release")?
-        .to_string();
+            .and_then(|a| a["browser_download_url"].as_str())
+            .ok_or("No aarch64 DMG asset found in the release")?
+            .to_string();
 
-    // Step 2: Download the DMG
-    let tmp_dmg = format!("/tmp/Monotask-{}.dmg", tag);
-    let dl = tokio::process::Command::new("curl")
-        .args([
-            "-sfL", "--max-time", "300",
-            "-o", &tmp_dmg,
-            "-H", "User-Agent: monotask-updater",
-            &dmg_url,
-        ])
-        .status().await
-        .map_err(|e| format!("Download failed: {e}"))?;
+        // Step 2: Download the DMG
+        let tmp_dmg = format!("/tmp/Monotask-{}.dmg", tag);
+        let dl = tokio::process::Command::new("curl")
+            .args(["-sfL", "--max-time", "300", "-o", &tmp_dmg,
+                   "-H", "User-Agent: monotask-updater", &dmg_url])
+            .status().await
+            .map_err(|e| format!("Download failed: {e}"))?;
 
-    if !dl.success() {
-        return Err("Failed to download DMG — check network connection".into());
-    }
+        if !dl.success() {
+            return Err("Failed to download DMG — check network connection".into());
+        }
 
-    // Step 3: Mount the DMG
-    let mount_out = tokio::process::Command::new("hdiutil")
-        .args(["attach", "-nobrowse", "-quiet", &tmp_dmg])
-        .output().await
-        .map_err(|e| format!("hdiutil attach failed: {e}"))?;
+        // Step 3: Mount the DMG
+        let mount_out = tokio::process::Command::new("hdiutil")
+            .args(["attach", "-nobrowse", "-quiet", &tmp_dmg])
+            .output().await
+            .map_err(|e| format!("hdiutil attach failed: {e}"))?;
 
-    if !mount_out.status.success() {
+        if !mount_out.status.success() {
+            let _ = tokio::fs::remove_file(&tmp_dmg).await;
+            return Err("Failed to mount DMG".into());
+        }
+
+        let mount_point = String::from_utf8_lossy(&mount_out.stdout)
+            .lines()
+            .last()
+            .and_then(|l| l.split_whitespace().last())
+            .ok_or("Could not determine DMG mount point")?
+            .to_string();
+
+        // Step 4: Copy app to /Applications
+        let cp = tokio::process::Command::new("cp")
+            .args(["-rf", &format!("{}/Monotask.app", mount_point), "/Applications/"])
+            .status().await
+            .map_err(|e| format!("cp failed: {e}"))?;
+
+        // Step 5: Unmount and clean up
+        let _ = tokio::process::Command::new("hdiutil")
+            .args(["detach", "-quiet", &mount_point])
+            .status().await;
         let _ = tokio::fs::remove_file(&tmp_dmg).await;
-        return Err("Failed to mount DMG".into());
+
+        if !cp.success() {
+            return Err("Failed to copy Monotask.app to /Applications".into());
+        }
+
+        // Step 6: Clear Gatekeeper quarantine and ad-hoc sign
+        let _ = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("find /Applications/Monotask.app -print0 | xargs -0 xattr -c 2>/dev/null; codesign --force --deep --sign - /Applications/Monotask.app 2>/dev/null")
+            .status().await;
+
+        // Step 7: Relaunch and exit
+        let _ = tokio::process::Command::new("open")
+            .args(["-n", "/Applications/Monotask.app"])
+            .spawn();
+
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        app.exit(0);
     }
 
-    // Parse mount point from hdiutil output (last token on last line)
-    let mount_point = String::from_utf8_lossy(&mount_out.stdout)
-        .lines()
-        .last()
-        .and_then(|l| l.split_whitespace().last())
-        .ok_or("Could not determine DMG mount point")?
-        .to_string();
+    #[cfg(target_os = "windows")]
+    {
+        // Find the x64 NSIS installer asset
+        let exe_url = json["assets"].as_array()
+            .and_then(|assets| {
+                assets.iter().find(|a| {
+                    a["name"].as_str()
+                        .map(|n| n.ends_with("-setup.exe") && n.contains("x64"))
+                        .unwrap_or(false)
+                })
+            })
+            .and_then(|a| a["browser_download_url"].as_str())
+            .ok_or("No x64 installer asset found in the release")?
+            .to_string();
 
-    // Step 4: Copy app to /Applications (overwrite existing)
-    let cp = tokio::process::Command::new("cp")
-        .args(["-rf", &format!("{}/Monotask.app", mount_point), "/Applications/"])
-        .status().await
-        .map_err(|e| format!("cp failed: {e}"))?;
+        // Step 2: Download installer to %TEMP%
+        let tmp_exe = format!("{}\\Monotask-{}-setup.exe",
+            std::env::var("TEMP").unwrap_or_else(|_| "C:\\Windows\\Temp".into()),
+            tag);
 
-    // Step 5: Unmount and clean up regardless of copy result
-    let _ = tokio::process::Command::new("hdiutil")
-        .args(["detach", "-quiet", &mount_point])
-        .status().await;
-    let _ = tokio::fs::remove_file(&tmp_dmg).await;
+        let dl = tokio::process::Command::new("curl")
+            .args(["-sfL", "--max-time", "300", "-o", &tmp_exe,
+                   "-H", "User-Agent: monotask-updater", &exe_url])
+            .status().await
+            .map_err(|e| format!("Download failed: {e}"))?;
 
-    if !cp.success() {
-        return Err("Failed to copy Monotask.app to /Applications — try running with elevated permissions".into());
+        if !dl.success() {
+            return Err("Failed to download installer — check network connection".into());
+        }
+
+        // Step 3: Launch installer silently (/S = NSIS silent mode) and exit.
+        // The installer replaces the running app; we exit first to release the lock.
+        let _ = tokio::process::Command::new("cmd")
+            .args(["/C", "start", "", "/wait", &tmp_exe, "/S"])
+            .spawn()
+            .map_err(|e| format!("Failed to launch installer: {e}"))?;
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        app.exit(0);
     }
 
-    // Step 6: Clear Gatekeeper quarantine and ad-hoc sign
-    let _ = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg("find /Applications/Monotask.app -print0 | xargs -0 xattr -c 2>/dev/null; codesign --force --deep --sign - /Applications/Monotask.app 2>/dev/null")
-        .status().await;
-
-    // Step 7: Relaunch the new version then exit this one
-    let _ = tokio::process::Command::new("open")
-        .args(["-n", "/Applications/Monotask.app"])
-        .spawn();
-
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-    app.exit(0);
     Ok(())
 }
