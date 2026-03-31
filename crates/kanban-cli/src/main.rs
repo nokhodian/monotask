@@ -456,8 +456,11 @@ async fn cmd_sync(
     if stop {
         let pid_str = std::fs::read_to_string(&pid_file)
             .map_err(|_| anyhow::anyhow!("sync daemon not running (no PID file)"))?;
-        let pid: i32 = pid_str.trim().parse()?;
-        unsafe { libc::kill(pid, libc::SIGTERM); }
+        let pid: u32 = pid_str.trim().parse()?;
+        #[cfg(unix)]
+        unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+        #[cfg(windows)]
+        { std::process::Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).status().ok(); }
         println!("Stopped sync daemon (PID {pid})");
         return Ok(());
     }
