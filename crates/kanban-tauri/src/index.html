@@ -1175,11 +1175,11 @@
       </div>
       <div id="board-filter-bar" style="display:none;">
         <label>Priority:</label>
-        <button class="filter-btn" data-filter="priority" data-value="high">🔴 High</button>
-        <button class="filter-btn" data-filter="priority" data-value="medium">🟡 Medium</button>
-        <button class="filter-btn" data-filter="priority" data-value="low">🟢 Low</button>
-        <button class="filter-btn" data-filter="priority" data-value="none" style="margin-left:8px;">None</button>
-        <button id="btn-clear-filter" class="filter-btn" style="margin-left:auto;display:none;">✕ Clear filter</button>
+        <button class="filter-btn" onclick="togglePriorityFilter('high', this)">🔴 High</button>
+        <button class="filter-btn" onclick="togglePriorityFilter('medium', this)">🟡 Medium</button>
+        <button class="filter-btn" onclick="togglePriorityFilter('low', this)">🟢 Low</button>
+        <button class="filter-btn" onclick="togglePriorityFilter('none', this)" style="margin-left:8px;">None</button>
+        <button id="btn-clear-filter" class="filter-btn" onclick="clearPriorityFilter()" style="margin-left:auto;display:none;">✕ Clear filter</button>
       </div>
       <div id="board-columns-area"></div>
     </div>
@@ -4236,39 +4236,26 @@
     });
   }
 
-  // Use event delegation on the filter bar — more reliable than .onclick in WKWebView
-  (function initBoardFilterBar() {
-    const bar = document.getElementById('board-filter-bar');
-    if (!bar) return;
-    bar.addEventListener('click', function(e) {
-      const btn = e.target.closest('.filter-btn');
-      if (!btn) return;
+  // Global functions for inline onclick — WKWebView handles these reliably
+  window.togglePriorityFilter = function(value, btn) {
+    if (_activeFilters.priority === value) {
+      _activeFilters.priority = null;
+      btn.classList.remove('active');
+    } else {
+      document.querySelectorAll('#board-filter-bar .filter-btn.active')
+        .forEach(b => b.classList.remove('active'));
+      _activeFilters.priority = value;
+      btn.classList.add('active');
+    }
+    applyBoardFilters();
+  };
 
-      // Clear button
-      if (btn.id === 'btn-clear-filter') {
-        _activeFilters = { priority: null };
-        bar.querySelectorAll('.filter-btn.active').forEach(b => b.classList.remove('active'));
-        applyBoardFilters();
-        return;
-      }
-
-      // Filter toggle
-      const filter = btn.dataset.filter;
-      const value = btn.dataset.value;
-      if (!filter || !value) return;
-
-      if (_activeFilters[filter] === value) {
-        _activeFilters[filter] = null;
-        btn.classList.remove('active');
-      } else {
-        bar.querySelectorAll('.filter-btn[data-filter="' + filter + '"]')
-          .forEach(b => b.classList.remove('active'));
-        _activeFilters[filter] = value;
-        btn.classList.add('active');
-      }
-      applyBoardFilters();
-    });
-  })();
+  window.clearPriorityFilter = function() {
+    _activeFilters = { priority: null };
+    document.querySelectorAll('#board-filter-bar .filter-btn.active')
+      .forEach(b => b.classList.remove('active'));
+    applyBoardFilters();
+  };
 
   if (window.__TAURI__ && window.__TAURI__.event) {
     const { listen } = window.__TAURI__.event;
