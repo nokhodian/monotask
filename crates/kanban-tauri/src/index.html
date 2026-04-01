@@ -4190,6 +4190,8 @@
 
   function applyBoardFilters() {
     const cards = document.querySelectorAll('#board-columns-area .kanban-card');
+    const hasFilter = Object.values(_activeFilters).some(v => v !== null);
+    let visibleCount = 0;
     cards.forEach(card => {
       let show = true;
       if (_activeFilters.priority) {
@@ -4197,10 +4199,26 @@
         show = cardPriority === _activeFilters.priority;
       }
       card.style.display = show ? '' : 'none';
+      if (show) visibleCount++;
     });
-    const hasFilter = Object.values(_activeFilters).some(v => v !== null);
     const clearBtn = document.getElementById('btn-clear-filter');
     if (clearBtn) clearBtn.style.display = hasFilter ? '' : 'none';
+    // Show "no cards match" hint per column when filter active
+    document.querySelectorAll('#board-columns-area .board-col-cards').forEach(ul => {
+      let hint = ul.querySelector('.filter-empty-hint');
+      const visibleInCol = ul.querySelectorAll('.kanban-card:not([style*="display: none"])').length;
+      if (hasFilter && visibleInCol === 0) {
+        if (!hint) {
+          hint = document.createElement('li');
+          hint.className = 'filter-empty-hint';
+          hint.style.cssText = 'color:#666;font-size:11px;padding:12px 8px;text-align:center;list-style:none;';
+          hint.textContent = 'No cards match filter';
+          ul.appendChild(hint);
+        }
+      } else if (hint) {
+        hint.remove();
+      }
+    });
   }
 
   function initBoardFilterBar() {
