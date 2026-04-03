@@ -31,3 +31,8 @@ pub fn set_board_title(doc: &mut AutoCommit, title: &str) -> Result<()> {
     doc.put(ROOT, "title", title)?;
     Ok(())
 }
+
+pub fn rename_board(doc: &mut AutoCommit, new_title: &str) -> Result<()> {
+    doc.put(ROOT, "title", new_title)?;
+    Ok(())
+}

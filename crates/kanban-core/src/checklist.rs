@@ -91,20 +91,20 @@ pub fn list_checklists(doc: &AutoCommit, card_id: &str) -> Result<Vec<Checklist>
     Ok(result)
 }
 
-pub fn delete_checklist_item(doc: &mut AutoCommit, card_id: &str, cl_id: &str, item_id: &str) -> Result<()> {
+pub fn delete_checklist_item(doc: &mut AutoCommit, card_id: &str, checklist_id: &str, item_id: &str) -> Result<()> {
     let card_obj = crate::card::get_card_obj(doc, card_id)?;
     let cls = get_checklists_list(doc, &card_obj)?;
     for i in 0..doc.length(&cls) {
         if let Some((_, cl_obj)) = doc.get(&cls, i)? {
-            if crate::get_string(doc, &cl_obj, "id")?.as_deref() == Some(cl_id) {
+            if crate::get_string(doc, &cl_obj, "id")?.as_deref() == Some(checklist_id) {
                 let items = match doc.get(&cl_obj, "items")? {
                     Some((_, id)) => id,
-                    None => return Err(crate::Error::NotFound(cl_id.into())),
+                    None => return Err(crate::Error::NotFound(checklist_id.into())),
                 };
                 for j in 0..doc.length(&items) {
                     if let Some((_, item_obj)) = doc.get(&items, j)? {
                         if crate::get_string(doc, &item_obj, "id")?.as_deref() == Some(item_id) {
-                            doc.delete(&items, j)?;
+                            doc.put(&item_obj, "deleted", true)?;
                             return Ok(());
                         }
                     }
@@ -113,7 +113,21 @@ pub fn delete_checklist_item(doc: &mut AutoCommit, card_id: &str, cl_id: &str, i
             }
         }
     }
-    Err(crate::Error::NotFound(cl_id.into()))
+    Err(crate::Error::NotFound(checklist_id.into()))
+}
+
+pub fn delete_checklist(doc: &mut AutoCommit, card_id: &str, checklist_id: &str) -> Result<()> {
+    let card_obj = crate::card::get_card_obj(doc, card_id)?;
+    let cls = get_checklists_list(doc, &card_obj)?;
+    for i in 0..doc.length(&cls) {
+        if let Some((_, cl_obj)) = doc.get(&cls, i)? {
+            if crate::get_string(doc, &cl_obj, "id")?.as_deref() == Some(checklist_id) {
+                doc.put(&cl_obj, "deleted", true)?;
+                return Ok(());
+            }
+        }
+    }
+    Err(crate::Error::NotFound(checklist_id.into()))
 }
 
 pub fn set_item_checked(doc: &mut AutoCommit, card_id: &str, cl_id: &str, item_id: &str, checked: bool) -> Result<()> {
