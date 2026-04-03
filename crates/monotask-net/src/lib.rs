@@ -7,14 +7,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use tokio::sync::mpsc;
-use kanban_storage::Storage;
+use monotask_storage::Storage;
 
 #[derive(Debug, Error)]
 pub enum NetError {
     #[error("libp2p error: {0}")]
     Libp2p(String),
     #[error("storage error: {0}")]
-    Storage(#[from] kanban_storage::StorageError),
+    Storage(#[from] monotask_storage::StorageError),
     #[error("sync error: {0}")]
     Sync(String),
     #[error("handshake rejected: {0}")]

@@ -3,7 +3,7 @@ use ed25519_dalek::{SigningKey, Signature, Signer, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use sha2::{Sha256, Digest};
 use thiserror::Error;
-use kanban_core::space::InviteMetadata;
+use monotask_core::space::InviteMetadata;
 
 #[derive(Debug, Error)]
 pub enum CryptoError {

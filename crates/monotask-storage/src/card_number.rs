@@ -1,5 +1,5 @@
 use rusqlite::OptionalExtension;
-use kanban_core::card_number::CardNumber;
+use monotask_core::card_number::CardNumber;
 
 pub fn upsert_card_number(
     conn: &rusqlite::Connection,

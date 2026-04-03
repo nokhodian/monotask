@@ -1,6 +1,6 @@
-use kanban_net::{NetworkHandle, NetConfig, NetEvent};
-use kanban_storage::Storage;
-use kanban_crypto::Identity;
+use monotask_net::{NetworkHandle, NetConfig, NetEvent};
+use monotask_storage::Storage;
+use monotask_crypto::Identity;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

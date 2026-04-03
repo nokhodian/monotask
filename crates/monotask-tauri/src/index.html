@@ -296,19 +296,19 @@
       display: flex; flex-direction: column; gap: 6px;
       min-height: 60px; -webkit-overflow-scrolling: touch;
     }
-    .kanban-card {
+    .task-card {
       background: #131326; border: 1px solid #1e1e3a;
       border-radius: 6px; overflow: hidden; cursor: pointer;
       transition: border-color 0.12s;
     }
-    .kanban-card:hover { border-color: #2e2e5a; }
-    .kanban-card-body { padding: 9px 11px; }
-    .kanban-card-cover { height: 36px; border-radius: 0; }
-    .kanban-card-title { font-size: 13px; color: #ddd; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .kanban-card-num { font-size: 10px; color: #5a5a8a; font-family: monospace; margin-top: 5px; }
+    .task-card:hover { border-color: #2e2e5a; }
+    .task-card-body { padding: 9px 11px; }
+    .task-card-cover { height: 36px; border-radius: 0; }
+    .task-card-title { font-size: 13px; color: #ddd; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .task-card-num { font-size: 10px; color: #5a5a8a; font-family: monospace; margin-top: 5px; }
     /* Drag and drop */
-    .kanban-card.sortable-ghost { opacity: 0.25; background: #1e1e3a; border: 1px dashed #2e2e5a; }
-    .kanban-card.sortable-chosen { cursor: grabbing; }
+    .task-card.sortable-ghost { opacity: 0.25; background: #1e1e3a; border: 1px dashed #2e2e5a; }
+    .task-card.sortable-chosen { cursor: grabbing; }
     /* Fallback ghost (the element following the cursor) — must have pointer-events: none
        so that hover detection on the destination list works in WKWebView */
     .sortable-fallback {
@@ -342,14 +342,14 @@
     .btn-delete-col:hover { color: #c05050; background: #1a0808; }
 
     /* Card label chips */
-    .kanban-card-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .task-card-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
     .card-label-chip {
       height: 18px; border-radius: 4px; min-width: 40px; display: inline-flex;
       align-items: center; padding: 0 7px; font-size: 10px; font-weight: 600;
       color: rgba(0,0,0,0.7); letter-spacing: 0.03em; white-space: nowrap;
       max-width: 80px; overflow: hidden; text-overflow: ellipsis;
     }
-    .kanban-card-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .task-card-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
     .card-meta-desc { font-size: 10px; color: #7a7aaa; }
     .card-meta-due { font-size: 10px; color: #c8962a; cursor: pointer; }
     .card-meta-due.overdue { color: #e05050; background: rgba(224,80,80,0.12); border-radius: 3px; padding: 1px 4px; }
@@ -1913,7 +1913,7 @@
     // ── SortableJS drag and drop ───────────────────────────────────────────
     if (window.Sortable) {
       Sortable.create(cardsList, {
-        group: 'kanban-cards',
+        group: 'task-cards',
         animation: 150,
         // CRITICAL for Tauri WKWebView: HTML5 DnD fires dragstart but never fires
         // 'drop', causing cards to snap back. forceFallback bypasses HTML5 DnD
@@ -2027,7 +2027,7 @@
 
   function buildCardEl(card, colId, boardId) {
     const li = document.createElement('li');
-    li.className = 'kanban-card';
+    li.className = 'task-card';
     li.dataset.cardId = card.id;
     li.dataset.colId = colId;
     li.dataset.priority = card.priority || 'none';
@@ -2035,20 +2035,20 @@
     // Cover color stripe
     if (card.cover_color) {
       const cover = document.createElement('div');
-      cover.className = 'kanban-card-cover';
+      cover.className = 'task-card-cover';
       cover.style.background = card.cover_color;
       li.appendChild(cover);
     }
 
     // Wrap the rest of the card in a body div for padding
     const body = document.createElement('div');
-    body.className = 'kanban-card-body';
+    body.className = 'task-card-body';
     li.appendChild(body);
 
     // Label chips (Trello-style: colored pill with name)
     if (card.labels && card.labels.length > 0) {
       const labelsRow = document.createElement('div');
-      labelsRow.className = 'kanban-card-labels';
+      labelsRow.className = 'task-card-labels';
       for (const lbl of card.labels) {
         const chip = document.createElement('span');
         chip.className = 'card-label-chip';
@@ -2061,7 +2061,7 @@
     }
 
     const titleEl = document.createElement('div');
-    titleEl.className = 'kanban-card-title';
+    titleEl.className = 'task-card-title';
     titleEl.textContent = card.title;
     body.appendChild(titleEl);
 
@@ -2075,10 +2075,10 @@
 
     // Meta row (number, description indicator, due date)
     const meta = document.createElement('div');
-    meta.className = 'kanban-card-meta';
+    meta.className = 'task-card-meta';
     if (card.number) {
       const numEl = document.createElement('span');
-      numEl.className = 'kanban-card-num';
+      numEl.className = 'task-card-num';
       numEl.textContent = '#' + card.number;
       meta.appendChild(numEl);
     }

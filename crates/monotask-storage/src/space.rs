@@ -1,5 +1,5 @@
 use rusqlite::{Connection, params};
-use kanban_core::space::{
+use monotask_core::space::{
     InviteMetadata, Member, Space, SpaceSummary, UserProfile,
 };
 use crate::StorageError;
