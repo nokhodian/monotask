@@ -1,6 +1,6 @@
 [package]
-name = "kanban-cli"
-version = "0.3.8"
+name = "monotask-cli"
+version = "0.4.0"
 edition = "2021"
 
 [[bin]]
@@ -8,9 +8,9 @@ name = "app-cli"
 path = "src/main.rs"
 
 [dependencies]
-kanban-core    = { path = "../kanban-core" }
-kanban-crypto  = { path = "../kanban-crypto" }
-kanban-storage = { path = "../kanban-storage" }
+monotask-core    = { path = "../monotask-core" }
+monotask-crypto  = { path = "../monotask-crypto" }
+monotask-storage = { path = "../monotask-storage" }
 clap           = { workspace = true }
 anyhow         = { workspace = true }
 serde          = { workspace = true }
@@ -24,7 +24,7 @@ uuid           = { workspace = true }
 base64         = { workspace = true }
 rusqlite       = { workspace = true }
 tokio          = { workspace = true }
-kanban-net     = { path = "../kanban-net" }
+monotask-net   = { path = "../monotask-net" }
 
 [target.'cfg(unix)'.dependencies]
 libc           = "0.2"

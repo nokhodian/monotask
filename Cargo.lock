@@ -2734,104 +2734,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kanban-cli"
-version = "0.3.8"
-dependencies = [
- "anyhow",
- "automerge",
- "base64 0.22.1",
- "clap",
- "colored",
- "dirs 5.0.1",
- "kanban-core",
- "kanban-crypto",
- "kanban-net",
- "kanban-storage",
- "libc",
- "rusqlite",
- "serde",
- "serde_json",
- "tabled",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kanban-core"
-version = "0.3.8"
-dependencies = [
- "automerge",
- "base32",
- "base64 0.22.1",
- "chrono",
- "hex",
- "rand 0.8.5",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kanban-crypto"
-version = "0.3.8"
-dependencies = [
- "base32",
- "bs58",
- "ciborium",
- "ed25519-dalek",
- "hex",
- "kanban-core",
- "rand 0.8.5",
- "serde",
- "sha2",
- "ssh-key",
- "thiserror 1.0.69",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "kanban-net"
-version = "0.3.8"
-dependencies = [
- "async-trait",
- "automerge",
- "ciborium",
- "hex",
- "kanban-core",
- "kanban-crypto",
- "kanban-storage",
- "libp2p",
- "serde",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "kanban-storage"
-version = "0.3.8"
-dependencies = [
- "automerge",
- "chrono",
- "kanban-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3573,16 +3475,16 @@ dependencies = [
 
 [[package]]
 name = "monotask"
-version = "0.3.21"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "automerge",
  "base64 0.22.1",
  "dirs 5.0.1",
- "kanban-core",
- "kanban-crypto",
- "kanban-net",
- "kanban-storage",
+ "monotask-core",
+ "monotask-crypto",
+ "monotask-net",
+ "monotask-storage",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3593,6 +3495,104 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "monotask-cli"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "automerge",
+ "base64 0.22.1",
+ "clap",
+ "colored",
+ "dirs 5.0.1",
+ "libc",
+ "monotask-core",
+ "monotask-crypto",
+ "monotask-net",
+ "monotask-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tabled",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "monotask-core"
+version = "0.4.0"
+dependencies = [
+ "automerge",
+ "base32",
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "monotask-crypto"
+version = "0.4.0"
+dependencies = [
+ "base32",
+ "bs58",
+ "ciborium",
+ "ed25519-dalek",
+ "hex",
+ "monotask-core",
+ "rand 0.8.5",
+ "serde",
+ "sha2",
+ "ssh-key",
+ "thiserror 1.0.69",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "monotask-net"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "automerge",
+ "ciborium",
+ "hex",
+ "libp2p",
+ "monotask-core",
+ "monotask-crypto",
+ "monotask-storage",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "monotask-storage"
+version = "0.4.0"
+dependencies = [
+ "automerge",
+ "chrono",
+ "monotask-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]

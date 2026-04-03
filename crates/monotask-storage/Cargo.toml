@@ -1,12 +1,12 @@
 [package]
-name = "kanban-storage"
-version = "0.3.8"
+name = "monotask-storage"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
 automerge    = { workspace = true }
 rusqlite     = { workspace = true }
-kanban-core  = { path = "../kanban-core" }
+monotask-core  = { path = "../monotask-core" }
 thiserror    = { workspace = true }
 tracing      = { workspace = true }
 serde        = { workspace = true }
@@ -15,4 +15,4 @@ chrono       = { workspace = true }
 
 [dev-dependencies]
 tempfile   = { workspace = true }
-kanban-core = { path = "../kanban-core" }
+monotask-core = { path = "../monotask-core" }
