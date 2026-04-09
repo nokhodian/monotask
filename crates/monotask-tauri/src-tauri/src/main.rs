@@ -2579,6 +2579,7 @@ fn main() {
             find_card_board_cmd,
             search_cards_cmd,
             check_for_update_cmd,
+            check_cli_version_cmd,
             install_update_cmd,
             undo_cmd,
             redo_cmd,
@@ -2600,6 +2601,52 @@ fn version_is_newer(remote: &str, local: &str) -> bool {
         v.split('.').filter_map(|p| p.parse().ok()).collect()
     };
     parse(remote) > parse(local)
+}
+
+/// Check if the CLI binary is installed and whether it's outdated compared to the latest release.
+/// Returns: { installed: bool, version: Option<String>, outdated: bool, latest: Option<String> }
+#[tauri::command]
+async fn check_cli_version_cmd() -> Result<serde_json::Value, String> {
+    // Try to find the CLI and get its version
+    let cli_output = tokio::process::Command::new("monotask")
+        .args(["--version"])
+        .output().await;
+
+    let (installed, cli_version) = match cli_output {
+        Ok(out) if out.status.success() => {
+            let ver_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            // Parse version from output like "monotask 0.4.2" or just "0.4.2"
+            let ver = ver_str.split_whitespace().last().unwrap_or("").trim_start_matches('v').to_string();
+            (true, if ver.is_empty() { None } else { Some(ver) })
+        }
+        _ => (false, None),
+    };
+
+    // Get latest release version
+    let latest = {
+        let api = tokio::process::Command::new("curl")
+            .args(["-sf", "--max-time", "5", "-H", "User-Agent: monotask-updater",
+                   "https://api.github.com/repos/nokhodian/monotask/releases/latest"])
+            .output().await.ok();
+        api.and_then(|o| {
+            if o.status.success() {
+                let json: serde_json::Value = serde_json::from_slice(&o.stdout).ok()?;
+                json["tag_name"].as_str().map(|t| t.trim_start_matches('v').to_string())
+            } else { None }
+        })
+    };
+
+    let outdated = match (&cli_version, &latest) {
+        (Some(cv), Some(lv)) => version_is_newer(lv, cv),
+        _ => false,
+    };
+
+    Ok(serde_json::json!({
+        "installed": installed,
+        "version": cli_version,
+        "outdated": outdated,
+        "latest": latest,
+    }))
 }
 
 #[tauri::command]

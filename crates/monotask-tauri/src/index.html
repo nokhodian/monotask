@@ -1051,7 +1051,7 @@
   <!-- Update banner -->
   <div id="update-banner">
     <span class="update-banner-icon">🔄</span>
-    <span class="update-banner-text">Update available: <strong id="update-version"></strong> — restart to get the latest fixes and features.</span>
+    <span class="update-banner-text">Update available: <strong id="update-version"></strong> — restart to get the latest fixes and features.<span id="cli-update-hint" style="display:none;margin-left:8px;color:#aaa;font-size:11px;"></span></span>
     <button class="btn-update-now" onclick="doUpdate()">Update Now</button>
     <button class="btn-update-later" onclick="dismissUpdateBanner()">Later</button>
   </div>
@@ -4170,6 +4170,20 @@
       if (newVersion) {
         document.getElementById('update-version').textContent = 'v' + newVersion;
         document.getElementById('update-banner').classList.add('visible');
+      }
+      // Also check CLI version
+      const cli = await invoke('check_cli_version_cmd').catch(() => null);
+      const hint = document.getElementById('cli-update-hint');
+      if (cli && hint) {
+        if (cli.installed && cli.outdated) {
+          hint.textContent = '(CLI v' + cli.version + ' is also outdated — run: brew upgrade monotask)';
+          hint.style.display = '';
+        } else if (!cli.installed && newVersion) {
+          hint.textContent = '(CLI not installed — optional: brew install monotask)';
+          hint.style.display = '';
+        } else {
+          hint.style.display = 'none';
+        }
       }
     } catch (e) { /* network unavailable — ignore */ }
     window._updateCheckTimer = setTimeout(checkForUpdate, 60 * 60 * 1000);
