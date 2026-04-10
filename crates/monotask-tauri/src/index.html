@@ -657,6 +657,13 @@
       cursor: pointer; padding: 0;
     }
     .att-remove:hover { background: #ff5555; }
+    /* Image lightbox */
+    #image-lightbox {
+      display: none; position: fixed; inset: 0; z-index: 10000;
+      background: rgba(0,0,0,0.85); align-items: center; justify-content: center; cursor: pointer;
+    }
+    #image-lightbox.visible { display: flex; }
+    #image-lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 4px 30px rgba(0,0,0,0.6); }
     .card-detail-due {
       background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
       padding: 6px 10px; border-radius: 4px; font-size: 13px;
@@ -1063,6 +1070,9 @@
   </style>
 </head>
 <body>
+
+  <!-- Image lightbox -->
+  <div id="image-lightbox" onclick="this.classList.remove('visible')"><img id="lightbox-img" src=""></div>
 
   <!-- Update banner -->
   <div id="update-banner">
@@ -2398,6 +2408,19 @@
     reader.readAsDataURL(file);
   }
 
+  function openLightbox(src) {
+    const lb = document.getElementById('image-lightbox');
+    document.getElementById('lightbox-img').src = src;
+    lb.classList.add('visible');
+  }
+
+  // Make images in the description preview clickable for lightbox
+  document.addEventListener('click', (e) => {
+    if (e.target.matches('.card-detail-desc-preview img')) {
+      openLightbox(e.target.src);
+    }
+  });
+
   function renderAttachmentList() {
     const container = document.getElementById('card-attachments-list');
     if (!container) return;
@@ -2415,6 +2438,8 @@
         img.className = 'att-thumb';
         img.src = 'data:' + att.mime + ';base64,' + att.data_b64;
         img.alt = att.name;
+        img.style.cursor = 'pointer';
+        img.onclick = (e) => { e.stopPropagation(); openLightbox(img.src); };
         item.appendChild(img);
       } else {
         const icon = document.createElement('div');

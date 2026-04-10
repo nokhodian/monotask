@@ -98,6 +98,10 @@ enum CardCommands {
     SetPriority { board_id: String, card_id: String, priority: String, #[arg(long)] json: bool },
     SetAssignee { board_id: String, card_id: String, pubkey: String, #[arg(long)] json: bool },
     AttachImage { board_id: String, card_id: String, file: String, #[arg(long)] json: bool },
+    /// List all attachments on a card
+    ListAttachments { board_id: String, card_id: String, #[arg(long)] json: bool },
+    /// Save an attachment to a file
+    SaveAttachment { board_id: String, card_id: String, attachment_id: String, #[arg(long)] output: Option<String>, #[arg(long)] json: bool },
     /// Label management
     Label {
         #[command(subcommand)]
@@ -547,6 +551,38 @@ async fn main() -> anyhow::Result<()> {
                     println!("{}", serde_json::json!({"id": id, "name": name, "mime": mime, "token": format!("img:{id}")}));
                 } else {
                     println!("Attached {} as img:{} — embed with ![{}](img:{})", name, id, name, id);
+                }
+            }
+            CardCommands::ListAttachments { board_id, card_id, json } => {
+                let doc = storage.load_board(&board_id)?;
+                let card = monotask_core::card::read_card(&doc, &card_id)?;
+                if json {
+                    let atts: Vec<serde_json::Value> = card.attachments.iter()
+                        .map(|(id, a)| serde_json::json!({"id": id, "name": a.name, "mime": a.mime, "size_b64": a.data_b64.len()}))
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&atts)?);
+                } else if card.attachments.is_empty() {
+                    println!("No attachments");
+                } else {
+                    for (id, a) in &card.attachments {
+                        let kb = a.data_b64.len() * 3 / 4 / 1024;
+                        println!("  img:{id}  {name}  ({mime}, ~{kb}KB)", name = a.name, mime = a.mime);
+                    }
+                }
+            }
+            CardCommands::SaveAttachment { board_id, card_id, attachment_id, output, json } => {
+                use base64::Engine;
+                let doc = storage.load_board(&board_id)?;
+                let card = monotask_core::card::read_card(&doc, &card_id)?;
+                let att = card.attachments.get(&attachment_id)
+                    .ok_or_else(|| anyhow::anyhow!("Attachment {} not found", attachment_id))?;
+                let bytes = base64::engine::general_purpose::STANDARD.decode(&att.data_b64)?;
+                let out_path = output.unwrap_or_else(|| att.name.clone());
+                std::fs::write(&out_path, &bytes)?;
+                if json {
+                    println!("{}", serde_json::json!({"saved": out_path, "size": bytes.len()}));
+                } else {
+                    println!("Saved {} ({} bytes) to {}", att.name, bytes.len(), out_path);
                 }
             }
             CardCommands::Label { cmd } => match cmd {
