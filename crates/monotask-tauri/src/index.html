@@ -641,6 +641,22 @@
     .card-detail-desc-preview h1 { font-size: 17px; color: #ddd; margin: 8px 0 4px; }
     .card-detail-desc-preview h2 { font-size: 15px; color: #ddd; margin: 8px 0 4px; }
     .card-detail-desc-preview h3 { font-size: 13px; color: #ddd; margin: 8px 0 4px; }
+    .att-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .att-item {
+      position: relative; display: flex; flex-direction: column; align-items: center;
+      background: #1a1a30; border: 1px solid #2a2a4a; border-radius: 6px; padding: 6px;
+      width: 80px; cursor: default;
+    }
+    .att-thumb { width: 68px; height: 48px; object-fit: cover; border-radius: 3px; }
+    .att-file-icon { width: 68px; height: 48px; display: flex; align-items: center; justify-content: center; background: #0d0d1a; border-radius: 3px; font-size: 20px; }
+    .att-name { font-size: 9px; color: #888; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 72px; text-align: center; }
+    .att-remove {
+      position: absolute; top: -4px; right: -4px;
+      background: #dc4646; color: #fff; border: none; border-radius: 50%;
+      width: 16px; height: 16px; font-size: 10px; line-height: 16px; text-align: center;
+      cursor: pointer; padding: 0;
+    }
+    .att-remove:hover { background: #ff5555; }
     .card-detail-due {
       background: #0d0d1a; border: 1px solid #1e1e3a; color: #ccc;
       padding: 6px 10px; border-radius: 4px; font-size: 13px;
@@ -1358,6 +1374,7 @@
           </div>
           <textarea id="card-detail-desc" class="card-detail-desc" placeholder="Add a description… (supports markdown, paste or attach images)"></textarea>
           <div id="desc-preview" class="card-detail-desc-preview" style="display:none;"></div>
+          <div id="card-attachments-list" style="margin-top:8px;"></div>
         </div>
         <div class="card-detail-section">
           <div class="card-detail-label">Labels</div>
@@ -2374,10 +2391,59 @@
         const id = await invoke('attach_image_cmd', { boardId, cardId, name, mime, dataB64 });
         _descAttachments[id] = { name, mime, data_b64: dataB64 };
         insertAtCursor(document.getElementById('card-detail-desc'), `![${name}](img:${id})`);
+        renderAttachmentList();
       } catch (err) { showAlert('Failed to attach image: ' + err); }
       input.value = '';
     };
     reader.readAsDataURL(file);
+  }
+
+  function renderAttachmentList() {
+    const container = document.getElementById('card-attachments-list');
+    if (!container) return;
+    container.innerHTML = '';
+    const keys = Object.keys(_descAttachments);
+    if (keys.length === 0) return;
+    const list = document.createElement('div');
+    list.className = 'att-list';
+    for (const id of keys) {
+      const att = _descAttachments[id];
+      const item = document.createElement('div');
+      item.className = 'att-item';
+      if (att.mime && att.mime.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.className = 'att-thumb';
+        img.src = 'data:' + att.mime + ';base64,' + att.data_b64;
+        img.alt = att.name;
+        item.appendChild(img);
+      } else {
+        const icon = document.createElement('div');
+        icon.className = 'att-file-icon';
+        icon.textContent = '📄';
+        item.appendChild(icon);
+      }
+      const name = document.createElement('div');
+      name.className = 'att-name';
+      name.textContent = att.name;
+      name.title = att.name;
+      item.appendChild(name);
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'att-remove';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove attachment';
+      removeBtn.onclick = async (e) => {
+        e.stopPropagation();
+        if (!_cardDetailCtx) return;
+        try {
+          await invoke('remove_attachment_cmd', { boardId: _cardDetailCtx.boardId, cardId: _cardDetailCtx.cardId, attachmentId: id });
+          delete _descAttachments[id];
+          renderAttachmentList();
+        } catch (err) { showAlert('Failed to remove: ' + err); }
+      };
+      item.appendChild(removeBtn);
+      list.appendChild(item);
+    }
+    container.appendChild(list);
   }
 
   function renderMarkdown(text, attachments) {
@@ -2439,6 +2505,7 @@
             const id = await invoke('attach_image_cmd', { boardId, cardId, name, mime, dataB64 });
             _descAttachments[id] = { name, mime, data_b64: dataB64 };
             insertAtCursor(document.getElementById('card-detail-desc'), `![${name}](img:${id})`);
+            renderAttachmentList();
           } catch (err) { showAlert('Failed to attach pasted image: ' + err); }
         };
         reader.readAsDataURL(file);
@@ -2462,6 +2529,7 @@
       for (const att of (card.attachments || [])) {
         _descAttachments[att.id] = { name: att.name, mime: att.mime, data_b64: att.data_b64 };
       }
+      renderAttachmentList();
       // Reset to Edit tab each time a card is opened
       switchDescTab('edit');
       document.getElementById('card-detail-due').value = card.due_date || '';
