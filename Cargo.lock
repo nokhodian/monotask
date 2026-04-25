@@ -3475,7 +3475,7 @@ dependencies = [
 
 [[package]]
 name = "monotask"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "automerge",
@@ -3499,7 +3499,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-cli"
-version = "0.4.0"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "automerge",
@@ -3524,7 +3524,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-core"
-version = "0.4.0"
+version = "0.4.5"
 dependencies = [
  "automerge",
  "base32",
@@ -3543,7 +3543,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-crypto"
-version = "0.4.0"
+version = "0.4.5"
 dependencies = [
  "base32",
  "bs58",
@@ -3562,7 +3562,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-net"
-version = "0.4.0"
+version = "0.4.5"
 dependencies = [
  "async-trait",
  "automerge",
@@ -3582,7 +3582,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-storage"
-version = "0.4.0"
+version = "0.4.5"
 dependencies = [
  "automerge",
  "chrono",

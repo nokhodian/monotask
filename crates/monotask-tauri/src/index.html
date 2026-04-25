@@ -570,6 +570,17 @@
     .btn-danger:hover { background: #1a0808; }
     .btn-small { padding: 3px 8px; font-size: 11px; }
 
+    /* Board template selector */
+    .board-tpl-card {
+      flex: 1; padding: 10px 8px; border: 1px solid #2a2a4a; border-radius: 6px;
+      cursor: pointer; text-align: center; background: #12121e; transition: border-color 0.15s;
+    }
+    .board-tpl-card:hover { border-color: #3870c0; }
+    .board-tpl-card.selected { border-color: #5890e0; background: #1e2a3a; }
+    .board-tpl-icon { font-size: 20px; margin-bottom: 4px; }
+    .board-tpl-name { font-size: 11px; color: #aaa; }
+    .board-tpl-card.selected .board-tpl-name { color: #5890e0; }
+
     /* Card detail modal */
     .modal-box.card-detail-box {
       min-width: 680px; max-width: 860px; width: 92%;
@@ -746,6 +757,19 @@
     .checklist-add-item button { font-size: 11px; padding: 3px 10px; flex-shrink: 0; }
     .btn-add-checklist { font-size: 11px; padding: 3px 10px; margin-top: 4px; }
     .checklist-section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    /* Subtasks */
+    .subtask-section { margin-bottom: 16px; margin-top: 14px; }
+    .subtask-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .subtask-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #0a0a16; border: 1px solid #1e1e3a; border-radius: 4px; margin-bottom: 4px; cursor: pointer; transition: border-color 0.15s; }
+    .subtask-item:hover { border-color: #3a3a6a; }
+    .subtask-item-num { font-size: 11px; color: #444; font-family: monospace; flex-shrink: 0; }
+    .subtask-item-title { flex: 1; font-size: 13px; color: #ccc; }
+    .subtask-item-board { font-size: 11px; color: #444; flex-shrink: 0; }
+    .subtask-add-form { display: none; margin-top: 8px; flex-direction: column; gap: 6px; }
+    .subtask-add-form.visible { display: flex; }
+    .subtask-parent-ref { display: flex; align-items: center; gap: 6px; padding: 4px 0 10px; font-size: 12px; color: #666; }
+    .subtask-parent-link { color: #c8962a; cursor: pointer; text-decoration: underline; }
+    .subtask-parent-link:hover { color: #e0a830; }
     .btn-del-checklist { background: none; border: none; color: #3a3a5a; cursor: pointer; font-size: 10px; padding: 0 3px; }
     .btn-del-checklist:hover { color: #c05050; }
     /* Card checklist progress chip */
@@ -1302,6 +1326,23 @@
       <label>Board Title</label>
       <input id="input-new-board-modal-title" placeholder="My Board" />
     </div>
+    <div class="profile-field">
+      <label>Template</label>
+      <div id="board-template-options" style="display:flex;gap:8px;margin-top:4px;">
+        <div class="board-tpl-card selected" data-tpl="task" title="Backlog · Todo · In Progress · Human-in-Loop · Done">
+          <div class="board-tpl-icon">&#9776;</div>
+          <div class="board-tpl-name">Task Board</div>
+        </div>
+        <div class="board-tpl-card" data-tpl="idea" title="New · Evaluated · Elaborated · Tasked · Iced · Rejected">
+          <div class="board-tpl-icon">&#128161;</div>
+          <div class="board-tpl-name">Idea Board</div>
+        </div>
+        <div class="board-tpl-card" data-tpl="empty" title="Start with no columns">
+          <div class="board-tpl-icon">&#9723;</div>
+          <div class="board-tpl-name">Empty</div>
+        </div>
+      </div>
+    </div>
     <div class="modal-actions">
       <button id="btn-create-board-cancel">Cancel</button>
       <button id="btn-create-board-confirm" class="btn-primary">Create</button>
@@ -1418,6 +1459,27 @@
         <!-- Checklists injected here by JS -->
         <div id="card-detail-checklists"></div>
         <button id="btn-add-checklist" class="btn-add-checklist">+ Add Checklist</button>
+        <!-- Parent reference breadcrumb -->
+        <div id="card-detail-parent-ref" class="subtask-parent-ref" style="display:none;"></div>
+        <!-- Subtasks -->
+        <div class="subtask-section">
+          <div class="subtask-section-header">
+            <div class="card-detail-label" style="margin-bottom:0;">Subtasks</div>
+            <button id="btn-toggle-add-subtask" style="background:none;border:none;color:#888;cursor:pointer;font-size:12px;padding:0;">+ Add</button>
+          </div>
+          <div id="card-detail-subtasks"></div>
+          <div id="subtask-add-form" class="subtask-add-form">
+            <input id="subtask-title-input" placeholder="Subtask title…" style="background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:6px 10px;border-radius:4px;font-size:13px;outline:none;width:100%;box-sizing:border-box;" />
+            <div style="display:flex;gap:6px;">
+              <select id="subtask-board-select" style="flex:1;background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:5px 8px;border-radius:4px;font-size:12px;outline:none;min-width:0;"></select>
+              <select id="subtask-col-select" style="flex:1;background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:5px 8px;border-radius:4px;font-size:12px;outline:none;min-width:0;"></select>
+            </div>
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button id="btn-subtask-cancel" style="background:none;border:1px solid #1e1e3a;color:#888;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;">Cancel</button>
+              <button id="btn-subtask-add" class="btn-primary" style="font-size:12px;padding:4px 10px;">Add Subtask</button>
+            </div>
+          </div>
+        </div>
       </div>
       <!-- Right: activity feed -->
       <div class="card-detail-right">
@@ -2542,11 +2604,13 @@
   async function openCardDetail(cardId, boardId) {
     _cardDetailCtx = { boardId, cardId };
     try {
-      const [card, spaceMembers, boardDetail] = await Promise.all([
+      const [card, spaceData, boardDetail] = await Promise.all([
         invoke('get_card_cmd', { boardId, cardId }),
-        currentSpaceId ? invoke('get_space_cmd', { spaceId: currentSpaceId }).then(s => s.members).catch(() => []) : Promise.resolve([]),
+        currentSpaceId ? invoke('get_space_cmd', { spaceId: currentSpaceId }).catch(() => null) : Promise.resolve(null),
         invoke('get_board_detail', { boardId }).catch(() => null),
       ]);
+      const spaceMembers = spaceData ? spaceData.members : [];
+      const spaceBoards = spaceData ? spaceData.boards : [boardId];
       document.getElementById('card-detail-title').value = card.title;
       document.getElementById('card-detail-desc').value = card.description || '';
       // Populate attachment map for the preview renderer
@@ -2566,6 +2630,10 @@
       renderCoverPicker(card.cover_color || null);
       renderChecklists(card.checklists || [], boardId, cardId);
       renderActivityFeed(card, boardId, cardId);
+      renderParentRef(card);
+      renderSubtasks(card);
+      populateSubtaskBoardSelector(spaceBoards, boardId);
+      document.getElementById('subtask-add-form').classList.remove('visible');
       // Populate "Move to column" dropdown
       const moveColSel = document.getElementById('card-detail-move-col');
       moveColSel.innerHTML = '';
@@ -2582,6 +2650,84 @@
       }
       openModal('modal-card-detail');
     } catch (e) { showAlert('Error loading card: ' + e); }
+  }
+
+  function renderParentRef(card) {
+    const el = document.getElementById('card-detail-parent-ref');
+    if (!card.parent) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    el.innerHTML = '';
+    const label = document.createElement('span');
+    label.textContent = '↑ Parent:';
+    const link = document.createElement('span');
+    link.className = 'subtask-parent-link';
+    const boardPrefix = card.parent.board_id !== _cardDetailCtx.boardId ? card.parent.board_title + ' / ' : '';
+    link.textContent = boardPrefix + (card.parent.number ? '#' + card.parent.number + ' ' : '') + card.parent.title;
+    link.onclick = () => openCardDetail(card.parent.card_id, card.parent.board_id);
+    el.appendChild(label);
+    el.appendChild(link);
+  }
+
+  function renderSubtasks(card) {
+    const container = document.getElementById('card-detail-subtasks');
+    container.innerHTML = '';
+    for (const st of (card.subtasks || [])) {
+      const item = document.createElement('div');
+      item.className = 'subtask-item';
+      if (st.number) {
+        const num = document.createElement('span');
+        num.className = 'subtask-item-num';
+        num.textContent = '#' + st.number;
+        item.appendChild(num);
+      }
+      const title = document.createElement('span');
+      title.className = 'subtask-item-title';
+      title.textContent = st.title;
+      item.appendChild(title);
+      if (st.board_id !== _cardDetailCtx.boardId) {
+        const board = document.createElement('span');
+        board.className = 'subtask-item-board';
+        board.textContent = st.board_title;
+        item.appendChild(board);
+      }
+      item.onclick = () => openCardDetail(st.card_id, st.board_id);
+      container.appendChild(item);
+    }
+  }
+
+  async function populateSubtaskBoardSelector(spaceBoards, currentBoardId) {
+    const boardSel = document.getElementById('subtask-board-select');
+    boardSel.innerHTML = '';
+    const ids = (spaceBoards && spaceBoards.length) ? spaceBoards : [currentBoardId];
+    for (const bid of ids) {
+      if (!(bid in allBoards)) continue;
+      const opt = document.createElement('option');
+      opt.value = bid;
+      opt.textContent = allBoards[bid] || bid.slice(0, 12);
+      if (bid === currentBoardId) opt.selected = true;
+      boardSel.appendChild(opt);
+    }
+    if (!boardSel.options.length) {
+      const opt = document.createElement('option');
+      opt.value = currentBoardId;
+      opt.textContent = allBoards[currentBoardId] || 'Current Board';
+      boardSel.appendChild(opt);
+    }
+    await updateSubtaskColSelector(boardSel.value);
+  }
+
+  async function updateSubtaskColSelector(boardId) {
+    const colSel = document.getElementById('subtask-col-select');
+    colSel.innerHTML = '';
+    try {
+      const detail = await invoke('get_board_detail', { boardId });
+      for (const col of (detail.columns || [])) {
+        const opt = document.createElement('option');
+        opt.value = col.id;
+        opt.textContent = col.title;
+        colSel.appendChild(opt);
+      }
+    } catch (_) {}
   }
 
   function renderActivityFeed(card, boardId, cardId) {
@@ -2960,6 +3106,41 @@
     } catch (e) { showAlert('Error: ' + e); }
   };
 
+  document.getElementById('btn-toggle-add-subtask').onclick = () => {
+    const form = document.getElementById('subtask-add-form');
+    form.classList.toggle('visible');
+    if (form.classList.contains('visible')) {
+      document.getElementById('subtask-title-input').focus();
+    }
+  };
+
+  document.getElementById('btn-subtask-cancel').onclick = () => {
+    document.getElementById('subtask-add-form').classList.remove('visible');
+    document.getElementById('subtask-title-input').value = '';
+  };
+
+  document.getElementById('subtask-board-select').onchange = async () => {
+    const boardId = document.getElementById('subtask-board-select').value;
+    await updateSubtaskColSelector(boardId);
+  };
+
+  document.getElementById('btn-subtask-add').onclick = async () => {
+    if (!_cardDetailCtx) return;
+    const { boardId: parentBoardId, cardId: parentCardId } = _cardDetailCtx;
+    const title = document.getElementById('subtask-title-input').value.trim();
+    if (!title) { document.getElementById('subtask-title-input').focus(); return; }
+    const childBoardId = document.getElementById('subtask-board-select').value;
+    const colId = document.getElementById('subtask-col-select').value;
+    if (!colId) { showAlert('Please select a column.'); return; }
+    try {
+      await invoke('add_subtask_cmd', { parentBoardId, parentCardId, childBoardId, colId, title });
+      document.getElementById('subtask-title-input').value = '';
+      document.getElementById('subtask-add-form').classList.remove('visible');
+      const refreshed = await invoke('get_card_cmd', { boardId: parentBoardId, cardId: parentCardId });
+      renderSubtasks(refreshed);
+    } catch (e) { showAlert('Error adding subtask: ' + e); }
+  };
+
   document.getElementById('btn-delete-card').onclick = () => {
     if (!_cardDetailCtx) return;
     showConfirm('Delete this card? This cannot be undone.', async () => {
@@ -3336,9 +3517,9 @@
 
   // ── Create new board and add to space (from settings) ─────────────────────
   document.getElementById('btn-create-and-add-board').onclick = () => {
-    openCreateBoardModal(async (title) => {
+    openCreateBoardModal(async (title, template) => {
       try {
-        const board = await invoke('create_board_cmd', { title });
+        const board = await invoke('create_board_cmd', { title, template });
         await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
         await refreshAllBoards();
         await refreshSpaceSettings();
@@ -3351,9 +3532,22 @@
 
   // ── New board modal (shared by grid button + create-and-add) ──────────────
   let _newBoardCallback = null;
+  let _selectedBoardTemplate = 'task';
+
+  document.getElementById('board-template-options').onclick = (e) => {
+    const card = e.target.closest('.board-tpl-card');
+    if (!card) return;
+    document.querySelectorAll('.board-tpl-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    _selectedBoardTemplate = card.dataset.tpl;
+  };
+
   function openCreateBoardModal(onConfirm) {
     _newBoardCallback = onConfirm;
+    _selectedBoardTemplate = 'task';
     document.getElementById('input-new-board-modal-title').value = '';
+    document.querySelectorAll('.board-tpl-card').forEach(c => c.classList.remove('selected'));
+    document.querySelector('.board-tpl-card[data-tpl="task"]').classList.add('selected');
     openModal('modal-create-board');
     document.getElementById('input-new-board-modal-title').focus();
   }
@@ -3362,7 +3556,7 @@
     const title = document.getElementById('input-new-board-modal-title').value.trim();
     if (!title) return;
     closeModal('modal-create-board');
-    if (_newBoardCallback) await _newBoardCallback(title);
+    if (_newBoardCallback) await _newBoardCallback(title, _selectedBoardTemplate);
   };
   document.getElementById('input-new-board-modal-title').onkeydown = (e) => {
     if (e.key === 'Enter') document.getElementById('btn-create-board-confirm').click();
@@ -3371,9 +3565,9 @@
 
   // Quick new board from boards grid
   document.getElementById('btn-new-board-quick').onclick = () => {
-    openCreateBoardModal(async (title) => {
+    openCreateBoardModal(async (title, template) => {
       try {
-        const board = await invoke('create_board_cmd', { title });
+        const board = await invoke('create_board_cmd', { title, template });
         await invoke('add_board_to_space', { spaceId: currentSpaceId, boardId: board.id });
         await refreshAllBoards();
         await refreshSpaceMain();

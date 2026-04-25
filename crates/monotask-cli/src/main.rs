@@ -112,6 +112,35 @@ enum CardCommands {
         #[command(subcommand)]
         cmd: CommentCommands,
     },
+    /// Subtask management
+    Subtask {
+        #[command(subcommand)]
+        cmd: SubtaskCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SubtaskCommands {
+    /// Add a subtask (creates a new card linked as a child of the given card)
+    Add {
+        /// Board that owns the parent card
+        parent_board_id: String,
+        /// Parent card ID
+        parent_card_id: String,
+        /// Board where the subtask card will be created (defaults to same as parent)
+        child_board_id: String,
+        /// Column ID in the child board
+        col_id: String,
+        /// Title for the new subtask card
+        title: String,
+        #[arg(long)] json: bool,
+    },
+    /// List subtasks of a card
+    List {
+        board_id: String,
+        card_id: String,
+        #[arg(long)] json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -412,8 +441,15 @@ async fn main() -> anyhow::Result<()> {
             CardCommands::View { board_id, card_id, json } => {
                 let doc = storage.load_board(&board_id)?;
                 let card = monotask_core::card::read_card(&doc, &card_id)?;
+                let parent_ref = monotask_core::card::get_parent_ref(&doc, &card_id).unwrap_or(None);
+                let subtask_refs = monotask_core::card::list_subtask_refs(&doc, &card_id).unwrap_or_default();
                 if json {
-                    println!("{}", serde_json::to_string_pretty(&card)?);
+                    let parent_json = parent_ref.as_ref().map(|(bid, cid)| serde_json::json!({"board_id": bid, "card_id": cid}));
+                    let subtasks_json: Vec<_> = subtask_refs.iter().map(|(bid, cid)| serde_json::json!({"board_id": bid, "card_id": cid})).collect();
+                    let mut v = serde_json::to_value(&card)?;
+                    v["parent"] = serde_json::to_value(parent_json)?;
+                    v["subtasks"] = serde_json::to_value(subtasks_json)?;
+                    println!("{}", serde_json::to_string_pretty(&v)?);
                 } else {
                     println!("ID:          {}", card.id);
                     println!("Title:       {}", card.title);
@@ -423,6 +459,15 @@ async fn main() -> anyhow::Result<()> {
                     if card.deleted { println!("Status:      DELETED"); }
                     else if card.archived { println!("Status:      archived"); }
                     if let Some(due) = &card.due_date { println!("Due:         {due}"); }
+                    if let Some((pbid, pcid)) = &parent_ref {
+                        println!("Parent:      {} (board: {})", pcid, pbid);
+                    }
+                    if !subtask_refs.is_empty() {
+                        println!("Subtasks ({}):", subtask_refs.len());
+                        for (bid, cid) in &subtask_refs {
+                            println!("  {} (board: {})", cid, bid);
+                        }
+                    }
                 }
             }
             CardCommands::Rename { board_id, card_id, new_title, json } => {
@@ -607,6 +652,46 @@ async fn main() -> anyhow::Result<()> {
                     else {
                         if card.labels.is_empty() { println!("No labels."); }
                         else { for l in &card.labels { println!("{l}"); } }
+                    }
+                }
+            },
+            CardCommands::Subtask { cmd } => match cmd {
+                SubtaskCommands::Add { parent_board_id, parent_card_id, child_board_id, col_id, title, json } => {
+                    let actor_pk = vec![0u8; 32];
+                    let members = vec![actor_pk.clone()];
+                    if parent_board_id == child_board_id {
+                        let mut doc = storage.load_board(&child_board_id)?;
+                        let card = monotask_core::card::create_card(&mut doc, &col_id, &title, &actor_pk, &members)?;
+                        monotask_core::card::set_parent_ref(&mut doc, &card.id, &parent_board_id, &parent_card_id)?;
+                        monotask_core::card::add_subtask_ref(&mut doc, &parent_card_id, &child_board_id, &card.id)?;
+                        storage.save_board(&child_board_id, &mut doc)?;
+                        if json { println!("{}", serde_json::json!({"id": card.id, "title": card.title, "board_id": child_board_id})); }
+                        else { println!("Created subtask: {} ({}) in board {}", card.title, card.id, child_board_id); }
+                    } else {
+                        let mut child_doc = storage.load_board(&child_board_id)?;
+                        let card = monotask_core::card::create_card(&mut child_doc, &col_id, &title, &actor_pk, &members)?;
+                        monotask_core::card::set_parent_ref(&mut child_doc, &card.id, &parent_board_id, &parent_card_id)?;
+                        storage.save_board(&child_board_id, &mut child_doc)?;
+                        let mut parent_doc = storage.load_board(&parent_board_id)?;
+                        monotask_core::card::add_subtask_ref(&mut parent_doc, &parent_card_id, &child_board_id, &card.id)?;
+                        storage.save_board(&parent_board_id, &mut parent_doc)?;
+                        if json { println!("{}", serde_json::json!({"id": card.id, "title": card.title, "board_id": child_board_id})); }
+                        else { println!("Created subtask: {} ({}) in board {}", card.title, card.id, child_board_id); }
+                    }
+                }
+                SubtaskCommands::List { board_id, card_id, json } => {
+                    let doc = storage.load_board(&board_id)?;
+                    let refs = monotask_core::card::list_subtask_refs(&doc, &card_id)?;
+                    if json {
+                        let out: Vec<_> = refs.iter().map(|(bid, cid)| serde_json::json!({"board_id": bid, "card_id": cid})).collect();
+                        println!("{}", serde_json::to_string_pretty(&out)?);
+                    } else {
+                        if refs.is_empty() { println!("No subtasks."); }
+                        else {
+                            for (bid, cid) in &refs {
+                                println!("{} (board: {})", cid, bid);
+                            }
+                        }
                     }
                 }
             },
@@ -1297,6 +1382,18 @@ Card fields:
     $ monotask card create a1b2-... c9d0-... "Fix login bug" --json
     {"id":"f1a2b3c4-...","title":"Fix login bug","board_id":"a1b2-...","number":"aaaa-1"}
 
+### card move <BOARD_ID> <CARD_ID> <TO_COL_ID>
+  --json   Output JSON
+
+  Moves a card from its current column to the target column.
+  The command automatically finds which column currently holds the card.
+  Text output:  "Moved card <card_id> to column <to_col_id>"
+  JSON output:  {"card_id":"<uuid>","to_col_id":"<uuid>"}
+
+  Example:
+    $ monotask card move a1b2-... f1a2b3c4-... d3e4f5a6-... --json
+    {"card_id":"f1a2b3c4-...","to_col_id":"d3e4f5a6-..."}
+
 ### card view <BOARD_ID> <CARD_ID>
   --json   Output JSON
 
@@ -1573,9 +1670,8 @@ LIMITATIONS & NOTES FOR AGENTS
   by the desktop app (Monotask GUI). The CLI operates only on local data.
 - `card create` currently uses a placeholder identity for card numbers
   (all cards get prefix "aaaa"). Full identity wiring is planned.
-- There is no `card move` CLI command yet. Card column assignment is managed
-  by the GUI. To get a card's current column: iterate column list and check
-  which column's card_ids contains the card.
+- To get a card's current column before moving: iterate `column list` and check
+  which column's card_ids contains the card UUID.
 - `card view --json` returns the full Card struct; the `number` field is a
   JSON object {"prefix":"...","seq":N}, not the display string "prefix-N".
 - Invite tokens are single-use per generation: generating a new token revokes

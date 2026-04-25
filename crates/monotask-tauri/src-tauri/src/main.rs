@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use monotask_storage::Storage;
 use monotask_crypto::Identity;
 use tauri::{Emitter, Manager};
+use automerge::transaction::Transactable;
 
 struct AppState {
     storage: Mutex<Storage>,
@@ -356,6 +357,15 @@ struct AttachmentView {
 }
 
 #[derive(serde::Serialize)]
+struct SubtaskRef {
+    board_id: String,
+    card_id: String,
+    title: String,
+    number: Option<String>,
+    board_title: String,
+}
+
+#[derive(serde::Serialize)]
 struct CardDetailView {
     id: String,
     title: String,
@@ -371,6 +381,8 @@ struct CardDetailView {
     cover_color: Option<String>,
     priority: Option<String>,
     attachments: Vec<AttachmentView>,
+    parent: Option<SubtaskRef>,
+    subtasks: Vec<SubtaskRef>,
 }
 
 #[derive(serde::Serialize)]
@@ -388,13 +400,27 @@ struct BoardDetail {
 }
 
 const DEFAULT_COLUMNS: &[&str] = &["Todo", "In Progress", "Review", "Done"];
+const TASK_BOARD_COLUMNS: &[&str] = &["Backlog", "Todo", "In Progress", "Human-in-Loop", "Done"];
+const IDEA_BOARD_COLUMNS: &[&str] = &["New", "Evaluated", "Elaborated", "Tasked", "Iced", "Rejected"];
 
 #[tauri::command]
-fn create_board_cmd(title: String, state: tauri::State<AppState>) -> Result<BoardSummary, String> {
+fn create_board_cmd(title: String, template: Option<String>, state: tauri::State<AppState>) -> Result<BoardSummary, String> {
     let storage = state.storage.lock().map_err(|e| e.to_string())?;
     let pk = state.identity.public_key_hex();
     let (mut doc, board) = monotask_core::board::create_board(&title, &pk)
         .map_err(|e| e.to_string())?;
+    let columns: &[&str] = match template.as_deref() {
+        Some("idea") => IDEA_BOARD_COLUMNS,
+        Some("empty") => &[],
+        _ => TASK_BOARD_COLUMNS,
+    };
+    if template.as_deref() == Some("empty") {
+        doc.put(automerge::ROOT, "template", "empty").map_err(|e| e.to_string())?;
+    }
+    for col_title in columns {
+        monotask_core::column::create_column(&mut doc, col_title)
+            .map_err(|e| e.to_string())?;
+    }
     monotask_storage::board::save_board(storage.conn(), &board.id, &mut doc)
         .map_err(|e| e.to_string())?;
     monotask_storage::board::set_cached_title(storage.conn(), &board.id, &title)
@@ -437,9 +463,12 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
     let title = monotask_core::board::get_board_title(&doc)
         .unwrap_or_else(|_| board_id.clone());
 
-    // Auto-create default columns if board has none
+    // Auto-create default columns if board has none (legacy boards pre-dating template selection)
     let existing = monotask_core::column::list_columns(&doc).unwrap_or_default();
-    if existing.is_empty() {
+    let is_empty_template = monotask_core::get_string(&doc, &automerge::ROOT, "template")
+        .unwrap_or(None)
+        .as_deref() == Some("empty");
+    if existing.is_empty() && !is_empty_template {
         drop(existing);
         monotask_core::init_doc(&mut doc).map_err(|e| e.to_string())?;
         for col_title in DEFAULT_COLUMNS {
@@ -1063,6 +1092,42 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
             data_b64: a.data_b64,
         })
         .collect();
+    let parent = monotask_core::card::get_parent_ref(&doc, &card_id)
+        .unwrap_or(None)
+        .and_then(|(par_board_id, par_card_id)| {
+            let par_doc = monotask_storage::board::load_board(storage.conn(), &par_board_id).ok()?;
+            let par_card = monotask_core::card::read_card(&par_doc, &par_card_id).ok()?;
+            if par_card.deleted { return None; }
+            let par_board_title = monotask_core::board::get_board_title(&par_doc)
+                .unwrap_or_else(|_| par_board_id.clone());
+            Some(SubtaskRef {
+                board_id: par_board_id,
+                card_id: par_card_id,
+                title: par_card.title,
+                number: par_card.number.map(|n| n.to_display()),
+                board_title: par_board_title,
+            })
+        });
+    let subtask_refs = monotask_core::card::list_subtask_refs(&doc, &card_id)
+        .unwrap_or_default();
+    let mut subtasks = Vec::new();
+    for (child_board_id, child_card_id) in subtask_refs {
+        if let Ok(child_doc) = monotask_storage::board::load_board(storage.conn(), &child_board_id) {
+            if let Ok(child_card) = monotask_core::card::read_card(&child_doc, &child_card_id) {
+                if !child_card.deleted {
+                    let board_title = monotask_core::board::get_board_title(&child_doc)
+                        .unwrap_or_else(|_| child_board_id.clone());
+                    subtasks.push(SubtaskRef {
+                        board_id: child_board_id,
+                        card_id: child_card_id,
+                        title: child_card.title,
+                        number: child_card.number.map(|n| n.to_display()),
+                        board_title,
+                    });
+                }
+            }
+        }
+    }
     Ok(CardDetailView {
         id: card.id,
         title: card.title,
@@ -1078,7 +1143,74 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         cover_color,
         priority,
         attachments,
+        parent,
+        subtasks,
     })
+}
+
+#[tauri::command]
+fn add_subtask_cmd(
+    parent_board_id: String,
+    parent_card_id: String,
+    child_board_id: String,
+    col_id: String,
+    title: String,
+    state: tauri::State<AppState>,
+) -> Result<SubtaskRef, String> {
+    validate_text(&title, "Subtask title", 500)?;
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let pk = state.identity.public_key_bytes();
+    if parent_board_id == child_board_id {
+        let mut doc = monotask_storage::board::load_board(storage.conn(), &child_board_id)
+            .map_err(|e| e.to_string())?;
+        let card = monotask_core::card::create_card(&mut doc, &col_id, &title, &pk, &[pk.to_vec()])
+            .map_err(|e| e.to_string())?;
+        if card.id == parent_card_id {
+            return Err("Cannot create a card that is its own parent".to_string());
+        }
+        monotask_core::card::set_parent_ref(&mut doc, &card.id, &parent_board_id, &parent_card_id)
+            .map_err(|e| e.to_string())?;
+        monotask_core::card::add_subtask_ref(&mut doc, &parent_card_id, &child_board_id, &card.id)
+            .map_err(|e| e.to_string())?;
+        let board_title = monotask_core::board::get_board_title(&doc)
+            .unwrap_or_else(|_| child_board_id.clone());
+        monotask_storage::board::save_board(storage.conn(), &child_board_id, &mut doc)
+            .map_err(|e| e.to_string())?;
+        trigger_board_sync(&child_board_id, &state);
+        Ok(SubtaskRef {
+            board_id: child_board_id,
+            card_id: card.id,
+            title: card.title,
+            number: card.number.map(|n| n.to_display()),
+            board_title,
+        })
+    } else {
+        let mut child_doc = monotask_storage::board::load_board(storage.conn(), &child_board_id)
+            .map_err(|e| e.to_string())?;
+        let card = monotask_core::card::create_card(&mut child_doc, &col_id, &title, &pk, &[pk.to_vec()])
+            .map_err(|e| e.to_string())?;
+        monotask_core::card::set_parent_ref(&mut child_doc, &card.id, &parent_board_id, &parent_card_id)
+            .map_err(|e| e.to_string())?;
+        let board_title = monotask_core::board::get_board_title(&child_doc)
+            .unwrap_or_else(|_| child_board_id.clone());
+        monotask_storage::board::save_board(storage.conn(), &child_board_id, &mut child_doc)
+            .map_err(|e| e.to_string())?;
+        let mut parent_doc = monotask_storage::board::load_board(storage.conn(), &parent_board_id)
+            .map_err(|e| e.to_string())?;
+        monotask_core::card::add_subtask_ref(&mut parent_doc, &parent_card_id, &child_board_id, &card.id)
+            .map_err(|e| e.to_string())?;
+        monotask_storage::board::save_board(storage.conn(), &parent_board_id, &mut parent_doc)
+            .map_err(|e| e.to_string())?;
+        trigger_board_sync(&child_board_id, &state);
+        trigger_board_sync(&parent_board_id, &state);
+        Ok(SubtaskRef {
+            board_id: child_board_id,
+            card_id: card.id,
+            title: card.title,
+            number: card.number.map(|n| n.to_display()),
+            board_title,
+        })
+    }
 }
 
 #[tauri::command]
@@ -2589,6 +2721,7 @@ fn main() {
             import_board_cmd,
             attach_image_cmd,
             remove_attachment_cmd,
+            add_subtask_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

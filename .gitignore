@@ -1,3 +1,5 @@
 .worktrees/
 target/
 assets/monotask.iconset/
+replicate/
+.claude-flow/

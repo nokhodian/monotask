@@ -460,6 +460,60 @@ pub fn attach_image(
     Ok(())
 }
 
+/// Write parent reference onto a child card. parent_board_id == "" clears the ref.
+pub fn set_parent_ref(doc: &mut AutoCommit, card_id: &str, parent_board_id: &str, parent_card_id: &str) -> Result<()> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    doc.put(&card_obj, "parent_board_id", parent_board_id)?;
+    doc.put(&card_obj, "parent_card_id", parent_card_id)?;
+    Ok(())
+}
+
+/// Read parent reference from a card. Returns None if not set or empty.
+pub fn get_parent_ref(doc: &AutoCommit, card_id: &str) -> Result<Option<(String, String)>> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let bid = crate::get_string(doc, &card_obj, "parent_board_id")?.unwrap_or_default();
+    let cid = crate::get_string(doc, &card_obj, "parent_card_id")?.unwrap_or_default();
+    if bid.is_empty() || cid.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((bid, cid)))
+    }
+}
+
+/// Append a subtask reference to the parent card's subtask_refs list.
+pub fn add_subtask_ref(doc: &mut AutoCommit, card_id: &str, child_board_id: &str, child_card_id: &str) -> Result<()> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let refs_list = match doc.get(&card_obj, "subtask_refs")? {
+        Some((_, list_id)) => list_id,
+        None => doc.put_object(&card_obj, "subtask_refs", ObjType::List)?,
+    };
+    let idx = doc.length(&refs_list);
+    let entry = doc.insert_object(&refs_list, idx, ObjType::Map)?;
+    doc.put(&entry, "board_id", child_board_id)?;
+    doc.put(&entry, "card_id", child_card_id)?;
+    Ok(())
+}
+
+/// List subtask refs stored on a parent card. Returns (board_id, card_id) pairs.
+pub fn list_subtask_refs(doc: &AutoCommit, card_id: &str) -> Result<Vec<(String, String)>> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let refs_list = match doc.get(&card_obj, "subtask_refs")? {
+        Some((_, list_id)) => list_id,
+        None => return Ok(vec![]),
+    };
+    let mut result = Vec::new();
+    for i in 0..doc.length(&refs_list) {
+        if let Some((_, entry)) = doc.get(&refs_list, i)? {
+            let bid = crate::get_string(doc, &entry, "board_id")?.unwrap_or_default();
+            let cid = crate::get_string(doc, &entry, "card_id")?.unwrap_or_default();
+            if !bid.is_empty() && !cid.is_empty() {
+                result.push((bid, cid));
+            }
+        }
+    }
+    Ok(result)
+}
+
 pub fn remove_attachment(
     doc: &mut AutoCommit,
     card_id: &str,
