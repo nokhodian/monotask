@@ -43,6 +43,8 @@ enum Commands {
         #[command(subcommand)]
         cmd: ProfileCommands,
     },
+    /// Print version
+    Version,
     /// Print full reference documentation for AI agents and automation
     #[command(name = "ai-help")]
     AiHelp,
@@ -805,6 +807,7 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Space { cmd } => handle_space(cmd, &mut storage, &identity)?,
         Commands::Profile { cmd } => handle_profile(cmd, &mut storage, &identity, &dir)?,
+        Commands::Version => println!("monotask {}", env!("CARGO_PKG_VERSION")),
         Commands::AiHelp => print_ai_help(),
         Commands::Sync { detach, stop, status, port, peers } => {
             cmd_sync(dir, detach, stop, status, port, peers).await?;

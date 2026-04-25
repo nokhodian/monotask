@@ -2712,6 +2712,7 @@ fn main() {
             search_cards_cmd,
             check_for_update_cmd,
             check_cli_version_cmd,
+            install_cli_cmd,
             install_update_cmd,
             undo_cmd,
             redo_cmd,
@@ -2736,50 +2737,55 @@ fn version_is_newer(remote: &str, local: &str) -> bool {
     parse(remote) > parse(local)
 }
 
-/// Check if the CLI binary is installed and whether it's outdated compared to the latest release.
-/// Returns: { installed: bool, version: Option<String>, outdated: bool, latest: Option<String> }
+/// Check if the CLI binary is installed and whether its version matches the running app.
+/// Returns: { installed: bool, version: Option<String>, outdated: bool, app_version: String }
 #[tauri::command]
 async fn check_cli_version_cmd() -> Result<serde_json::Value, String> {
-    // Try to find the CLI and get its version
+    let app_version = env!("CARGO_PKG_VERSION");
+
     let cli_output = tokio::process::Command::new("monotask")
-        .args(["--version"])
+        .args(["version"])
         .output().await;
 
     let (installed, cli_version) = match cli_output {
         Ok(out) if out.status.success() => {
             let ver_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            // Parse version from output like "monotask 0.4.2" or just "0.4.2"
+            // clap emits "monotask 0.4.5"
             let ver = ver_str.split_whitespace().last().unwrap_or("").trim_start_matches('v').to_string();
             (true, if ver.is_empty() { None } else { Some(ver) })
         }
         _ => (false, None),
     };
 
-    // Get latest release version
-    let latest = {
-        let api = tokio::process::Command::new("curl")
-            .args(["-sf", "--max-time", "5", "-H", "User-Agent: monotask-updater",
-                   "https://api.github.com/repos/nokhodian/monotask/releases/latest"])
-            .output().await.ok();
-        api.and_then(|o| {
-            if o.status.success() {
-                let json: serde_json::Value = serde_json::from_slice(&o.stdout).ok()?;
-                json["tag_name"].as_str().map(|t| t.trim_start_matches('v').to_string())
-            } else { None }
-        })
-    };
-
-    let outdated = match (&cli_version, &latest) {
-        (Some(cv), Some(lv)) => version_is_newer(lv, cv),
-        _ => false,
+    // Outdated when CLI is installed but its version doesn't match the app
+    let outdated = match &cli_version {
+        Some(cv) => cv != app_version,
+        None => false,
     };
 
     Ok(serde_json::json!({
         "installed": installed,
         "version": cli_version,
         "outdated": outdated,
-        "latest": latest,
+        "app_version": app_version,
     }))
+}
+
+/// Install / update the CLI to the same version as the running app via cargo.
+#[tauri::command]
+async fn install_cli_cmd() -> Result<(), String> {
+    let app_version = env!("CARGO_PKG_VERSION");
+    let tag = format!("v{app_version}");
+    let out = tokio::process::Command::new("cargo")
+        .args(["install", "--git", "https://github.com/nokhodian/monotask",
+               "--tag", &tag, "monotask-cli"])
+        .output().await
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
 }
 
 #[tauri::command]

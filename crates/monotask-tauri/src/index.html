@@ -1003,6 +1003,41 @@
       display: none;
     }
 
+    /* ── CLI mismatch banner ────────────────────── */
+    #cli-mismatch-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: linear-gradient(90deg, #2a1a00, #1a1000);
+      border-bottom: 1px solid #6a4a00;
+      padding: 7px 16px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      z-index: 8999;
+      font-size: 12px;
+    }
+    #cli-mismatch-banner.visible { display: flex; }
+    #cli-mismatch-banner .banner-text { flex: 1; color: #c8962a; }
+    #cli-mismatch-banner .banner-text strong { color: #e0b840; }
+    .btn-update-cli {
+      background: #5a3a00;
+      border: 1px solid #9a6a10;
+      color: #e0b840;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-update-cli:hover { background: #7a5200; }
+    .btn-update-cli:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-dismiss-cli {
+      background: none; border: none;
+      color: #6a4a10; font-size: 11px;
+      cursor: pointer; padding: 4px 8px;
+    }
+    .btn-dismiss-cli:hover { color: #9a7a30; }
+
     /* ── Update banner ─────────────────────────── */
     #update-banner {
       position: fixed;
@@ -1098,10 +1133,17 @@
   <!-- Image lightbox -->
   <div id="image-lightbox" onclick="this.classList.remove('visible')"><img id="lightbox-img" src=""></div>
 
+  <!-- CLI mismatch banner (shown independently of app update) -->
+  <div id="cli-mismatch-banner">
+    <span style="font-size:15px;">⚠️</span>
+    <span class="banner-text">CLI version mismatch: app is <strong id="cli-mismatch-app-ver"></strong> but <code>monotask</code> CLI is <strong id="cli-mismatch-cli-ver"></strong>. Update the CLI to keep them in sync.</span>
+    <button class="btn-update-cli" id="btn-update-cli" onclick="updateCli()">Update CLI</button>
+    <button class="btn-dismiss-cli" onclick="dismissCliMismatch()">Dismiss</button>
+  </div>
   <!-- Update banner -->
   <div id="update-banner">
     <span class="update-banner-icon">🔄</span>
-    <span class="update-banner-text">Update available: <strong id="update-version"></strong> — restart to get the latest fixes and features.<span id="cli-update-hint" style="display:none;margin-left:8px;color:#aaa;font-size:11px;"></span></span>
+    <span class="update-banner-text">Update available: <strong id="update-version"></strong> — restart to get the latest fixes and features.</span>
     <button class="btn-update-now" onclick="doUpdate()">Update Now</button>
     <button class="btn-update-later" onclick="dismissUpdateBanner()">Later</button>
   </div>
@@ -4458,27 +4500,43 @@
         document.getElementById('update-version').textContent = 'v' + newVersion;
         document.getElementById('update-banner').classList.add('visible');
       }
-      // Also check CLI version
+    } catch (e) { /* network unavailable */ }
+
+    // Always check CLI version against current app version (independent of app update)
+    try {
       const cli = await invoke('check_cli_version_cmd').catch(() => null);
-      const hint = document.getElementById('cli-update-hint');
-      if (cli && hint) {
-        if (cli.installed && cli.outdated) {
-          hint.textContent = '(CLI v' + cli.version + ' is also outdated — run: brew upgrade monotask)';
-          hint.style.display = '';
-        } else if (!cli.installed && newVersion) {
-          hint.textContent = '(CLI not installed — optional: brew install monotask)';
-          hint.style.display = '';
-        } else {
-          hint.style.display = 'none';
-        }
+      if (cli && cli.installed && cli.outdated) {
+        document.getElementById('cli-mismatch-app-ver').textContent = 'v' + cli.app_version;
+        document.getElementById('cli-mismatch-cli-ver').textContent = 'v' + (cli.version || '?');
+        document.getElementById('cli-mismatch-banner').classList.add('visible');
       }
-    } catch (e) { /* network unavailable — ignore */ }
+    } catch (e) { /* ignore */ }
+
     window._updateCheckTimer = setTimeout(checkForUpdate, 60 * 60 * 1000);
   }
 
   function dismissUpdateBanner() {
     document.getElementById('update-banner').classList.remove('visible');
-    // Snooze: re-check in 1h (checkForUpdate reschedules itself, no extra timer needed)
+  }
+
+  function dismissCliMismatch() {
+    document.getElementById('cli-mismatch-banner').classList.remove('visible');
+  }
+
+  async function updateCli() {
+    const btn = document.getElementById('btn-update-cli');
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+    try {
+      await invoke('install_cli_cmd');
+      document.getElementById('cli-mismatch-banner').classList.remove('visible');
+      showAlert('CLI updated successfully. Run `monotask --version` to confirm.');
+    } catch (e) {
+      showAlert('CLI update failed: ' + e + '\n\nRun manually: cargo install --git https://github.com/nokhodian/monotask monotask-cli');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Update CLI';
+    }
   }
 
   async function doUpdate() {
