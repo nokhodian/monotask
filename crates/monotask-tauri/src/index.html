@@ -1482,13 +1482,22 @@
           <div id="card-detail-assignee-picker" class="assignee-picker"></div>
         </div>
         <div class="card-detail-section">
-          <div class="card-detail-label">Priority</div>
-          <select id="card-detail-priority" style="background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:6px 10px;border-radius:4px;font-size:13px;outline:none;width:100%;">
-            <option value="">No priority</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
+          <div class="card-detail-label" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Impact</span><span id="impact-val-display" style="font-weight:700;color:#5890e0;font-size:13px;">—</span>
+          </div>
+          <input type="range" id="card-detail-impact" min="0" max="10" step="1" value="0"
+            style="width:100%;accent-color:#5890e0;cursor:pointer;" oninput="onImpactChange(this.value)">
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Effort</span><span id="effort-val-display" style="font-weight:700;color:#c8962a;font-size:13px;">—</span>
+          </div>
+          <input type="range" id="card-detail-effort" min="0" max="10" step="1" value="0"
+            style="width:100%;accent-color:#c8962a;cursor:pointer;" oninput="onEffortChange(this.value)">
+        </div>
+        <div class="card-detail-section">
+          <div class="card-detail-label">Priority <span style="font-size:10px;color:#444;">(impact+10−effort)÷2</span></div>
+          <div id="card-detail-computed-priority" style="font-size:22px;font-weight:700;color:#aafa9a;letter-spacing:0.05em;">—</div>
         </div>
         <div class="card-detail-section">
           <div class="card-detail-label">Cover Color</div>
@@ -2206,7 +2215,7 @@
     li.className = 'task-card';
     li.dataset.cardId = card.id;
     li.dataset.colId = colId;
-    li.dataset.priority = card.priority || 'none';
+    li.dataset.priority = card.computed_priority != null ? card.computed_priority : (card.priority || 'none');
 
     // Cover color stripe
     if (card.cover_color) {
@@ -2241,8 +2250,16 @@
     titleEl.textContent = card.title;
     body.appendChild(titleEl);
 
-    // Priority badge
-    if (card.priority) {
+    // Priority badge — show computed numeric priority (impact/effort based)
+    if (card.computed_priority != null) {
+      const pBadge = document.createElement('span');
+      const cp = card.computed_priority;
+      const hue = cp >= 7 ? 'priority-high' : cp >= 4 ? 'priority-medium' : 'priority-low';
+      pBadge.className = 'card-priority-badge ' + hue;
+      pBadge.title = 'Priority ' + cp + '/10';
+      pBadge.textContent = 'P' + cp;
+      body.appendChild(pBadge);
+    } else if (card.priority) {
       const pBadge = document.createElement('span');
       pBadge.className = 'card-priority-badge priority-' + card.priority;
       pBadge.textContent = card.priority.charAt(0).toUpperCase() + card.priority.slice(1);
@@ -2665,7 +2682,16 @@
       switchDescTab('edit');
       document.getElementById('card-detail-due').value = card.due_date || '';
       document.getElementById('card-detail-num').textContent = card.number ? '#' + card.number : '';
-      document.getElementById('card-detail-priority').value = card.priority || '';
+      // Impact / Effort / computed priority
+      const impactSlider = document.getElementById('card-detail-impact');
+      const effortSlider = document.getElementById('card-detail-effort');
+      const impactSet = card.impact != null;
+      const effortSet = card.effort != null;
+      impactSlider.value = impactSet ? card.impact : 0;
+      effortSlider.value = effortSet ? card.effort : 0;
+      document.getElementById('impact-val-display').textContent = impactSet ? card.impact : '—';
+      document.getElementById('effort-val-display').textContent = effortSet ? card.effort : '—';
+      refreshComputedPriority(impactSet || effortSet ? card.computed_priority : null);
       document.getElementById('comment-input').value = '';
       renderLabelPicker(card.labels || []);
       renderAssigneePicker(spaceMembers, card.assignee || null);
@@ -2708,6 +2734,45 @@
     link.onclick = () => openCardDetail(card.parent.card_id, card.parent.board_id);
     el.appendChild(label);
     el.appendChild(link);
+  }
+
+  function refreshComputedPriority(cp) {
+    const el = document.getElementById('card-detail-computed-priority');
+    if (cp == null) { el.textContent = '—'; el.style.color = '#444'; return; }
+    el.textContent = cp;
+    el.style.color = cp >= 7 ? '#aafa9a' : cp >= 4 ? '#e0b840' : '#8888aa';
+  }
+
+  let _impactDebounce = null, _effortDebounce = null;
+
+  function onImpactChange(val) {
+    const v = parseInt(val, 10);
+    document.getElementById('impact-val-display').textContent = v;
+    const effort = parseInt(document.getElementById('card-detail-effort').value, 10);
+    const cp = Math.floor((v + 10 - effort) / 2);
+    refreshComputedPriority(cp);
+    clearTimeout(_impactDebounce);
+    _impactDebounce = setTimeout(async () => {
+      if (!_cardDetailCtx) return;
+      const { boardId, cardId } = _cardDetailCtx;
+      try { await invoke('set_impact_cmd', { boardId, cardId, value: v }); }
+      catch (e) { console.error('set_impact_cmd failed', e); }
+    }, 400);
+  }
+
+  function onEffortChange(val) {
+    const v = parseInt(val, 10);
+    document.getElementById('effort-val-display').textContent = v;
+    const impact = parseInt(document.getElementById('card-detail-impact').value, 10);
+    const cp = Math.floor((impact + 10 - v) / 2);
+    refreshComputedPriority(cp);
+    clearTimeout(_effortDebounce);
+    _effortDebounce = setTimeout(async () => {
+      if (!_cardDetailCtx) return;
+      const { boardId, cardId } = _cardDetailCtx;
+      try { await invoke('set_effort_cmd', { boardId, cardId, value: v }); }
+      catch (e) { console.error('set_effort_cmd failed', e); }
+    }, 400);
   }
 
   function renderSubtasks(card) {
@@ -3110,10 +3175,9 @@
     const labels = getSelectedLabels();
     const assignee = _assigneeSelected || null;
     const coverColor = _selectedCoverColor || null;
-    const priority = document.getElementById('card-detail-priority').value || null;
     if (!title) return;
     try {
-      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee, coverColor, priority });
+      await invoke('update_card_cmd', { boardId, cardId, title, description, labels, dueDate, assignee, coverColor, priority: null });
       // Handle "Move to column" if changed
       const moveColSel = document.getElementById('card-detail-move-col');
       const selectedColId = moveColSel.value;

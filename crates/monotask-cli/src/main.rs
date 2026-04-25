@@ -98,6 +98,10 @@ enum CardCommands {
     SetCover { board_id: String, card_id: String, color: String, #[arg(long)] json: bool },
     SetDueDate { board_id: String, card_id: String, date: String, #[arg(long)] json: bool },
     SetPriority { board_id: String, card_id: String, priority: String, #[arg(long)] json: bool },
+    /// Set impact score (0–10). Priority = floor((impact + 10 - effort) / 2)
+    SetImpact { board_id: String, card_id: String, #[arg(value_parser = clap::value_parser!(u8).range(0..=10))] value: u8, #[arg(long)] json: bool },
+    /// Set effort score (0–10). Priority = floor((impact + 10 - effort) / 2)
+    SetEffort { board_id: String, card_id: String, #[arg(value_parser = clap::value_parser!(u8).range(0..=10))] value: u8, #[arg(long)] json: bool },
     SetAssignee { board_id: String, card_id: String, pubkey: String, #[arg(long)] json: bool },
     AttachImage { board_id: String, card_id: String, file: String, #[arg(long)] json: bool },
     /// List all attachments on a card
@@ -461,6 +465,14 @@ async fn main() -> anyhow::Result<()> {
                     if card.deleted { println!("Status:      DELETED"); }
                     else if card.archived { println!("Status:      archived"); }
                     if let Some(due) = &card.due_date { println!("Due:         {due}"); }
+                    if card.impact.is_some() || card.effort.is_some() {
+                        let imp = card.impact.unwrap_or(0);
+                        let eff = card.effort.unwrap_or(0);
+                        let pri = monotask_core::card::compute_priority(imp, eff);
+                        println!("Impact:      {imp}/10");
+                        println!("Effort:      {eff}/10");
+                        println!("Priority:    {pri}/10");
+                    }
                     if let Some((pbid, pcid)) = &parent_ref {
                         println!("Parent:      {} (board: {})", pcid, pbid);
                     }
@@ -566,6 +578,26 @@ async fn main() -> anyhow::Result<()> {
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "priority": pri})); }
                 else { println!("Set priority for card {card_id}"); }
+            }
+            CardCommands::SetImpact { board_id, card_id, value, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                monotask_core::card::set_impact(&mut doc, &card_id, value)?;
+                let card = monotask_core::card::read_card(&doc, &card_id)?;
+                let effort = card.effort.unwrap_or(0);
+                let priority = monotask_core::card::compute_priority(value, effort);
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "impact": value, "effort": effort, "priority": priority})); }
+                else { println!("Impact={value}, Effort={effort} → Priority={priority}"); }
+            }
+            CardCommands::SetEffort { board_id, card_id, value, json } => {
+                let mut doc = storage.load_board(&board_id)?;
+                monotask_core::card::set_effort(&mut doc, &card_id, value)?;
+                let card = monotask_core::card::read_card(&doc, &card_id)?;
+                let impact = card.impact.unwrap_or(0);
+                let priority = monotask_core::card::compute_priority(impact, value);
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "impact": impact, "effort": value, "priority": priority})); }
+                else { println!("Impact={impact}, Effort={value} → Priority={priority}"); }
             }
             CardCommands::SetAssignee { board_id, card_id, pubkey, json } => {
                 let pk = if pubkey == "none" { "" } else { &pubkey };

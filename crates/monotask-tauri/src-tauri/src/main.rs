@@ -317,6 +317,9 @@ struct CardView {
     checklist_done: usize,
     cover_color: Option<String>,
     priority: Option<String>,
+    impact: Option<u8>,
+    effort: Option<u8>,
+    computed_priority: Option<u8>,
 }
 
 #[derive(serde::Serialize)]
@@ -383,6 +386,9 @@ struct CardDetailView {
     attachments: Vec<AttachmentView>,
     parent: Option<SubtaskRef>,
     subtasks: Vec<SubtaskRef>,
+    impact: Option<u8>,
+    effort: Option<u8>,
+    computed_priority: Option<u8>,
 }
 
 #[derive(serde::Serialize)]
@@ -494,6 +500,11 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
                     let priority = get_card_str_field(&doc, &cid, "priority");
+                    let impact = get_card_u8_field(&doc, &cid, "impact");
+                    let effort = get_card_u8_field(&doc, &cid, "effort");
+                    let computed_priority = if impact.is_some() || effort.is_some() {
+                        Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
+                    } else { None };
                     let (checklist_total, checklist_done) = monotask_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
@@ -512,6 +523,9 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         checklist_done,
                         cover_color,
                         priority,
+                        impact,
+                        effort,
+                        computed_priority,
                     });
                 }
             }
@@ -581,6 +595,11 @@ fn export_board_cmd(
                     let assignee = get_card_str_field(&doc, &cid, "assignee");
                     let cover_color = get_card_str_field(&doc, &cid, "cover_color");
                     let priority = get_card_str_field(&doc, &cid, "priority");
+                    let impact = get_card_u8_field(&doc, &cid, "impact");
+                    let effort = get_card_u8_field(&doc, &cid, "effort");
+                    let computed_priority = if impact.is_some() || effort.is_some() {
+                        Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
+                    } else { None };
                     let (checklist_total, checklist_done) = monotask_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
@@ -599,6 +618,9 @@ fn export_board_cmd(
                         checklist_done,
                         cover_color,
                         priority,
+                        impact,
+                        effort,
+                        computed_priority,
                     });
                 }
             }
@@ -841,6 +863,20 @@ fn get_card_str_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -
         if let automerge::ScalarValue::Str(t) = s.as_ref() {
             let r = t.to_string();
             return if r.is_empty() { None } else { Some(r) };
+        }
+    }
+    None
+}
+
+fn get_card_u8_field(doc: &automerge::AutoCommit, card_id: &str, field: &str) -> Option<u8> {
+    use automerge::ReadDoc;
+    let card_obj = monotask_core::card::get_card_obj(doc, card_id).ok()?;
+    let (v, _) = doc.get(&card_obj, field).ok()??;
+    if let automerge::Value::Scalar(s) = v {
+        match s.as_ref() {
+            automerge::ScalarValue::Uint(n) => return Some((*n).min(10) as u8),
+            automerge::ScalarValue::Int(n) => return Some((*n).max(0).min(10) as u8),
+            _ => {}
         }
     }
     None
@@ -1128,6 +1164,11 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
             }
         }
     }
+    let impact = get_card_u8_field(&doc, &card_id, "impact");
+    let effort = get_card_u8_field(&doc, &card_id, "effort");
+    let computed_priority = if impact.is_some() || effort.is_some() {
+        Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
+    } else { None };
     Ok(CardDetailView {
         id: card.id,
         title: card.title,
@@ -1145,6 +1186,9 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         attachments,
         parent,
         subtasks,
+        impact,
+        effort,
+        computed_priority,
     })
 }
 
@@ -1264,6 +1308,30 @@ fn update_card_cmd(
     );
     trigger_board_sync(&board_id, &state);
     Ok(())
+}
+
+#[tauri::command]
+fn set_impact_cmd(board_id: String, card_id: String, value: u8, state: tauri::State<AppState>) -> Result<u8, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id).map_err(|e| e.to_string())?;
+    monotask_core::card::set_impact(&mut doc, &card_id, value).map_err(|e| e.to_string())?;
+    let effort = get_card_u8_field(&doc, &card_id, "effort").unwrap_or(0);
+    let cp = monotask_core::card::compute_priority(value.min(10), effort);
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc).map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(cp)
+}
+
+#[tauri::command]
+fn set_effort_cmd(board_id: String, card_id: String, value: u8, state: tauri::State<AppState>) -> Result<u8, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id).map_err(|e| e.to_string())?;
+    monotask_core::card::set_effort(&mut doc, &card_id, value).map_err(|e| e.to_string())?;
+    let impact = get_card_u8_field(&doc, &card_id, "impact").unwrap_or(0);
+    let cp = monotask_core::card::compute_priority(impact, value.min(10));
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc).map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(cp)
 }
 
 #[tauri::command]
@@ -2671,6 +2739,8 @@ fn main() {
             create_card_cmd,
             get_card_cmd,
             update_card_cmd,
+            set_impact_cmd,
+            set_effort_cmd,
             delete_card_cmd,
             delete_column_cmd,
             add_comment_cmd,

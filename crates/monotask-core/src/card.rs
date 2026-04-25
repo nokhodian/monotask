@@ -27,6 +27,12 @@ pub struct Card {
     pub created_by: String,
     pub created_at: String,
     pub attachments: std::collections::HashMap<String, Attachment>,
+    pub impact: Option<u8>,
+    pub effort: Option<u8>,
+}
+
+pub fn compute_priority(impact: u8, effort: u8) -> u8 {
+    ((impact as i16 + 10 - effort as i16) / 2).max(0) as u8
 }
 
 pub(crate) fn assign_next_card_number(
@@ -176,6 +182,8 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         }
         None => std::collections::HashMap::new(),
     };
+    let impact = get_u8_card_field(doc, &card_obj, "impact");
+    let effort = get_u8_card_field(doc, &card_obj, "effort");
     Ok(Card {
         id: card_id.to_string(),
         title,
@@ -191,8 +199,41 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         assignees,
         labels,
         attachments,
+        impact,
+        effort,
         ..Default::default()
     })
+}
+
+fn get_u8_card_field(doc: &AutoCommit, obj: &automerge::ObjId, key: &str) -> Option<u8> {
+    match doc.get(obj, key).ok()? {
+        Some((automerge::Value::Scalar(s), _)) => match s.as_ref() {
+            ScalarValue::Uint(n) => Some((*n).min(10) as u8),
+            ScalarValue::Int(n) => Some((*n).max(0).min(10) as u8),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+pub fn set_impact(doc: &mut AutoCommit, card_id: &str, value: u8) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "impact", value.min(10) as u64)?;
+    Ok(())
+}
+
+pub fn set_effort(doc: &mut AutoCommit, card_id: &str, value: u8) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    doc.put(&card_obj, "effort", value.min(10) as u64)?;
+    Ok(())
 }
 
 pub fn get_card_obj(doc: &AutoCommit, card_id: &str) -> Result<automerge::ObjId> {
