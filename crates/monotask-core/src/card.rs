@@ -29,6 +29,7 @@ pub struct Card {
     pub attachments: std::collections::HashMap<String, Attachment>,
     pub impact: Option<u8>,
     pub effort: Option<u8>,
+    pub github_issue_number: Option<u64>,
 }
 
 pub fn compute_priority(impact: u8, effort: u8) -> u8 {
@@ -184,6 +185,7 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
     };
     let impact = get_u8_card_field(doc, &card_obj, "impact");
     let effort = get_u8_card_field(doc, &card_obj, "effort");
+    let github_issue_number = get_u64_card_field(doc, &card_obj, "github_issue_number");
     Ok(Card {
         id: card_id.to_string(),
         title,
@@ -201,8 +203,20 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         attachments,
         impact,
         effort,
+        github_issue_number,
         ..Default::default()
     })
+}
+
+fn get_u64_card_field(doc: &AutoCommit, obj: &automerge::ObjId, key: &str) -> Option<u64> {
+    match doc.get(obj, key).ok()? {
+        Some((automerge::Value::Scalar(s), _)) => match s.as_ref() {
+            ScalarValue::Uint(n) => Some(*n),
+            ScalarValue::Int(n) if *n >= 0 => Some(*n as u64),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn get_u8_card_field(doc: &AutoCommit, obj: &automerge::ObjId, key: &str) -> Option<u8> {

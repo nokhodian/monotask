@@ -4,6 +4,7 @@ members = [
     "crates/monotask-crypto",
     "crates/monotask-net",
     "crates/monotask-storage",
+    "crates/monotask-github",
     "crates/monotask-cli",
     "crates/monotask-tauri/src-tauri",
 ]
@@ -35,4 +36,5 @@ tabled      = "0.15"
 colored     = "2"
 tempfile    = "3"
 dirs        = "5"
+reqwest     = { version = "0.12", features = ["json"] }
 

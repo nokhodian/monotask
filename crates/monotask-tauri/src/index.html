@@ -715,7 +715,7 @@
       border-radius: 4px; padding: 8px 10px;
     }
     .comment-author { font-size: 10px; color: #4a6a9a; font-family: monospace; margin-bottom: 3px; }
-    .comment-text { font-size: 12px; color: #ddd; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .comment-text { font-size: 12px; color: #ddd; line-height: 1.5; word-break: break-word; }
     .comment-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
     .comment-time { font-size: 10px; color: #666; }
     .btn-del-comment {
@@ -1283,9 +1283,58 @@
         <button id="btn-add-column">+ Column</button>
         <button id="btn-export-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Export board as JSON">&#8595; Export</button>
         <button id="btn-import-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Import cards from file">&#8593; Import</button>
+        <button id="btn-integrations" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Integrations" onclick="openIntegrationsModal()">&#9889; Integrations</button>
+        <div style="display:flex;gap:4px;margin-left:auto;background:#0d0d1c;border:1px solid #1e1e3a;border-radius:6px;padding:2px;">
+          <button id="btn-view-kanban" onclick="setBoardViewMode('kanban')" title="Kanban view" style="background:#1e1e3a;border:none;color:#e0e0f0;padding:4px 9px;border-radius:4px;cursor:pointer;font-size:13px;">⊞</button>
+          <button id="btn-view-list" onclick="setBoardViewMode('list')" title="List view" style="background:none;border:none;color:#888;padding:4px 9px;border-radius:4px;cursor:pointer;font-size:13px;">☰</button>
+        </div>
       </div>
       <!-- priority filter bar removed -->
       <div id="board-columns-area"></div>
+      <div id="board-list-area" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+        <div id="board-list-filters" style="display:flex;gap:8px;align-items:center;padding:10px 20px;background:#0a0a12;border-bottom:1px solid #1a1a30;flex-wrap:wrap;">
+          <input id="list-search-input" type="text" placeholder="Search cards…" oninput="applyListFilters()"
+            style="background:#131326;border:1px solid #2a2a4a;color:#e0e0f0;padding:6px 10px;border-radius:6px;font-size:13px;outline:none;min-width:200px;flex:1;max-width:320px;">
+          <select id="list-filter-col" onchange="applyListFilters()" style="background:#131326;border:1px solid #2a2a4a;color:#e0e0f0;padding:6px 10px;border-radius:6px;font-size:12px;outline:none;cursor:pointer;">
+            <option value="">All columns</option>
+          </select>
+          <select id="list-filter-priority" onchange="applyListFilters()" style="background:#131326;border:1px solid #2a2a4a;color:#e0e0f0;padding:6px 10px;border-radius:6px;font-size:12px;outline:none;cursor:pointer;">
+            <option value="">All priorities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select id="list-filter-label" onchange="applyListFilters()" style="background:#131326;border:1px solid #2a2a4a;color:#e0e0f0;padding:6px 10px;border-radius:6px;font-size:12px;outline:none;cursor:pointer;">
+            <option value="">All labels</option>
+          </select>
+          <select id="list-filter-assignee" onchange="applyListFilters()" style="background:#131326;border:1px solid #2a2a4a;color:#e0e0f0;padding:6px 10px;border-radius:6px;font-size:12px;outline:none;cursor:pointer;">
+            <option value="">All assignees</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:5px;color:#888;font-size:12px;cursor:pointer;white-space:nowrap;">
+            <input id="list-filter-github" type="checkbox" onchange="applyListFilters()" style="accent-color:#7c3aed;">
+            GitHub only
+          </label>
+          <span id="list-count" style="color:#555;font-size:11px;margin-left:auto;white-space:nowrap;"></span>
+        </div>
+        <div id="board-list-table-wrap" style="flex:1;overflow-y:auto;padding:0 20px 20px;">
+          <table id="board-list-table" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;">
+            <thead>
+              <tr style="text-align:left;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #1a1a30;">
+                <th style="padding:6px 10px;font-weight:600;cursor:pointer;" onclick="sortList('number')"># <span id="sort-ind-number"></span></th>
+                <th style="padding:6px 10px;font-weight:600;cursor:pointer;" onclick="sortList('title')">Title <span id="sort-ind-title"></span></th>
+                <th style="padding:6px 10px;font-weight:600;cursor:pointer;" onclick="sortList('column')">Column <span id="sort-ind-column"></span></th>
+                <th style="padding:6px 10px;font-weight:600;">Labels</th>
+                <th style="padding:6px 10px;font-weight:600;cursor:pointer;" onclick="sortList('priority')">Priority <span id="sort-ind-priority"></span></th>
+                <th style="padding:6px 10px;font-weight:600;cursor:pointer;" onclick="sortList('due_date')">Due <span id="sort-ind-due_date"></span></th>
+                <th style="padding:6px 10px;font-weight:600;">Assignee</th>
+                <th style="padding:6px 10px;font-weight:600;cursor:pointer;" onclick="sortList('github')">GH# <span id="sort-ind-github"></span></th>
+              </tr>
+            </thead>
+            <tbody id="board-list-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1447,7 +1496,10 @@
     <!-- Header: title + card number -->
     <div class="card-detail-header">
       <input id="card-detail-title" class="card-detail-title" placeholder="Card title" />
-      <div id="card-detail-num" class="card-detail-num" style="padding:4px 0 10px;"></div>
+      <div style="display:flex;align-items:center;gap:12px;padding:2px 0 10px;">
+        <div id="card-detail-num" class="card-detail-num"></div>
+        <div id="card-detail-sync-pill" style="display:none;align-items:center;gap:6px;font-size:11px;"></div>
+      </div>
     </div>
     <!-- Body: left fields + right activity -->
     <div class="card-detail-inner">
@@ -1665,6 +1717,72 @@
   <div class="chat-input-wrap">
     <div class="chat-autocomplete" id="chat-autocomplete"></div>
     <textarea id="chat-input" rows="1" placeholder="Message... (@mention, #ref)"></textarea>
+  </div>
+</div>
+
+<!-- GitHub Integrations Modal — must be before <script> so getElementById works at init time -->
+<div id="github-integrations-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+  <div style="background:#16162a;border:1px solid #2a2a4a;border-radius:10px;padding:24px;width:500px;max-width:92vw;max-height:82vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.6);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h3 style="margin:0;color:#e0e0f0;font-size:16px;">&#9889; Integrations</h3>
+      <button id="btn-close-integrations" style="background:none;border:none;color:#888;cursor:pointer;font-size:20px;line-height:1;padding:2px 6px;" onclick="closeIntegrationsModal()">&#10005;</button>
+    </div>
+    <div id="gh-board-label" style="color:#555;font-size:11px;margin-bottom:16px;"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <span style="font-size:20px;">&#128049;</span>
+      <span style="color:#e0e0f0;font-size:14px;font-weight:600;">GitHub Issues</span>
+      <span id="gh-status-badge" style="font-size:11px;padding:2px 9px;border-radius:10px;background:#1a1a2e;color:#555;margin-left:4px;">not linked</span>
+    </div>
+
+    <!-- Token -->
+    <div style="background:#0d0d1a;border-radius:7px;padding:13px;margin-bottom:10px;">
+      <div style="color:#888;font-size:12px;margin-bottom:7px;">Personal Access Token (PAT) — needs <code style="font-size:11px;">repo</code> scope</div>
+      <div style="display:flex;gap:7px;">
+        <input id="gh-token-input" type="password" placeholder="ghp_…" autocomplete="off"
+          style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;min-width:0;">
+        <button id="btn-save-token" style="background:#2563eb;border:none;color:#fff;padding:7px 13px;border-radius:5px;cursor:pointer;font-size:13px;white-space:nowrap;">Save</button>
+        <button id="btn-clear-token" style="background:#1a1a2e;border:1px solid #333;color:#888;padding:7px 11px;border-radius:5px;cursor:pointer;font-size:13px;white-space:nowrap;">Clear</button>
+      </div>
+      <div id="gh-token-status" style="color:#555;font-size:11px;margin-top:6px;">—</div>
+    </div>
+
+    <!-- Repo link -->
+    <div style="background:#0d0d1a;border-radius:7px;padding:13px;margin-bottom:10px;">
+      <div style="color:#888;font-size:12px;margin-bottom:7px;">Link board ↔ GitHub repository</div>
+      <div style="display:flex;gap:7px;align-items:center;margin-bottom:8px;">
+        <input id="gh-owner-input" type="text" placeholder="owner"
+          style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;min-width:0;">
+        <span style="color:#555;">/</span>
+        <input id="gh-repo-input" type="text" placeholder="repo"
+          style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;min-width:0;">
+      </div>
+      <div style="margin-bottom:9px;">
+        <div style="color:#888;font-size:12px;margin-bottom:4px;">Done column (maps to <em>closed</em> issues on GitHub)</div>
+        <select id="gh-done-col-select" onchange="onDoneColChange(this)"
+          style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;">
+        </select>
+        <div id="gh-done-col-warning" style="display:none;background:#2a1a0a;border:1px solid #7c3a00;border-radius:5px;padding:8px 10px;margin-top:6px;font-size:11px;color:#f59e0b;line-height:1.5;">
+          <strong>Warning:</strong> Changing the Done column will affect all future syncs.
+          Any card in this column will be closed on GitHub, and GitHub issues marked <em>closed</em>
+          will be moved here. Choosing the wrong column may incorrectly close or reopen issues in bulk.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button id="btn-link-github" style="background:#16a34a;border:none;color:#fff;padding:7px 15px;border-radius:5px;cursor:pointer;font-size:13px;" onclick="linkGithubBoard()">Link Repository</button>
+        <button id="btn-unlink-github" style="display:none;background:#1a1a2e;border:1px solid #dc2626;color:#dc2626;padding:7px 14px;border-radius:5px;cursor:pointer;font-size:13px;" onclick="unlinkGithubBoard()">Unlink</button>
+      </div>
+      <div id="gh-link-status" style="color:#f87171;font-size:11px;margin-top:6px;min-height:14px;"></div>
+    </div>
+
+    <!-- Sync status -->
+    <div id="gh-sync-section" style="display:none;background:#0d0d1a;border-radius:7px;padding:13px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="color:#888;font-size:12px;">Last sync: <span id="gh-last-sync" style="color:#aaa;">never</span></span>
+        <button id="btn-sync-now" style="background:#7c3aed;border:none;color:#fff;padding:5px 13px;border-radius:5px;cursor:pointer;font-size:12px;" onclick="runGithubSync()">&#8635; Sync Now</button>
+      </div>
+      <div id="gh-sync-status" style="color:#555;font-size:11px;">Auto-poll every 60 s · push on change (3 s debounce)</div>
+    </div>
   </div>
 </div>
 
@@ -1978,15 +2096,252 @@
     }
   }
 
+  // ── GitHub URL helpers ────────────────────────────────────────────────────
+  let _ghOwner = null;
+  let _ghRepo  = null;
+
+  async function _refreshGhMeta(boardId) {
+    try {
+      const s = await invoke('get_github_board_status_cmd', { boardId });
+      if (s.linked) { _ghOwner = s.owner; _ghRepo = s.repo; }
+      else           { _ghOwner = null;   _ghRepo = null;  }
+    } catch (_) {}
+  }
+
+  function openGithubIssue(issueNumber) {
+    if (!issueNumber || !_ghOwner || !_ghRepo) return;
+    invoke('open_url_cmd', { url: `https://github.com/${_ghOwner}/${_ghRepo}/issues/${issueNumber}` });
+  }
+
+  // ── List view state ──────────────────────────────────────────────────────
+  let _boardViewMode = 'kanban';  // 'kanban' | 'list'
+  let _boardListData = null;      // last board detail from get_board_detail
+  let _listSortKey = 'number';
+  let _listSortDir = 1;           // 1 = asc, -1 = desc
+
+  function setBoardViewMode(mode) {
+    _boardViewMode = mode;
+    const kanbanArea = document.getElementById('board-columns-area');
+    const listArea   = document.getElementById('board-list-area');
+    const btnKanban  = document.getElementById('btn-view-kanban');
+    const btnList    = document.getElementById('btn-view-list');
+    const addColBtn  = document.getElementById('btn-add-column');
+    if (!kanbanArea || !listArea) return;
+
+    if (mode === 'kanban') {
+      kanbanArea.style.display = '';
+      listArea.style.display   = 'none';
+      if (btnKanban) { btnKanban.style.background = '#1e1e3a'; btnKanban.style.color = '#e0e0f0'; }
+      if (btnList)   { btnList.style.background   = 'none';    btnList.style.color   = '#888'; }
+      if (addColBtn) addColBtn.style.display = '';
+    } else {
+      kanbanArea.style.display = 'none';
+      listArea.style.display   = 'flex';
+      if (btnKanban) { btnKanban.style.background = 'none';    btnKanban.style.color = '#888'; }
+      if (btnList)   { btnList.style.background   = '#1e1e3a'; btnList.style.color   = '#e0e0f0'; }
+      if (addColBtn) addColBtn.style.display = 'none';
+      if (_boardListData) renderListView(_boardListData);
+    }
+  }
+
+  function renderListView(detail) {
+    _boardListData = detail;
+    if (_boardViewMode !== 'list') return;
+
+    // Flatten all cards with column info
+    const allCards = [];
+    for (const col of detail.columns) {
+      for (const card of col.cards) {
+        allCards.push({ ...card, column_name: col.title, column_id: col.id });
+      }
+    }
+
+    // Populate column filter
+    const colSel = document.getElementById('list-filter-col');
+    if (colSel) {
+      const prev = colSel.value;
+      colSel.innerHTML = '<option value="">All columns</option>';
+      for (const col of detail.columns) {
+        const o = document.createElement('option');
+        o.value = col.id;
+        o.textContent = col.title;
+        colSel.appendChild(o);
+      }
+      if (prev) colSel.value = prev;
+    }
+
+    // Collect unique labels, assignees
+    const labels = new Set();
+    const assignees = new Set();
+    for (const c of allCards) {
+      (c.labels || []).forEach(l => labels.add(l));
+      if (c.assignee) assignees.add(c.assignee);
+    }
+
+    const labelSel = document.getElementById('list-filter-label');
+    if (labelSel) {
+      const prev = labelSel.value;
+      labelSel.innerHTML = '<option value="">All labels</option>';
+      for (const l of [...labels].sort()) {
+        const o = document.createElement('option');
+        o.value = l; o.textContent = l;
+        labelSel.appendChild(o);
+      }
+      if (prev) labelSel.value = prev;
+    }
+
+    const assigneeSel = document.getElementById('list-filter-assignee');
+    if (assigneeSel) {
+      const prev = assigneeSel.value;
+      assigneeSel.innerHTML = '<option value="">All assignees</option>';
+      for (const a of [...assignees].sort()) {
+        const o = document.createElement('option');
+        o.value = a; o.textContent = a;
+        assigneeSel.appendChild(o);
+      }
+      if (prev) assigneeSel.value = prev;
+    }
+
+    window._allListCards = allCards;
+    window._currentBoardId = detail.id;
+    applyListFilters();
+  }
+
+  function applyListFilters() {
+    const cards = window._allListCards || [];
+    const q         = (document.getElementById('list-search-input')?.value || '').toLowerCase();
+    const colId     = document.getElementById('list-filter-col')?.value || '';
+    const priority  = document.getElementById('list-filter-priority')?.value || '';
+    const label     = document.getElementById('list-filter-label')?.value || '';
+    const assignee  = document.getElementById('list-filter-assignee')?.value || '';
+    const ghOnly    = document.getElementById('list-filter-github')?.checked || false;
+
+    let filtered = cards.filter(c => {
+      if (q && !((c.title || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q))) return false;
+      if (colId && c.column_id !== colId) return false;
+      if (priority && c.priority !== priority) return false;
+      if (label && !(c.labels || []).includes(label)) return false;
+      if (assignee && c.assignee !== assignee) return false;
+      if (ghOnly && !c.github_issue_number) return false;
+      return true;
+    });
+
+    // Sort
+    filtered.sort((a, b) => {
+      let av, bv;
+      switch (_listSortKey) {
+        case 'number':   av = a.number  || ''; bv = b.number  || ''; break;
+        case 'title':    av = (a.title  || '').toLowerCase(); bv = (b.title || '').toLowerCase(); break;
+        case 'column':   av = (a.column_name || '').toLowerCase(); bv = (b.column_name || '').toLowerCase(); break;
+        case 'priority': {
+          const order = { critical: 0, high: 1, medium: 2, low: 3, '': 4 };
+          av = order[a.priority || ''] ?? 4;
+          bv = order[b.priority || ''] ?? 4;
+          break;
+        }
+        case 'due_date': av = a.due_date || ''; bv = b.due_date || ''; break;
+        case 'github':   av = a.github_issue_number || 0; bv = b.github_issue_number || 0; break;
+        default:         av = ''; bv = '';
+      }
+      if (av < bv) return -1 * _listSortDir;
+      if (av > bv) return  1 * _listSortDir;
+      return 0;
+    });
+
+    // Sort indicators
+    ['number','title','column','priority','due_date','github'].forEach(k => {
+      const el = document.getElementById('sort-ind-' + k);
+      if (el) el.textContent = k === _listSortKey ? (_listSortDir === 1 ? ' ▲' : ' ▼') : '';
+    });
+
+    // Count
+    const countEl = document.getElementById('list-count');
+    if (countEl) countEl.textContent = filtered.length + ' card' + (filtered.length === 1 ? '' : 's');
+
+    // Render rows
+    const tbody = document.getElementById('board-list-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const boardId = window._currentBoardId;
+
+    for (const c of filtered) {
+      const tr = document.createElement('tr');
+      tr.style.cssText = 'border-bottom:1px solid #1a1a2e;cursor:pointer;transition:background 0.15s;';
+      tr.onmouseenter = () => { tr.style.background = '#1a1a2e'; };
+      tr.onmouseleave = () => { tr.style.background = ''; };
+      tr.onclick = () => openCardPreview(c.id, boardId);
+
+      const tdNum = document.createElement('td');
+      tdNum.style.cssText = 'padding:8px 10px;font-size:11px;color:#666;white-space:nowrap;';
+      tdNum.textContent = c.number || '';
+
+      const tdTitle = document.createElement('td');
+      tdTitle.style.cssText = 'padding:8px 10px;font-size:13px;color:#e0e0f0;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      tdTitle.textContent = c.title || '(untitled)';
+
+      const tdCol = document.createElement('td');
+      tdCol.style.cssText = 'padding:8px 10px;font-size:12px;color:#a0a0c0;white-space:nowrap;';
+      tdCol.textContent = c.column_name || '';
+
+      const tdLabels = document.createElement('td');
+      tdLabels.style.cssText = 'padding:8px 10px;';
+      for (const l of (c.labels || [])) {
+        const span = document.createElement('span');
+        span.style.cssText = 'display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;margin-right:3px;background:#2a1a4a;color:#c0a0ff;border:1px solid #3a1a5a;white-space:nowrap;';
+        span.textContent = l;
+        tdLabels.appendChild(span);
+      }
+
+      const tdPri = document.createElement('td');
+      tdPri.style.cssText = 'padding:8px 10px;font-size:11px;white-space:nowrap;';
+      const priColors = { critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#6b7280' };
+      tdPri.style.color = priColors[c.priority] || '#555';
+      tdPri.textContent = c.priority ? c.priority.charAt(0).toUpperCase() + c.priority.slice(1) : '';
+
+      const tdDue = document.createElement('td');
+      tdDue.style.cssText = 'padding:8px 10px;font-size:11px;color:#888;white-space:nowrap;';
+      tdDue.textContent = c.due_date ? c.due_date.slice(0, 10) : '';
+
+      const tdAssignee = document.createElement('td');
+      tdAssignee.style.cssText = 'padding:8px 10px;font-size:11px;color:#a0a0c0;white-space:nowrap;';
+      tdAssignee.textContent = c.assignee || '';
+
+      const tdGh = document.createElement('td');
+      tdGh.style.cssText = 'padding:8px 10px;font-size:11px;white-space:nowrap;';
+      if (c.github_issue_number) {
+        tdGh.style.cssText += 'color:#7c3aed;cursor:pointer;text-decoration:underline;';
+        tdGh.title = 'Open GitHub issue #' + c.github_issue_number;
+        tdGh.textContent = '#' + c.github_issue_number;
+        tdGh.onclick = (e) => { e.stopPropagation(); openGithubIssue(c.github_issue_number); };
+      }
+
+      tr.append(tdNum, tdTitle, tdCol, tdLabels, tdPri, tdDue, tdAssignee, tdGh);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function sortList(key) {
+    if (_listSortKey === key) {
+      _listSortDir *= -1;
+    } else {
+      _listSortKey = key;
+      _listSortDir = 1;
+    }
+    applyListFilters();
+  }
+
   async function loadBoardColumns(boardId) {
     const area = document.getElementById('board-columns-area');
     showLoading(area, 'Loading board\u2026');
     try {
       const detail = await invoke('get_board_detail', { boardId });
+      _boardListData = detail;
       area.innerHTML = '';
       for (const col of detail.columns) {
         area.appendChild(buildColumnEl(detail.id, col));
       }
+      if (_boardViewMode === 'list') renderListView(detail);
+      _refreshGhMeta(boardId);
     } catch (e) {
       const isNotFound = String(e).includes('not found') || String(e).includes('NotFound');
       const wrap = document.createElement('div');
@@ -2275,6 +2630,14 @@
       numEl.textContent = '#' + card.number;
       meta.appendChild(numEl);
     }
+    if (card.github_issue_number) {
+      const ghEl = document.createElement('span');
+      ghEl.style.cssText = 'font-size:10px;color:#7c3aed;font-weight:600;background:#1a0a2e;border:1px solid #3a1a5a;border-radius:4px;padding:1px 5px;line-height:1.5;white-space:nowrap;cursor:pointer;';
+      ghEl.title = 'Open GitHub issue #' + card.github_issue_number;
+      ghEl.textContent = 'GH#' + card.github_issue_number;
+      ghEl.onclick = (e) => { e.stopPropagation(); openGithubIssue(card.github_issue_number); };
+      meta.appendChild(ghEl);
+    }
     if (card.has_description) {
       const descIcon = document.createElement('span');
       descIcon.className = 'card-meta-desc';
@@ -2352,7 +2715,7 @@
     li.addEventListener('click', (e) => {
       if (_sortableDragging) return;
       e.stopPropagation();
-      openCardDetail(card.id, boardId);
+      openCardPreview(card.id, boardId);
     });
 
     return li;
@@ -2630,6 +2993,61 @@
     return html;
   }
 
+  // Render comment text — supports external image URLs from GitHub markdown
+  function renderCommentMarkdown(text) {
+    if (!text) return '';
+    // Resolve raw HTML <img> tags before escaping (GitHub sometimes embeds them)
+    // Capture them, replace with placeholders, then restore after escaping
+    const imgs = [];
+    let s = text.replace(/<img\s[^>]*src=["']([^"']+)["'][^>]*>/gi, (_, src) => {
+      const safe = src.replace(/"/g, '&quot;');
+      imgs.push(`<img src="${safe}" style="max-width:100%;border-radius:4px;margin:4px 0;">`);
+      return `\x00IMG${imgs.length - 1}\x00`;
+    });
+
+    // Escape HTML
+    s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Restore <img> placeholders
+    s = s.replace(/\x00IMG(\d+)\x00/g, (_, i) => imgs[parseInt(i)]);
+
+    // Markdown images with external URLs: ![alt](https://...)
+    s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_, alt, url) => {
+      const safeUrl = url.replace(/"/g, '&quot;');
+      const safeAlt = alt.replace(/"/g, '&quot;');
+      return `<img src="${safeUrl}" alt="${safeAlt}" style="max-width:100%;border-radius:4px;margin:4px 0;">`;
+    });
+
+    // Local attachment images: ![alt](img:id)
+    s = s.replace(/!\[([^\]]*)\]\(img:([a-f0-9]{6})\)/g, (_, alt) =>
+      `<span style="color:#888">[local image]</span>`);
+
+    // Bold, italic, inline code
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+    // Links: [text](url)
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_, label, url) => {
+      const safe = url.replace(/"/g, '&quot;');
+      return `<a href="#" onclick="openGithubIssue(0);invoke('open_url_cmd',{url:'${safe}'});return false;" style="color:#7c3aed;">${label}</a>`;
+    });
+
+    // Headings
+    s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // Bullet lists
+    s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+    s = s.replace(/(<li>[\s\S]*?<\/li>)(\n<li>[\s\S]*?<\/li>)*/g, m => `<ul>${m}</ul>`);
+    s = s.replace(/<\/li>\n<li>/g, '</li><li>');
+
+    // Line breaks
+    s = s.replace(/\n/g, '<br>');
+    return s;
+  }
+
   document.getElementById('card-detail-desc').addEventListener('paste', async (e) => {
     if (!_cardDetailCtx) return;
     const { boardId, cardId } = _cardDetailCtx;  // capture synchronously
@@ -2682,6 +3100,48 @@
       switchDescTab('edit');
       document.getElementById('card-detail-due').value = card.due_date || '';
       document.getElementById('card-detail-num').textContent = card.number ? '#' + card.number : '';
+      // GitHub sync pill in edit modal
+      const editSyncPill = document.getElementById('card-detail-sync-pill');
+      if (editSyncPill) {
+        editSyncPill.innerHTML = '';
+        if (card.github_issue_number) {
+          const issueNum = card.github_issue_number;
+          let syncLabel = 'Never synced';
+          if (card.github_synced_at) {
+            const d = new Date(card.github_synced_at);
+            const diffMs = Date.now() - d.getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            const diffHr = Math.round(diffMs / 3600000);
+            syncLabel = diffMin < 2 ? 'Just now' : diffMin < 60 ? diffMin + 'm ago' : diffHr < 24 ? diffHr + 'h ago' : d.toLocaleDateString();
+          }
+          const ghLink = document.createElement('span');
+          ghLink.style.cssText = 'color:#7c3aed;font-weight:600;cursor:pointer;text-decoration:underline;';
+          ghLink.title = 'Open GitHub issue #' + issueNum;
+          ghLink.textContent = 'GitHub #' + issueNum;
+          ghLink.onclick = () => openGithubIssue(issueNum);
+          editSyncPill.appendChild(ghLink);
+          const syncTimeSpan = document.createElement('span');
+          syncTimeSpan.style.cssText = 'color:#555;';
+          syncTimeSpan.textContent = '· ' + syncLabel;
+          editSyncPill.appendChild(syncTimeSpan);
+          const syncBtn = document.createElement('button');
+          syncBtn.style.cssText = 'background:#1a1a3a;border:1px solid #3a3a6a;color:#a0a0c0;padding:2px 8px;border-radius:5px;cursor:pointer;font-size:11px;';
+          syncBtn.textContent = '↺ Sync';
+          syncBtn.onclick = async () => {
+            syncBtn.disabled = true; syncBtn.textContent = '…';
+            try {
+              await invoke('sync_card_cmd', { boardId, cardId });
+              showToast('Card synced');
+              openCardDetail(cardId, boardId);
+            } catch(e) { showToast('Sync failed: ' + e, 4000); }
+            finally { syncBtn.disabled = false; syncBtn.textContent = '↺ Sync'; }
+          };
+          editSyncPill.appendChild(syncBtn);
+          editSyncPill.style.display = 'flex';
+        } else {
+          editSyncPill.style.display = 'none';
+        }
+      }
       // Impact / Effort / computed priority
       const impactSlider = document.getElementById('card-detail-impact');
       const effortSlider = document.getElementById('card-detail-effort');
@@ -2890,12 +3350,29 @@
       } else if (item.type === 'comment') {
         const div = document.createElement('div');
         div.className = 'activity-comment';
+        div.style.cssText = 'display:flex;gap:8px;align-items:flex-start;';
+        // Avatar
+        const avatarEl = document.createElement('div');
+        avatarEl.style.cssText = 'flex-shrink:0;width:28px;height:28px;border-radius:50%;overflow:hidden;background:#2a2a4a;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;margin-top:2px;';
+        if (item.data.avatar_url) {
+          const img = document.createElement('img');
+          img.src = item.data.avatar_url;
+          img.alt = '';
+          img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+          img.onerror = () => { avatarEl.textContent = (item.data.author || '?')[0].toUpperCase(); img.remove(); };
+          avatarEl.appendChild(img);
+        } else {
+          avatarEl.textContent = (item.data.author || '?')[0].toUpperCase();
+        }
+        div.appendChild(avatarEl);
+        const commentBody = document.createElement('div');
+        commentBody.style.cssText = 'flex:1;min-width:0;';
         const author = document.createElement('div');
         author.className = 'comment-author';
         author.textContent = shortKey(item.data.author);
         const text = document.createElement('div');
         text.className = 'comment-text';
-        text.textContent = item.data.text;
+        text.innerHTML = renderCommentMarkdown(item.data.text);
         const footer = document.createElement('div');
         footer.className = 'comment-footer';
         const time = document.createElement('span');
@@ -2951,19 +3428,20 @@
               const refreshed = await invoke('get_card_cmd', { boardId, cardId });
               renderActivityFeed(refreshed, boardId, cardId);
             };
-            div.replaceChild(editor, text);
+            commentBody.replaceChild(editor, text);
             const editActions = document.createElement('div');
             editActions.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;';
             editActions.appendChild(saveEditBtn);
             editActions.appendChild(cancelEditBtn);
-            div.insertBefore(editActions, footer);
+            commentBody.insertBefore(editActions, footer);
           };
           footer.appendChild(editBtn);
         }
         footer.appendChild(delBtn);
-        div.appendChild(author);
-        div.appendChild(text);
-        div.appendChild(footer);
+        commentBody.appendChild(author);
+        commentBody.appendChild(text);
+        commentBody.appendChild(footer);
+        div.appendChild(commentBody);
         el.appendChild(div);
       }
 
@@ -3447,6 +3925,8 @@
   document.getElementById('btn-back-to-boards').onclick = () => {
     currentSpaceId = null;
     currentBoardId = null;
+    stopGithubPoll();
+    githubLinked = false;
     showView('dashboard');
     loadSpacesSidebar();
     // Disable chat button when no space selected
@@ -3465,6 +3945,8 @@
   // Back from board view to boards grid
   document.getElementById('btn-back-to-space').onclick = () => {
     currentBoardId = null;
+    stopGithubPoll();
+    githubLinked = false;
     showView('space-main');
     renderBoardsGrid(currentSpaceData || { boards: [] });
     document.querySelectorAll('.space-boards-sub li').forEach(li => li.classList.remove('active'));
@@ -4637,68 +5119,75 @@
     document.getElementById('search-overlay').style.display = 'none';
   }
 
-  // Close on overlay background click
-  document.getElementById('search-overlay').addEventListener('click', (e) => {
-    if (e.target === document.getElementById('search-overlay')) closeSearch();
-  });
-
-  // Delegated click handler for search results (attached once — avoids per-item listener leaks)
-  document.getElementById('search-results').addEventListener('click', (e) => {
-    const item = e.target.closest('.search-result-item');
-    if (!item) return;
-    closeSearch();
-    if (item.dataset.boardId) {
-      navigateToBoard(item.dataset.boardId, item.dataset.cardId);
-    }
-  });
-
   let _searchTimer = null;
   let _searchSelected = -1;
 
-  document.getElementById('search-input').addEventListener('input', (e) => {
-    clearTimeout(_searchTimer);
-    _searchSelected = -1;
-    _searchTimer = setTimeout(async () => {
-      const q = e.target.value.trim();
-      if (!q) {
-        document.getElementById('search-results').innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>';
-        return;
-      }
-      const results = await invoke('search_cards_cmd', { query: q });
-      const container = document.getElementById('search-results');
-      if (results.length === 0) {
-        container.innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">No cards found</div>';
-        return;
-      }
-      container.innerHTML = '';
-      results.forEach((r, i) => {
-        const item = document.createElement('div');
-        item.className = 'search-result-item';
-        item.dataset.index = i;
-        item.dataset.boardId = r.board_id || '';
-        item.dataset.cardId = r.card_id || '';
-        item.innerHTML = `<span class="search-result-title">${escapeHtml(r.title)}</span><span class="search-result-sub">${escapeHtml(r.column_name)}</span>`;
-        container.appendChild(item);
-      });
-    }, 250);
-  });
+  // Search elements live after this script block — wire them after DOM is fully parsed
+  document.addEventListener('DOMContentLoaded', () => {
+    const searchOverlay = document.getElementById('search-overlay');
+    const searchResults = document.getElementById('search-results');
+    const searchInput = document.getElementById('search-input');
 
-  document.getElementById('search-input').addEventListener('keydown', (e) => {
-    const items = document.querySelectorAll('.search-result-item');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      _searchSelected = Math.min(_searchSelected + 1, items.length - 1);
-      items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      _searchSelected = Math.max(_searchSelected - 1, 0);
-      items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
-    } else if (e.key === 'Enter') {
-      if (_searchSelected >= 0 && items[_searchSelected]) {
-        items[_searchSelected].click();
-      }
-    } else if (e.key === 'Escape') {
+    if (searchOverlay) searchOverlay.addEventListener('click', (e) => {
+      if (e.target === searchOverlay) closeSearch();
+    });
+
+    const previewModal = document.getElementById('modal-card-preview');
+    if (previewModal) previewModal.addEventListener('click', (e) => {
+      if (e.target === previewModal) previewModal.style.display = 'none';
+    });
+
+    if (searchResults) searchResults.addEventListener('click', (e) => {
+      const item = e.target.closest('.search-result-item');
+      if (!item) return;
       closeSearch();
+      if (item.dataset.boardId) navigateToBoard(item.dataset.boardId, item.dataset.cardId);
+    });
+
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(_searchTimer);
+        _searchSelected = -1;
+        _searchTimer = setTimeout(async () => {
+          const q = e.target.value.trim();
+          if (!q) {
+            searchResults.innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">Type to search cards…</div>';
+            return;
+          }
+          const results = await invoke('search_cards_cmd', { query: q });
+          if (results.length === 0) {
+            searchResults.innerHTML = '<div style="color:#555;text-align:center;padding:24px;font-size:13px;">No cards found</div>';
+            return;
+          }
+          searchResults.innerHTML = '';
+          results.forEach((r, i) => {
+            const item = document.createElement('div');
+            item.className = 'search-result-item';
+            item.dataset.index = i;
+            item.dataset.boardId = r.board_id || '';
+            item.dataset.cardId = r.card_id || '';
+            item.innerHTML = `<span class="search-result-title">${escapeHtml(r.title)}</span><span class="search-result-sub">${escapeHtml(r.column_name)}</span>`;
+            searchResults.appendChild(item);
+          });
+        }, 250);
+      });
+
+      searchInput.addEventListener('keydown', (e) => {
+        const items = document.querySelectorAll('.search-result-item');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          _searchSelected = Math.min(_searchSelected + 1, items.length - 1);
+          items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          _searchSelected = Math.max(_searchSelected - 1, 0);
+          items.forEach((el, i) => el.classList.toggle('selected', i === _searchSelected));
+        } else if (e.key === 'Enter') {
+          if (_searchSelected >= 0 && items[_searchSelected]) items[_searchSelected].click();
+        } else if (e.key === 'Escape') {
+          closeSearch();
+        }
+      });
     }
   });
 
@@ -4753,6 +5242,12 @@
         closeSearch();
         return;
       }
+      // Close card preview modal
+      const previewModal = document.getElementById('modal-card-preview');
+      if (previewModal && previewModal.style.display !== 'none') {
+        previewModal.style.display = 'none';
+        return;
+      }
       // Close card detail modal
       const cardModal = document.getElementById('modal-card-detail');
       if (cardModal && cardModal.style.display !== 'none') {
@@ -4786,13 +5281,424 @@
       const { board_id } = e.payload;
       if (board_id === currentBoardId) {
         loadBoardColumns(board_id).catch(() => {});
+        scheduleGithubSync();
       }
     }).catch(() => {});
     // On peer connect/disconnect, refresh sync status display
     listen('peer-connected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
     listen('peer-disconnected', () => { pollSyncStatus().catch(() => {}); }).catch(() => {});
   }
+
+  // ── GitHub Integrations ────────────────────────────────────────────────────
+  let githubPollTimer = null;
+  let githubDebounceTimer = null;
+  let githubLinked = false;
+
+  function openIntegrationsModal() {
+    const m = document.getElementById('github-integrations-modal');
+    if (!m) return;
+    const labelEl = document.getElementById('gh-board-label');
+    if (labelEl) {
+      const name = currentBoardId ? (allBoards[currentBoardId] || currentBoardId.slice(0, 12) + '…') : '—';
+      labelEl.textContent = 'Board: ' + name;
+    }
+    setLinkStatus('', false);
+    m.style.display = 'flex';
+    refreshIntegrationsUI();
+  }
+  function closeIntegrationsModal() {
+    const m = document.getElementById('github-integrations-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  async function refreshIntegrationsUI() {
+    if (!currentBoardId || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+
+    try {
+      const ts = await invoke('get_github_token_status_cmd');
+      const el = document.getElementById('gh-token-status');
+      el.textContent = ts.saved ? '✓ Token saved' : 'No token saved';
+      el.style.color = ts.saved ? '#4ade80' : '#666';
+      if (ts.saved) document.getElementById('gh-token-input').placeholder = '••••••••••••••••••••';
+    } catch (_) {}
+
+    try {
+      const status = await invoke('get_github_board_status_cmd', { boardId: currentBoardId });
+      githubLinked = status.linked;
+      const badge = document.getElementById('gh-status-badge');
+      const linkBtn = document.getElementById('btn-link-github');
+      const unlinkBtn = document.getElementById('btn-unlink-github');
+      const syncSec = document.getElementById('gh-sync-section');
+      if (status.linked) {
+        badge.textContent = `linked: ${status.owner}/${status.repo}`;
+        badge.style.background = '#1a2a1a'; badge.style.color = '#4ade80';
+        document.getElementById('gh-owner-input').value = status.owner || '';
+        document.getElementById('gh-repo-input').value = status.repo || '';
+        linkBtn.textContent = 'Update Link';
+        unlinkBtn.style.display = 'inline-block';
+        syncSec.style.display = 'block';
+        if (status.last_sync) {
+          document.getElementById('gh-last-sync').textContent = new Date(status.last_sync).toLocaleString();
+        }
+        startGithubPoll();
+      } else {
+        badge.textContent = 'not linked';
+        badge.style.background = '#1a1a2e'; badge.style.color = '#555';
+        linkBtn.textContent = 'Link Repository';
+        unlinkBtn.style.display = 'none';
+        syncSec.style.display = 'none';
+        stopGithubPoll();
+      }
+    } catch (_) {}
+
+    try {
+      const [detail, boardStatus] = await Promise.all([
+        invoke('get_board_detail', { boardId: currentBoardId }),
+        invoke('get_github_board_status_cmd', { boardId: currentBoardId }).catch(() => ({ linked: false })),
+      ]);
+      const sel = document.getElementById('gh-done-col-select');
+      sel.innerHTML = '';
+      const cols = detail.columns || [];
+      cols.forEach(col => {
+        const opt = document.createElement('option');
+        opt.value = col.id; opt.textContent = col.title;
+        sel.appendChild(opt);
+      });
+      // Priority: saved done_column_id from config → last column as default
+      if (boardStatus.linked && boardStatus.done_column_id) {
+        sel.value = boardStatus.done_column_id;
+      } else if (cols.length > 0) {
+        sel.value = cols[cols.length - 1].id; // default to rightmost column
+      }
+      sel._linkedDoneColId = boardStatus.linked ? boardStatus.done_column_id : null;
+    } catch (_) {}
+  }
+
+  // Wire buttons via onclick — safe against any getElementById timing issues
+  const _ghBtnIntegrations = document.getElementById('btn-integrations');
+  if (_ghBtnIntegrations) _ghBtnIntegrations.onclick = openIntegrationsModal;
+
+  const _ghBtnClose = document.getElementById('btn-close-integrations');
+  if (_ghBtnClose) _ghBtnClose.onclick = closeIntegrationsModal;
+
+  document.getElementById('btn-save-token').addEventListener('click', async () => {
+    if (!window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    const token = document.getElementById('gh-token-input').value.trim();
+    const el = document.getElementById('gh-token-status');
+    el.textContent = 'Verifying…'; el.style.color = '#888';
+    try {
+      const r = await invoke('set_github_token_cmd', { token });
+      if (r.ok) {
+        el.textContent = r.deleted ? 'Token cleared.' : '✓ Token saved and verified';
+        el.style.color = '#4ade80';
+      } else {
+        el.textContent = '✗ ' + (r.error || 'Failed');
+        el.style.color = '#f87171';
+      }
+    } catch (e) { el.textContent = '✗ ' + e; el.style.color = '#f87171'; }
+  });
+
+  document.getElementById('btn-clear-token').addEventListener('click', async () => {
+    if (!window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    document.getElementById('gh-token-input').value = '';
+    try { await invoke('set_github_token_cmd', { token: '' }); } catch (_) {}
+    document.getElementById('gh-token-status').textContent = 'Token cleared.';
+    document.getElementById('gh-token-status').style.color = '#888';
+  });
+
+  function setLinkStatus(msg, isError) {
+    const el = document.getElementById('gh-link-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = isError ? '#f87171' : '#4ade80';
+  }
+
+  function onDoneColChange(sel) {
+    const warning = document.getElementById('gh-done-col-warning');
+    if (!warning) return;
+    const originalId = sel._linkedDoneColId;
+    // Only warn if the board is already linked and the user is changing from the saved value
+    if (originalId && sel.value !== originalId) {
+      warning.style.display = 'block';
+    } else {
+      warning.style.display = 'none';
+    }
+  }
+
+  async function linkGithubBoard() {
+    if (!currentBoardId || !window.__TAURI__) { setLinkStatus('No board selected.', true); return; }
+    const owner = document.getElementById('gh-owner-input').value.trim();
+    const repo = document.getElementById('gh-repo-input').value.trim();
+    const doneColumnId = document.getElementById('gh-done-col-select').value;
+    if (!owner || !repo) { setLinkStatus('Fill in owner and repo.', true); return; }
+    if (!doneColumnId) { setLinkStatus('Select the Done column first.', true); return; }
+    try {
+      setLinkStatus('Linking…', false);
+      await invoke('link_github_board_cmd', { boardId: currentBoardId, owner, repo, doneColumnId });
+      setLinkStatus('Linked ✓ — starting sync…', false);
+      await refreshIntegrationsUI();
+      // Close modal after a brief moment so user sees the success state
+      setTimeout(() => closeIntegrationsModal(), 800);
+      // Trigger initial sync after linking — blocking overlay so user sees progress
+      setTimeout(async () => {
+        githubLinked = true;
+        await runGithubSync({ blocking: true });
+      }, 900);
+    } catch (e) {
+      setLinkStatus('✗ ' + e, true);
+    }
+  }
+
+  async function unlinkGithubBoard() {
+    if (!currentBoardId || !window.__TAURI__) return;
+    showConfirm('Unlink this board from GitHub? Sync will stop.', async () => {
+      try {
+        await invoke('unlink_github_board_cmd', { boardId: currentBoardId });
+        setLinkStatus('', false);
+        await refreshIntegrationsUI();
+      } catch (e) {
+        setLinkStatus('✗ ' + e, true);
+      }
+    });
+  }
+
+  function showSyncToast(msg, isError) {
+    let toast = document.getElementById('gh-sync-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'gh-sync-toast';
+      toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:8px;padding:10px 16px;font-size:12px;z-index:9999;transition:opacity 0.3s;pointer-events:none;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.color = isError ? '#f87171' : '#4ade80';
+    toast.style.opacity = '1';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+  }
+
+  function showSyncOverlay(msg) {
+    let ov = document.getElementById('sync-overlay');
+    if (!ov) return;
+    ov.querySelector('#sync-overlay-msg').textContent = msg || 'Syncing with GitHub…';
+    ov.style.display = 'flex';
+  }
+  function hideSyncOverlay() {
+    const ov = document.getElementById('sync-overlay');
+    if (ov) ov.style.display = 'none';
+  }
+
+  async function runGithubSync(opts) {
+    if (!currentBoardId || !githubLinked || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    const blocking = opts && opts.blocking;
+    const statusEl = document.getElementById('gh-sync-status');
+    const syncBtn = document.getElementById('btn-sync-now');
+    if (statusEl) { statusEl.textContent = 'Syncing…'; statusEl.style.color = '#888'; }
+    if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = '⟳ Syncing…'; }
+    if (blocking) {
+      showSyncOverlay('Importing issues from GitHub…');
+    } else {
+      showSyncToast('GitHub sync in progress…', false);
+    }
+    try {
+      const r = await invoke('sync_github_board_cmd', { boardId: currentBoardId });
+      const msg = `↑${r.pushed} pushed  ↓${r.pulled} pulled  ✕${r.closed} closed`;
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = '#4ade80'; }
+      const lastEl = document.getElementById('gh-last-sync');
+      if (lastEl) lastEl.textContent = new Date().toLocaleString();
+      if (r.errors && r.errors.length) console.warn('[GitHub sync errors]', r.errors);
+      showSyncToast('GitHub sync done: ' + msg, false);
+      loadBoardColumns(currentBoardId).catch(() => {});
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = '✗ ' + e; statusEl.style.color = '#f87171'; }
+      showSyncToast('GitHub sync failed: ' + e, true);
+    } finally {
+      if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = '⟳ Sync Now'; }
+      hideSyncOverlay();
+    }
+  }
+
+  // ── Card preview modal ───────────────────────────────────────────────────────
+  async function openCardPreview(cardId, boardId) {
+    try {
+      const card = await invoke('get_card_cmd', { boardId, cardId });
+      const modal = document.getElementById('modal-card-preview');
+      if (!modal) { openCardDetail(cardId, boardId); return; }
+
+      modal.querySelector('#preview-card-title').textContent = card.title;
+      modal.querySelector('#preview-card-num').textContent = card.number ? '#' + card.number : '';
+
+      // Description
+      const descEl = modal.querySelector('#preview-card-desc');
+      descEl.textContent = card.description || '';
+      descEl.style.display = card.description ? '' : 'none';
+
+      // Labels
+      const labelsEl = modal.querySelector('#preview-card-labels');
+      labelsEl.innerHTML = '';
+      for (const lbl of (card.labels || [])) {
+        const span = document.createElement('span');
+        span.style.cssText = 'background:#2a2a4a;border-radius:12px;padding:2px 8px;font-size:11px;color:#a0a0c0;margin-right:4px;';
+        span.textContent = lbl;
+        labelsEl.appendChild(span);
+      }
+
+      // Meta row
+      const metaEl = modal.querySelector('#preview-card-meta');
+      const parts = [];
+      if (card.due_date) parts.push('Due: ' + card.due_date);
+      if (card.assignee) parts.push('Assignee: ' + card.assignee);
+      metaEl.textContent = parts.join('   ');
+
+      // Comments
+      const commentsEl = modal.querySelector('#preview-card-comments');
+      commentsEl.innerHTML = '';
+      const comments = (card.comments || []);
+      if (comments.length === 0) {
+        commentsEl.innerHTML = '<div style="color:#555;font-size:12px;text-align:center;padding:16px 0;">No comments</div>';
+      } else {
+        for (const c of comments) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:10px;align-items:flex-start;margin-bottom:18px;';
+
+          const av = document.createElement('div');
+          av.style.cssText = 'flex-shrink:0;width:32px;height:32px;border-radius:50%;background:#2a2a4a;display:flex;align-items:center;justify-content:center;font-size:12px;color:#888;overflow:hidden;margin-top:2px;';
+          if (c.avatar_url) {
+            const img = document.createElement('img');
+            img.src = c.avatar_url;
+            img.alt = '';
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+            img.onerror = () => { av.textContent = (c.author || '?')[0].toUpperCase(); img.remove(); };
+            av.appendChild(img);
+          } else {
+            av.textContent = (c.author || '?')[0].toUpperCase();
+          }
+
+          const body = document.createElement('div');
+          body.style.cssText = 'flex:1;min-width:0;';
+          const authorEl = document.createElement('div');
+          authorEl.style.cssText = 'font-size:12px;font-weight:600;color:#a0a0c0;margin-bottom:4px;';
+          authorEl.textContent = c.author.startsWith('@') ? c.author : '@' + c.author;
+          const textEl = document.createElement('div');
+          textEl.style.cssText = 'font-size:14px;color:#d0d0e8;line-height:1.5;word-break:break-word;';
+          // Strip the "@user: " prefix that was prepended during sync
+          const rawText = c.text || '';
+          const colonIdx = rawText.indexOf(': ');
+          const displayText = (colonIdx > 0 && rawText.startsWith('@')) ? rawText.slice(colonIdx + 2) : rawText;
+          textEl.innerHTML = renderCommentMarkdown(displayText);
+
+          body.appendChild(authorEl);
+          body.appendChild(textEl);
+          row.appendChild(av);
+          row.appendChild(body);
+          commentsEl.appendChild(row);
+        }
+      }
+
+      // GitHub sync pill
+      const syncPill = modal.querySelector('#preview-sync-pill');
+      if (syncPill) {
+        if (card.github_issue_number) {
+          const issueNum = card.github_issue_number;
+          let syncLabel = 'Never synced';
+          if (card.github_synced_at) {
+            const d = new Date(card.github_synced_at);
+            const diffMs = Date.now() - d.getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            const diffHr = Math.round(diffMs / 3600000);
+            syncLabel = diffMin < 2 ? 'Just now' : diffMin < 60 ? diffMin + 'm ago' : diffHr < 24 ? diffHr + 'h ago' : d.toLocaleDateString();
+          }
+          syncPill.innerHTML = '';
+          const pillText = document.createElement('span');
+          pillText.style.cssText = 'color:#7c3aed;font-size:11px;font-weight:600;margin-right:6px;cursor:pointer;text-decoration:underline;';
+          pillText.title = 'Open GitHub issue #' + issueNum;
+          pillText.textContent = 'GitHub #' + issueNum;
+          pillText.onclick = () => openGithubIssue(issueNum);
+          const syncTime = document.createElement('span');
+          syncTime.style.cssText = 'color:#555;font-size:11px;margin-right:8px;';
+          syncTime.id = 'preview-sync-time';
+          syncTime.textContent = '· ' + syncLabel;
+          const syncBtn = document.createElement('button');
+          syncBtn.style.cssText = 'background:#1a1a3a;border:1px solid #3a3a6a;color:#a0a0c0;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:11px;line-height:1.4;';
+          syncBtn.textContent = '↺ Sync';
+          syncBtn.onclick = async () => {
+            syncBtn.disabled = true;
+            syncBtn.textContent = '…';
+            try {
+              await invoke('sync_card_cmd', { boardId, cardId });
+              showToast('Card synced');
+              await openCardPreview(cardId, boardId);
+            } catch(e) { showToast('Sync failed: ' + e, 4000); }
+            finally { syncBtn.disabled = false; syncBtn.textContent = '↺ Sync'; }
+          };
+          syncPill.appendChild(pillText);
+          syncPill.appendChild(syncTime);
+          syncPill.appendChild(syncBtn);
+          syncPill.style.display = 'flex';
+        } else {
+          syncPill.style.display = 'none';
+        }
+      }
+
+      modal._ctx = { cardId, boardId };
+      modal.style.display = 'flex';
+    } catch (e) { showAlert('Error loading card: ' + e); }
+  }
+
+  function startGithubPoll() {
+    if (githubPollTimer) return;
+    githubPollTimer = setInterval(runGithubSync, 60000);
+  }
+  function stopGithubPoll() {
+    if (githubPollTimer) { clearInterval(githubPollTimer); githubPollTimer = null; }
+  }
+  function scheduleGithubSync() {
+    if (!githubLinked) return;
+    if (githubDebounceTimer) clearTimeout(githubDebounceTimer);
+    githubDebounceTimer = setTimeout(runGithubSync, 3000);
+  }
 </script>
+
+<!-- Sync Overlay — blocking spinner shown during first-time GitHub sync -->
+<div id="sync-overlay" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(5,5,15,0.85);align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+  <div style="width:48px;height:48px;border:3px solid #2a2a5a;border-top-color:#7c3aed;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+  <div id="sync-overlay-msg" style="color:#c0c0e0;font-size:14px;text-align:center;max-width:280px;line-height:1.4;">Syncing with GitHub…</div>
+</div>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+<!-- Card Preview Modal -->
+<div id="modal-card-preview" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.7);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;">
+  <div style="background:#12121f;border:1px solid #2a2a4a;border-radius:12px;width:680px;max-width:94vw;box-shadow:0 16px 48px rgba(0,0,0,0.7);position:relative;">
+    <!-- Header -->
+    <div style="padding:20px 24px 12px;border-bottom:1px solid #1e1e3a;display:flex;align-items:flex-start;gap:12px;">
+      <div style="flex:1;min-width:0;">
+        <div id="preview-card-num" style="color:#7c3aed;font-size:12px;font-weight:600;margin-bottom:4px;"></div>
+        <div id="preview-card-title" style="font-size:22px;font-weight:700;color:#e8e8f8;line-height:1.3;word-break:break-word;"></div>
+        <div id="preview-sync-pill" style="display:none;align-items:center;margin-top:8px;flex-wrap:wrap;gap:4px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;margin-top:4px;">
+        <button onclick="(() => { const m = document.getElementById('modal-card-preview'); const ctx = m._ctx; if (!ctx) return; m.style.display='none'; openCardDetail(ctx.cardId, ctx.boardId); })()" style="background:#2a2a5a;border:1px solid #3a3a6a;color:#c0c0e0;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">Edit</button>
+        <button onclick="document.getElementById('modal-card-preview').style.display='none'" style="background:none;border:none;color:#888;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;">&#10005;</button>
+      </div>
+    </div>
+    <!-- Description -->
+    <div id="preview-card-desc" style="padding:16px 24px;color:#b0b0cc;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;border-bottom:1px solid #1a1a30;"></div>
+    <!-- Comments -->
+    <div style="padding:16px 24px 0;">
+      <div style="font-size:12px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:14px;">Comments</div>
+      <div id="preview-card-comments" style="max-height:400px;overflow-y:auto;padding-right:4px;"></div>
+    </div>
+    <!-- Meta -->
+    <div style="padding:14px 24px;border-top:1px solid #1a1a30;margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <div id="preview-card-labels" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+      <div id="preview-card-meta" style="color:#666;font-size:12px;margin-left:auto;"></div>
+    </div>
+  </div>
+</div>
 
 <!-- Global Search Panel -->
 <div id="search-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:flex-start;justify-content:center;padding-top:80px;">

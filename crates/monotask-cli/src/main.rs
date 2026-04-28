@@ -48,6 +48,11 @@ enum Commands {
     /// Print full reference documentation for AI agents and automation
     #[command(name = "ai-help")]
     AiHelp,
+    /// GitHub Issues integration
+    Github {
+        #[command(subcommand)]
+        cmd: GithubCommands,
+    },
     /// Start P2P sync daemon
     Sync {
         /// Run in background (writes PID to data dir)
@@ -300,6 +305,32 @@ enum ProfileCommands {
     SetAvatar { path: String },
     /// Import an SSH Ed25519 key as your identity
     ImportSshKey { path: Option<String> },
+}
+
+#[derive(Subcommand)]
+enum GithubCommands {
+    /// Save a GitHub Personal Access Token (PAT)
+    Connect {
+        /// The PAT token (ghp_…). Reads from stdin if not given.
+        token: Option<String>,
+    },
+    /// Show token and connection status
+    Status,
+    /// Link a board to a GitHub repository
+    Link {
+        board_id: String,
+        /// GitHub owner (user or org)
+        owner: String,
+        /// GitHub repository name
+        repo: String,
+        /// Column ID to treat as "done" (maps to closed issues)
+        #[arg(long)]
+        done_col: String,
+    },
+    /// Unlink a board from GitHub
+    Unlink { board_id: String },
+    /// Run a bidirectional sync for a board
+    Sync { board_id: String },
 }
 
 fn data_dir(cli: &Cli) -> anyhow::Result<std::path::PathBuf> {
@@ -844,6 +875,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Sync { detach, stop, status, port, peers } => {
             cmd_sync(dir, detach, stop, status, port, peers).await?;
         }
+        Commands::Github { cmd } => {
+            cmd_github(cmd, &dir, &mut storage, &identity).await?;
+        }
     }
     Ok(())
 }
@@ -1268,6 +1302,79 @@ fn get_local_member_profile(conn: &rusqlite::Connection) -> monotask_core::space
         presence: "".into(),
         kicked: false,
     }
+}
+
+async fn cmd_github(
+    cmd: GithubCommands,
+    data_dir: &std::path::Path,
+    storage: &mut monotask_storage::Storage,
+    identity: &monotask_crypto::Identity,
+) -> anyhow::Result<()> {
+    use colored::Colorize;
+    match cmd {
+        GithubCommands::Connect { token } => {
+            let tok = match token {
+                Some(t) => t,
+                None => {
+                    eprint!("Enter GitHub PAT: ");
+                    tokio::task::spawn_blocking(|| {
+                        let mut s = String::new();
+                        std::io::stdin().read_line(&mut s).map(|_| s.trim().to_string())
+                    }).await
+                    .map_err(|e| anyhow::anyhow!("thread error: {e}"))?
+                    .map_err(|e| anyhow::anyhow!("stdin error: {e}"))?
+                }
+            };
+            if tok.is_empty() {
+                anyhow::bail!("Token cannot be empty");
+            }
+            let valid = monotask_github::test_token(&tok).await.unwrap_or(false);
+            if !valid {
+                anyhow::bail!("Token validation failed — check the token and network access");
+            }
+            monotask_github::save_token(data_dir, &tok)?;
+            println!("{}", "✓ Token saved and verified".green());
+        }
+        GithubCommands::Status => {
+            match monotask_github::load_token(data_dir)? {
+                Some(_) => println!("Token: {}", "saved".green()),
+                None => println!("Token: {}", "not set — run `monotask github connect`".yellow()),
+            }
+        }
+        GithubCommands::Link { board_id, owner, repo, done_col } => {
+            let mut doc = storage.load_board(&board_id)?;
+            let config = monotask_github::GitHubConfig {
+                owner: owner.clone(), repo: repo.clone(),
+                done_column_id: done_col, last_sync: None,
+            };
+            monotask_github::set_github_config(&mut doc, Some(&config))?;
+            storage.save_board(&board_id, &mut doc)?;
+            println!("Linked board {board_id} → {owner}/{repo}");
+        }
+        GithubCommands::Unlink { board_id } => {
+            let mut doc = storage.load_board(&board_id)?;
+            monotask_github::set_github_config(&mut doc, None)?;
+            storage.save_board(&board_id, &mut doc)?;
+            println!("Unlinked board {board_id} from GitHub");
+        }
+        GithubCommands::Sync { board_id } => {
+            let token = monotask_github::load_token(data_dir)?
+                .ok_or_else(|| anyhow::anyhow!("No token saved. Run `monotask github connect` first."))?;
+            let mut doc = storage.load_board(&board_id)?;
+            let config = monotask_github::get_github_config(&doc)
+                .ok_or_else(|| anyhow::anyhow!("Board not linked to GitHub. Run `monotask github link` first."))?;
+            let actor_pk = identity.public_key_bytes().to_vec();
+            let result = monotask_github::sync_board(&mut doc, &token, &config, &actor_pk).await?;
+            storage.save_board(&board_id, &mut doc)?;
+            println!("Sync complete: ↑{} pushed  ↓{} pulled  ✕{} closed",
+                result.pushed, result.pulled, result.closed);
+            if !result.errors.is_empty() {
+                eprintln!("{} non-fatal errors:", result.errors.len());
+                for e in &result.errors { eprintln!("  - {e}"); }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn print_ai_help() {

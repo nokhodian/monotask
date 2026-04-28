@@ -9,6 +9,7 @@ pub struct Comment {
     pub text: String,
     pub created_at: String,
     pub deleted: bool,
+    pub avatar_url: Option<String>,
 }
 
 pub fn get_comments_list(doc: &AutoCommit, card_obj: &ObjId) -> Result<ObjId> {
@@ -30,7 +31,7 @@ pub fn add_comment(doc: &mut AutoCommit, card_id: &str, text: &str, author_key: 
     doc.put(&c_obj, "text", text)?;
     doc.put(&c_obj, "created_at", hlc.as_str())?;
     doc.put(&c_obj, "deleted", false)?;
-    Ok(Comment { id: comment_id, author: author_key.into(), text: text.into(), created_at: hlc, deleted: false })
+    Ok(Comment { id: comment_id, author: author_key.into(), text: text.into(), created_at: hlc, deleted: false, avatar_url: None })
 }
 
 pub fn delete_comment(doc: &mut AutoCommit, card_id: &str, comment_id: &str) -> Result<()> {
@@ -66,6 +67,22 @@ pub fn edit_comment(doc: &mut AutoCommit, card_id: &str, comment_id: &str, new_t
     Err(crate::Error::NotFound(comment_id.into()))
 }
 
+pub fn set_comment_avatar_url(doc: &mut AutoCommit, card_id: &str, comment_id: &str, url: &str) -> Result<()> {
+    let card_obj = crate::card::get_card_obj(doc, card_id)?;
+    let comments = get_comments_list(doc, &card_obj)?;
+    for i in 0..doc.length(&comments) {
+        if let Some((_, c_obj)) = doc.get(&comments, i)? {
+            if let Ok(Some(id)) = crate::get_string(doc, &c_obj, "id") {
+                if id == comment_id {
+                    doc.put(&c_obj, "avatar_url", url)?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err(crate::Error::NotFound(comment_id.into()))
+}
+
 pub fn list_comments(doc: &AutoCommit, card_id: &str) -> Result<Vec<Comment>> {
     let card_obj = crate::card::get_card_obj(doc, card_id)?;
     let comments = get_comments_list(doc, &card_obj)?;
@@ -83,6 +100,7 @@ pub fn list_comments(doc: &AutoCommit, card_id: &str) -> Result<Vec<Comment>> {
                     text: crate::get_string(doc, &c_obj, "text")?.unwrap_or_default(),
                     created_at: crate::get_string(doc, &c_obj, "created_at")?.unwrap_or_default(),
                     deleted: false,
+                    avatar_url: crate::get_string(doc, &c_obj, "avatar_url")?.filter(|s| !s.is_empty()),
                 });
             }
         }

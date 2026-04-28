@@ -1,6 +1,6 @@
 [package]
 name = "monotask"
-version = "0.4.5"
+version = "1.0.0"
 edition = "2021"
 
 [lib]
@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 monotask-core    = { path = "../../monotask-core" }
+monotask-github  = { path = "../../monotask-github" }
 monotask-crypto  = { path = "../../monotask-crypto" }
 monotask-storage = { path = "../../monotask-storage" }
 monotask-net     = { path = "../../monotask-net" }

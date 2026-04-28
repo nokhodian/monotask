@@ -320,6 +320,7 @@ struct CardView {
     impact: Option<u8>,
     effort: Option<u8>,
     computed_priority: Option<u8>,
+    github_issue_number: Option<u64>,
 }
 
 #[derive(serde::Serialize)]
@@ -328,6 +329,7 @@ struct CommentView {
     author: String,
     text: String,
     created_at: String,
+    avatar_url: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -389,6 +391,8 @@ struct CardDetailView {
     impact: Option<u8>,
     effort: Option<u8>,
     computed_priority: Option<u8>,
+    github_issue_number: Option<u64>,
+    github_synced_at: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -510,6 +514,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         .iter()
                         .flat_map(|cl| cl.items.iter())
                         .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
+                    let github_issue_number = monotask_github::get_github_issue_number(&doc, &card.id);
                     cards.push(CardView {
                         id: card.id.clone(),
                         title: card.title,
@@ -526,6 +531,7 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         impact,
                         effort,
                         computed_priority,
+                        github_issue_number,
                     });
                 }
             }
@@ -605,6 +611,7 @@ fn export_board_cmd(
                         .iter()
                         .flat_map(|cl| cl.items.iter())
                         .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
+                    let github_issue_number = monotask_github::get_github_issue_number(&doc, &card.id);
                     cards.push(CardView {
                         id: card.id.clone(),
                         title: card.title,
@@ -621,6 +628,7 @@ fn export_board_cmd(
                         impact,
                         effort,
                         computed_priority,
+                        github_issue_number,
                     });
                 }
             }
@@ -1106,7 +1114,7 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
     let comments = monotask_core::comment::list_comments(&doc, &card_id)
         .unwrap_or_default()
         .into_iter()
-        .map(|c| CommentView { id: c.id, author: c.author, text: c.text, created_at: c.created_at })
+        .map(|c| CommentView { id: c.id, author: c.author, text: c.text, created_at: c.created_at, avatar_url: c.avatar_url })
         .collect();
     let checklists = monotask_core::checklist::list_checklists(&doc, &card_id)
         .unwrap_or_default()
@@ -1169,6 +1177,8 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
     let computed_priority = if impact.is_some() || effort.is_some() {
         Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
     } else { None };
+    let github_issue_number = monotask_github::get_github_issue_number(&doc, &card_id);
+    let github_synced_at = monotask_github::get_github_synced_at(&doc, &card_id);
     Ok(CardDetailView {
         id: card.id,
         title: card.title,
@@ -1189,6 +1199,8 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         impact,
         effort,
         computed_priority,
+        github_issue_number,
+        github_synced_at,
     })
 }
 
@@ -1346,7 +1358,7 @@ fn add_comment_cmd(board_id: String, card_id: String, text: String, state: tauri
     monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
         .map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
-    Ok(CommentView { id: comment.id, author: comment.author, text: comment.text, created_at: comment.created_at })
+    Ok(CommentView { id: comment.id, author: comment.author, text: comment.text, created_at: comment.created_at, avatar_url: comment.avatar_url })
 }
 
 #[tauri::command]
@@ -2656,7 +2668,11 @@ fn main() {
             }
             std::fs::create_dir_all(&data_dir)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            let _ = app; // suppress unused warning
+            // Open DevTools automatically in dev builds for debugging
+            #[cfg(debug_assertions)]
+            if let Some(win) = app.get_webview_window("main") {
+                win.open_devtools();
+            }
 
             let storage = Storage::open(&data_dir)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
@@ -2793,9 +2809,183 @@ fn main() {
             attach_image_cmd,
             remove_attachment_cmd,
             add_subtask_cmd,
+            get_github_token_status_cmd,
+            set_github_token_cmd,
+            get_github_board_status_cmd,
+            link_github_board_cmd,
+            unlink_github_board_cmd,
+            sync_github_board_cmd,
+            sync_card_cmd,
+            open_url_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+async fn open_url_cmd(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    tokio::process::Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    tokio::process::Command::new("xdg-open").arg(&url).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    tokio::process::Command::new("cmd").args(["/c", "start", "", &url]).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── GitHub Integration ───────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_github_token_status_cmd(
+    state: tauri::State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let saved = monotask_github::load_token(&state.data_dir)
+        .map(|t| t.is_some())
+        .unwrap_or(false);
+    Ok(serde_json::json!({ "saved": saved }))
+}
+
+#[tauri::command]
+async fn set_github_token_cmd(
+    token: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let trimmed = token.trim().to_string();
+    if trimmed.is_empty() {
+        monotask_github::delete_token(&data_dir).map_err(|e| e.to_string())?;
+        return Ok(serde_json::json!({ "ok": true, "deleted": true }));
+    }
+    let valid = monotask_github::test_token(&trimmed).await.unwrap_or(false);
+    if !valid {
+        return Ok(serde_json::json!({ "ok": false, "error": "Invalid token or no network access" }));
+    }
+    monotask_github::save_token(&data_dir, &trimmed).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+fn get_github_board_status_cmd(
+    board_id: String,
+    state: tauri::State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    match monotask_github::get_github_config(&doc) {
+        Some(c) => Ok(serde_json::json!({
+            "linked": true, "owner": c.owner, "repo": c.repo,
+            "last_sync": c.last_sync, "done_column_id": c.done_column_id
+        })),
+        None => Ok(serde_json::json!({ "linked": false })),
+    }
+}
+
+#[tauri::command]
+fn link_github_board_cmd(
+    board_id: String,
+    owner: String,
+    repo: String,
+    done_column_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    let config = monotask_github::GitHubConfig { owner, repo, done_column_id, last_sync: None };
+    monotask_github::set_github_config(&mut doc, Some(&config)).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn unlink_github_board_cmd(
+    board_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    monotask_github::set_github_config(&mut doc, None).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_github_board_cmd(
+    board_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let actor_pk = state.identity.public_key_bytes().to_vec();
+
+    let mut doc = {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?
+    };
+
+    let config = monotask_github::get_github_config(&doc)
+        .ok_or_else(|| "Board not linked to GitHub".to_string())?;
+    let token = monotask_github::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No GitHub token saved".to_string())?;
+
+    let result = monotask_github::sync_board(&mut doc, &token, &config, &actor_pk)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Reload the latest DB state and merge our sync changes into it to avoid
+    // overwriting concurrent P2P writes that happened during the API calls.
+    {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        let mut fresh = monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?;
+        fresh.merge(&mut doc).map_err(|e| e.to_string())?;
+        monotask_storage::board::save_board(storage.conn(), &board_id, &mut fresh)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(serde_json::to_value(result).unwrap_or_default())
+}
+
+#[tauri::command]
+async fn sync_card_cmd(
+    board_id: String,
+    card_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let actor_pk = state.identity.public_key_bytes().to_vec();
+
+    let mut doc = {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?
+    };
+
+    let config = monotask_github::get_github_config(&doc)
+        .ok_or_else(|| "Board not linked to GitHub".to_string())?;
+    let token = monotask_github::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No GitHub token saved".to_string())?;
+
+    let result = monotask_github::sync_single_card(&mut doc, &token, &config, &card_id, &actor_pk)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        let mut fresh = monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?;
+        fresh.merge(&mut doc).map_err(|e| e.to_string())?;
+        monotask_storage::board::save_board(storage.conn(), &board_id, &mut fresh)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(serde_json::to_value(result).unwrap_or_default())
 }
 
 // ── Auto-update ─────────────────────────────────────────────────────────────
@@ -2863,8 +3053,9 @@ async fn check_for_update_cmd() -> Result<Option<String>, String> {
     let current = env!("CARGO_PKG_VERSION");
     let output = std::process::Command::new("curl")
         .args([
-            "-sf", "--max-time", "10",
+            "-sfL", "--max-time", "10",
             "-H", "User-Agent: monotask-updater",
+            "-H", "Accept: application/vnd.github.v3+json",
             "https://api.github.com/repos/nokhodian/monotask/releases/latest",
         ])
         .output()
