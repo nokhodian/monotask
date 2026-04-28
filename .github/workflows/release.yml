@@ -28,7 +28,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }} -p monotask-cli
       - name: Package
         run: |
-          cp target/${{ matrix.target }}/release/app-cli ./monotask
+          cp target/${{ matrix.target }}/release/monotask ./monotask
           tar -czf ${{ matrix.artifact }}.tar.gz monotask
           shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
       - uses: actions/upload-artifact@v4
@@ -45,14 +45,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install musl tools
-        run: sudo apt-get install -y musl-tools
+        run: sudo apt-get install -y musl-tools pkg-config libssl-dev
       - name: Add musl target
         run: rustup target add x86_64-unknown-linux-musl
       - name: Build CLI
+        env:
+          OPENSSL_STATIC: "1"
+          OPENSSL_VENDORED: "1"
         run: cargo build --release --target x86_64-unknown-linux-musl -p monotask-cli
       - name: Package
         run: |
-          cp target/x86_64-unknown-linux-musl/release/app-cli ./monotask
+          cp target/x86_64-unknown-linux-musl/release/monotask ./monotask
           tar -czf monotask-${{ github.ref_name }}-x86_64-linux.tar.gz monotask
           sha256sum monotask-${{ github.ref_name }}-x86_64-linux.tar.gz > monotask-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256
       - uses: actions/upload-artifact@v4
@@ -75,7 +78,7 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          cp target/x86_64-pc-windows-msvc/release/app-cli.exe ./monotask.exe
+          cp target/x86_64-pc-windows-msvc/release/monotask.exe ./monotask.exe
           7z a monotask-${{ github.ref_name }}-x86_64-windows.zip monotask.exe
           sha256sum monotask-${{ github.ref_name }}-x86_64-windows.zip > monotask-${{ github.ref_name }}-x86_64-windows.zip.sha256
       - uses: actions/upload-artifact@v4
