@@ -45,13 +45,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install musl tools
-        run: sudo apt-get install -y musl-tools pkg-config libssl-dev
+        run: sudo apt-get install -y musl-tools
       - name: Add musl target
         run: rustup target add x86_64-unknown-linux-musl
       - name: Build CLI
-        env:
-          OPENSSL_STATIC: "1"
-          OPENSSL_VENDORED: "1"
         run: cargo build --release --target x86_64-unknown-linux-musl -p monotask-cli
       - name: Package
         run: |
