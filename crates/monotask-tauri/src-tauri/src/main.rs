@@ -3379,6 +3379,106 @@ async fn sync_linear_card_cmd(
 
 // ── Auto-update ─────────────────────────────────────────────────────────────
 
+/// Download and replace the CLI binary from a GitHub release asset.
+/// Best-effort: errors are silently swallowed so they never block the app update.
+async fn update_cli_binary(assets: &serde_json::Value, tag: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let asset_name = format!("monotask-{}-aarch64-apple-darwin.tar.gz", tag);
+        let url = match assets.as_array()
+            .and_then(|arr| arr.iter().find(|a| a["name"].as_str() == Some(&asset_name)))
+            .and_then(|a| a["browser_download_url"].as_str())
+        {
+            Some(u) => u.to_string(),
+            None => return,
+        };
+
+        // Resolve current install path; fall back to /usr/local/bin
+        let install_dir = tokio::process::Command::new("sh")
+            .args(["-c", "dirname $(which monotask 2>/dev/null) 2>/dev/null"])
+            .output().await.ok()
+            .and_then(|o| if o.status.success() {
+                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            } else { None })
+            .unwrap_or_else(|| "/usr/local/bin".to_string());
+
+        let tmp_tar = format!("/tmp/monotask-cli-{}.tar.gz", tag);
+        let dl = tokio::process::Command::new("curl")
+            .args(["-sfL", "--max-time", "120", "-o", &tmp_tar,
+                   "-H", "User-Agent: monotask-updater", &url])
+            .status().await;
+        if dl.map(|s| !s.success()).unwrap_or(true) {
+            let _ = tokio::fs::remove_file(&tmp_tar).await;
+            return;
+        }
+
+        // Extract binary from tarball into /tmp
+        let _ = tokio::process::Command::new("tar")
+            .args(["-xzf", &tmp_tar, "-C", "/tmp", "monotask"])
+            .status().await;
+
+        // Replace existing binary (may need elevated perms; best-effort)
+        let dest = format!("{}/monotask", install_dir);
+        let _ = tokio::process::Command::new("cp")
+            .args(["-f", "/tmp/monotask", &dest])
+            .status().await;
+        let _ = tokio::process::Command::new("chmod")
+            .args(["+x", &dest])
+            .status().await;
+
+        let _ = tokio::fs::remove_file(&tmp_tar).await;
+        let _ = tokio::fs::remove_file("/tmp/monotask").await;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let asset_name = format!("monotask-{}-x86_64-windows.zip", tag);
+        let url = match assets.as_array()
+            .and_then(|arr| arr.iter().find(|a| a["name"].as_str() == Some(&asset_name)))
+            .and_then(|a| a["browser_download_url"].as_str())
+        {
+            Some(u) => u.to_string(),
+            None => return,
+        };
+
+        let tmp_dir = std::env::var("TEMP").unwrap_or_else(|_| "C:\\Windows\\Temp".into());
+        let tmp_zip = format!("{}\\monotask-cli-{}.zip", tmp_dir, tag);
+
+        let install_dir = tokio::process::Command::new("cmd")
+            .args(["/C", "for /f %i in ('where monotask 2^>nul') do @echo %~dpi"])
+            .output().await.ok()
+            .and_then(|o| if o.status.success() {
+                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            } else { None })
+            .unwrap_or_else(|| format!("{}\\..\\bin", tmp_dir));
+
+        let dl = tokio::process::Command::new("curl")
+            .args(["-sfL", "--max-time", "120", "-o", &tmp_zip,
+                   "-H", "User-Agent: monotask-updater", &url])
+            .status().await;
+        if dl.map(|s| !s.success()).unwrap_or(true) {
+            let _ = tokio::fs::remove_file(&tmp_zip).await;
+            return;
+        }
+
+        // Extract and replace
+        let _ = tokio::process::Command::new("powershell")
+            .args(["-Command",
+                   &format!("Expand-Archive -Force '{}' '{}'", tmp_zip, tmp_dir)])
+            .status().await;
+
+        let src = format!("{}\\monotask.exe", tmp_dir);
+        let dest = format!("{}monotask.exe", install_dir);
+        let _ = tokio::fs::rename(&src, &dest).await;
+        let _ = tokio::fs::remove_file(&tmp_zip).await;
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = (assets, tag);
+}
+
 fn version_is_newer(remote: &str, local: &str) -> bool {
     let parse = |v: &str| -> Vec<u64> {
         v.split('.').filter_map(|p| p.parse().ok()).collect()
@@ -3565,6 +3665,9 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
             .arg("find /Applications/Monotask.app -print0 | xargs -0 xattr -c 2>/dev/null; codesign --force --deep --sign - /Applications/Monotask.app 2>/dev/null")
             .status().await;
 
+        // Step 6b: Update CLI binary to match the new app version
+        update_cli_binary(&json["assets"], &tag).await;
+
         // Step 7: Relaunch and exit
         let _ = tokio::process::Command::new("open")
             .args(["-n", "/Applications/Monotask.app"])
@@ -3603,6 +3706,9 @@ async fn install_update_cmd(app: tauri::AppHandle) -> Result<(), String> {
         if !dl.success() {
             return Err("Failed to download installer — check network connection".into());
         }
+
+        // Step 3b: Update CLI binary before launching the installer
+        update_cli_binary(&json["assets"], &tag).await;
 
         // Step 3: Launch installer silently (/S = NSIS silent mode) and exit.
         // The installer replaces the running app; we exit first to release the lock.

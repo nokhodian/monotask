@@ -1,0 +1,6 @@
+{"type":"server-started","port":55814,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:55814","screen_dir":"/Users/morteza/Desktop/monoes/monotask/.superpowers/brainstorm/2345-1774519608"}
+{"type":"screen-added","file":"/Users/morteza/Desktop/monoes/monotask/.superpowers/brainstorm/2345-1774519608/chat-layout.html"}
+{"source":"user-event","type":"click","text":"Spaces\n          \n          \n          \n          \n          \n            💬 Chat\n          \n        \n        \n          My Space — Board\n          \n            \n            \n          \n          \n            💬 My Space\n            \n              Alice: board looking good\n              Bob: thanks!\n            \n            \n              \n            \n          \n        \n      \n    \n    \n      C — Floating Chat Bubble\n      Chat opens as a floating overlay from a sidebar button. Stays on top while you navigate boards, closeable anytime.","choice":"c","id":null,"timestamp":1774520536747}
+{"type":"screen-added","file":"/Users/morteza/Desktop/monoes/monotask/.superpowers/brainstorm/2345-1774519608/profile-modal.html"}
+{"type":"screen-added","file":"/Users/morteza/Desktop/monoes/monotask/.superpowers/brainstorm/2345-1774519608/chat-panel.html"}
+{"type":"server-stopped","reason":"idle timeout"}

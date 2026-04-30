@@ -1,0 +1,89 @@
+<h2>Expanded Profile Modal</h2>
+<p class="subtitle">How the profile editor would look — does this layout feel right?</p>
+
+<div class="mockup" style="max-width:480px;margin:0 auto;">
+  <div class="mockup-header">Profile Settings</div>
+  <div class="mockup-body" style="background:#0d0d1c;padding:0;">
+
+    <!-- Avatar section -->
+    <div style="display:flex;align-items:flex-start;gap:20px;padding:20px 20px 0;">
+      <div style="position:relative;flex-shrink:0;">
+        <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#c8962a,#6a4a1a);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;border:3px solid #2a2a4a;">A</div>
+        <div style="position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;background:#4a9a4a;border-radius:50%;border:2px solid #0d0d1c;"></div>
+        <div style="display:flex;gap:4px;margin-top:8px;justify-content:center;">
+          <button style="background:#1a1a08;border:1px solid #5a3a0a;color:#c8962a;border-radius:3px;padding:3px 7px;font-size:9px;cursor:pointer;">📁 File</button>
+          <button style="background:#1a1a08;border:1px solid #5a3a0a;color:#c8962a;border-radius:3px;padding:3px 7px;font-size:9px;cursor:pointer;">📷 Camera</button>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Display Name</div>
+          <div style="background:#0a0a18;border:1px solid #2a2a3a;border-radius:4px;padding:7px 10px;color:#ddd;font-size:13px;">Alice Nakamura</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Role / Title</div>
+          <div style="background:#0a0a18;border:1px solid #2a2a3a;border-radius:4px;padding:7px 10px;color:#aaa;font-size:12px;">Product Designer</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bio -->
+    <div style="padding:12px 20px 0;">
+      <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Status / Bio</div>
+      <div style="background:#0a0a18;border:1px solid #2a2a3a;border-radius:4px;padding:7px 10px;color:#888;font-size:12px;min-height:44px;">Heads down on v0.4 this week 🎯</div>
+    </div>
+
+    <!-- Color accent -->
+    <div style="padding:12px 20px 0;">
+      <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Accent Color</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#c8962a;border:2px solid #fff;cursor:pointer;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#6a9a6a;cursor:pointer;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#6a7acc;cursor:pointer;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#c86a6a;cursor:pointer;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#9a6acc;cursor:pointer;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#4a9a9a;cursor:pointer;"></div>
+        <div style="width:20px;height:20px;border-radius:50%;border:1px dashed #3a3a5a;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+          <span style="font-size:10px;color:#555;">+</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Public key + SSH -->
+    <div style="padding:12px 20px 0;">
+      <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Public Key</div>
+      <div style="background:#0a0a14;border:1px solid #1a1a2e;border-radius:4px;padding:6px 10px;color:#555;font-size:10px;font-family:monospace;display:flex;justify-content:space-between;align-items:center;">
+        <span>a3f8c2…9b1e</span>
+        <button style="background:none;border:none;color:#666;font-size:10px;cursor:pointer;">⎘ Copy</button>
+      </div>
+    </div>
+
+    <!-- Presence -->
+    <div style="padding:12px 20px 0;">
+      <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Presence</div>
+      <div style="display:flex;gap:10px;">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+          <div style="width:10px;height:10px;border-radius:50%;background:#4a9a4a;"></div>
+          <span style="font-size:11px;color:#aaa;">Online</span>
+          <input type="radio" name="presence" checked style="margin-left:2px;">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+          <div style="width:10px;height:10px;border-radius:50%;background:#c8962a;"></div>
+          <span style="font-size:11px;color:#aaa;">Away</span>
+          <input type="radio" name="presence" style="margin-left:2px;">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
+          <div style="width:10px;height:10px;border-radius:50%;background:#555;"></div>
+          <span style="font-size:11px;color:#aaa;">Do Not Disturb</span>
+          <input type="radio" name="presence" style="margin-left:2px;">
+        </label>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;margin-top:8px;border-top:1px solid #1a1a2e;">
+      <button style="background:none;border:1px solid #2a2a3a;color:#666;border-radius:4px;padding:6px 14px;font-size:12px;cursor:pointer;">Cancel</button>
+      <button style="background:#1a1a08;border:1px solid #5a3a0a;color:#c8962a;border-radius:4px;padding:6px 16px;font-size:12px;cursor:pointer;">Save Profile</button>
+    </div>
+  </div>
+</div>
