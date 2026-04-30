@@ -1,0 +1,15 @@
+{
+  "id": "session-1776682659820",
+  "startedAt": "2026-04-20T10:57:39.820Z",
+  "platform": "darwin",
+  "cwd": "/Users/morteza/Desktop/monoes/monotask/crates/monotask-tauri",
+  "context": {},
+  "metrics": {
+    "edits": 1,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "endedAt": "2026-04-20T11:00:39.494Z",
+  "duration": 179675
+}

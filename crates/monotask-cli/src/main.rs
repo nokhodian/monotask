@@ -53,6 +53,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: GithubCommands,
     },
+    /// Linear Issues integration
+    Linear {
+        #[command(subcommand)]
+        cmd: LinearCommands,
+    },
     /// Start P2P sync daemon
     Sync {
         /// Run in background (writes PID to data dir)
@@ -107,6 +112,8 @@ enum CardCommands {
     SetImpact { board_id: String, card_id: String, #[arg(value_parser = clap::value_parser!(u8).range(0..=10))] value: u8, #[arg(long)] json: bool },
     /// Set effort score (0–10). Priority = floor((impact + 10 - effort) / 2)
     SetEffort { board_id: String, card_id: String, #[arg(value_parser = clap::value_parser!(u8).range(0..=10))] value: u8, #[arg(long)] json: bool },
+    /// Set direct priority (0–10) when impact and effort are not used. Use --clear to remove.
+    SetDirectPriority { board_id: String, card_id: String, #[arg(value_parser = clap::value_parser!(u8).range(0..=10), conflicts_with = "clear")] value: Option<u8>, #[arg(long)] clear: bool, #[arg(long)] json: bool },
     SetAssignee { board_id: String, card_id: String, pubkey: String, #[arg(long)] json: bool },
     AttachImage { board_id: String, card_id: String, file: String, #[arg(long)] json: bool },
     /// List all attachments on a card
@@ -127,6 +134,41 @@ enum CardCommands {
     Subtask {
         #[command(subcommand)]
         cmd: SubtaskCommands,
+    },
+    /// Prerequisite management
+    Prerequisite {
+        #[command(subcommand)]
+        cmd: PrerequisiteCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum PrerequisiteCommands {
+    /// Mark an existing card as a prerequisite of another card
+    Add {
+        /// Board of the dependent card
+        board_id: String,
+        /// Dependent card ID (the card that requires the prerequisite)
+        card_id: String,
+        /// Board of the prerequisite card
+        prereq_board_id: String,
+        /// Prerequisite card ID
+        prereq_card_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// List prerequisites of a card
+    List {
+        board_id: String,
+        card_id: String,
+        #[arg(long)] json: bool,
+    },
+    /// Remove a prerequisite link from a card
+    Remove {
+        board_id: String,
+        card_id: String,
+        prereq_board_id: String,
+        prereq_card_id: String,
+        #[arg(long)] json: bool,
     },
 }
 
@@ -333,6 +375,39 @@ enum GithubCommands {
     Sync { board_id: String },
 }
 
+#[derive(clap::Subcommand, Debug)]
+enum LinearCommands {
+    /// Save a Linear API key. Reads from stdin if not given.
+    Connect {
+        token: Option<String>,
+    },
+    /// Show token status and list accessible teams
+    Status,
+    /// List teams accessible with the saved token
+    Teams,
+    /// List projects for a team
+    Projects {
+        team_id: String,
+    },
+    /// Link a board to a Linear project (creates Monotask columns from Linear workflow states)
+    Link {
+        board_id: String,
+        /// Linear team ID
+        #[arg(long)]
+        team: String,
+        /// Linear project ID
+        #[arg(long)]
+        project: String,
+        /// Optional: Monotask column ID to use as the done/completed column
+        #[arg(long)]
+        done_col: Option<String>,
+    },
+    /// Unlink a board from Linear
+    Unlink { board_id: String },
+    /// Run a bidirectional sync for a board
+    Sync { board_id: String },
+}
+
 fn data_dir(cli: &Cli) -> anyhow::Result<std::path::PathBuf> {
     if let Some(d) = &cli.data_dir {
         return Ok(d.clone());
@@ -503,6 +578,8 @@ async fn main() -> anyhow::Result<()> {
                         println!("Impact:      {imp}/10");
                         println!("Effort:      {eff}/10");
                         println!("Priority:    {pri}/10");
+                    } else if let Some(dp) = card.direct_priority {
+                        println!("Priority:    {dp}/10");
                     }
                     if let Some((pbid, pcid)) = &parent_ref {
                         println!("Parent:      {} (board: {})", pcid, pbid);
@@ -629,6 +706,15 @@ async fn main() -> anyhow::Result<()> {
                 storage.save_board(&board_id, &mut doc)?;
                 if json { println!("{}", serde_json::json!({"card_id": card_id, "impact": impact, "effort": value, "priority": priority})); }
                 else { println!("Impact={impact}, Effort={value} → Priority={priority}"); }
+            }
+            CardCommands::SetDirectPriority { board_id, card_id, value, clear, json } => {
+                let v = if clear { None } else { value };
+                let mut doc = storage.load_board(&board_id)?;
+                monotask_core::card::set_direct_priority(&mut doc, &card_id, v)?;
+                storage.save_board(&board_id, &mut doc)?;
+                if json { println!("{}", serde_json::json!({"card_id": card_id, "direct_priority": v})); }
+                else if let Some(p) = v { println!("Priority={p}/10"); }
+                else { println!("Priority cleared"); }
             }
             CardCommands::SetAssignee { board_id, card_id, pubkey, json } => {
                 let pk = if pubkey == "none" { "" } else { &pubkey };
@@ -760,6 +846,40 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             },
+            CardCommands::Prerequisite { cmd } => match cmd {
+                PrerequisiteCommands::Add { board_id, card_id, prereq_board_id, prereq_card_id, json } => {
+                    if card_id == prereq_card_id && board_id == prereq_board_id {
+                        return Err(anyhow::anyhow!("A card cannot be its own prerequisite"));
+                    }
+                    let mut doc = storage.load_board(&board_id)?;
+                    monotask_core::card::add_prerequisite_ref(&mut doc, &card_id, &prereq_board_id, &prereq_card_id)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json { println!("{}", serde_json::json!({"board_id": board_id, "card_id": card_id, "prereq_board_id": prereq_board_id, "prereq_card_id": prereq_card_id})); }
+                    else { println!("Added prerequisite {} (board: {}) to card {} (board: {})", prereq_card_id, prereq_board_id, card_id, board_id); }
+                },
+                PrerequisiteCommands::List { board_id, card_id, json } => {
+                    let doc = storage.load_board(&board_id)?;
+                    let refs = monotask_core::card::list_prerequisite_refs(&doc, &card_id)?;
+                    if json {
+                        let out: Vec<_> = refs.iter().map(|(bid, cid)| serde_json::json!({"board_id": bid, "card_id": cid})).collect();
+                        println!("{}", serde_json::to_string_pretty(&out)?);
+                    } else {
+                        if refs.is_empty() { println!("No prerequisites."); }
+                        else {
+                            for (bid, cid) in &refs {
+                                println!("{} (board: {})", cid, bid);
+                            }
+                        }
+                    }
+                },
+                PrerequisiteCommands::Remove { board_id, card_id, prereq_board_id, prereq_card_id, json } => {
+                    let mut doc = storage.load_board(&board_id)?;
+                    monotask_core::card::remove_prerequisite_ref(&mut doc, &card_id, &prereq_board_id, &prereq_card_id)?;
+                    storage.save_board(&board_id, &mut doc)?;
+                    if json { println!("{}", serde_json::json!({"ok": true})); }
+                    else { println!("Removed prerequisite {} (board: {}) from card {} (board: {})", prereq_card_id, prereq_board_id, card_id, board_id); }
+                },
+            },
             CardCommands::Comment { cmd } => match cmd {
                 CommentCommands::Add { board_id, card_id, text, json } => {
                     let mut doc = storage.load_board(&board_id)?;
@@ -877,6 +997,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Github { cmd } => {
             cmd_github(cmd, &dir, &mut storage, &identity).await?;
+        }
+        Commands::Linear { cmd } => {
+            cmd_linear(cmd, &dir, &mut storage, &identity).await?;
         }
     }
     Ok(())
@@ -1365,6 +1488,135 @@ async fn cmd_github(
                 .ok_or_else(|| anyhow::anyhow!("Board not linked to GitHub. Run `monotask github link` first."))?;
             let actor_pk = identity.public_key_bytes().to_vec();
             let result = monotask_github::sync_board(&mut doc, &token, &config, &actor_pk).await?;
+            storage.save_board(&board_id, &mut doc)?;
+            println!("Sync complete: ↑{} pushed  ↓{} pulled  ✕{} closed",
+                result.pushed, result.pulled, result.closed);
+            if !result.errors.is_empty() {
+                eprintln!("{} non-fatal errors:", result.errors.len());
+                for e in &result.errors { eprintln!("  - {e}"); }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_linear(
+    cmd: LinearCommands,
+    data_dir: &std::path::Path,
+    storage: &mut monotask_storage::Storage,
+    identity: &monotask_crypto::Identity,
+) -> anyhow::Result<()> {
+    use colored::Colorize;
+    match cmd {
+        LinearCommands::Connect { token } => {
+            let tok = match token {
+                Some(t) => t,
+                None => {
+                    eprint!("Enter Linear API key: ");
+                    tokio::task::spawn_blocking(|| {
+                        let mut s = String::new();
+                        std::io::stdin().read_line(&mut s).map(|_| s.trim().to_string())
+                    }).await
+                    .map_err(|e| anyhow::anyhow!("thread error: {e}"))?
+                    .map_err(|e| anyhow::anyhow!("stdin error: {e}"))?
+                }
+            };
+            if tok.is_empty() {
+                anyhow::bail!("Token cannot be empty");
+            }
+            let valid = monotask_linear::test_token(&tok).await.unwrap_or(false);
+            if !valid {
+                anyhow::bail!("Token validation failed — check the key and network access");
+            }
+            monotask_linear::save_token(data_dir, &tok)?;
+            println!("{}", "✓ Linear API key saved and verified".green());
+        }
+        LinearCommands::Status => {
+            match monotask_linear::load_token(data_dir)? {
+                Some(tok) => {
+                    println!("Token: {}", "saved".green());
+                    match monotask_linear::list_teams(&tok).await {
+                        Ok(teams) => {
+                            println!("Teams ({}):", teams.len());
+                            for t in &teams {
+                                println!("  {} — {} (key: {})", t.id.dimmed(), t.name.bold(), t.key);
+                            }
+                        }
+                        Err(e) => eprintln!("Could not fetch teams: {e}"),
+                    }
+                }
+                None => println!("Token: {}", "not set — run `monotask linear connect`".yellow()),
+            }
+        }
+        LinearCommands::Teams => {
+            let token = monotask_linear::load_token(data_dir)?
+                .ok_or_else(|| anyhow::anyhow!("No token saved. Run `monotask linear connect` first."))?;
+            let teams = monotask_linear::list_teams(&token).await?;
+            println!("{:<40} {:<20} {}", "ID", "Key", "Name");
+            for t in &teams {
+                println!("{:<40} {:<20} {}", t.id, t.key, t.name);
+            }
+        }
+        LinearCommands::Projects { team_id } => {
+            let token = monotask_linear::load_token(data_dir)?
+                .ok_or_else(|| anyhow::anyhow!("No token saved. Run `monotask linear connect` first."))?;
+            let projects = monotask_linear::list_projects(&token, &team_id).await?;
+            println!("{:<40} {}", "ID", "Name");
+            for p in &projects {
+                println!("{:<40} {}", p.id, p.name);
+            }
+        }
+        LinearCommands::Link { board_id, team, project, done_col } => {
+            let token = monotask_linear::load_token(data_dir)?
+                .ok_or_else(|| anyhow::anyhow!("No token saved. Run `monotask linear connect` first."))?;
+            let mut doc = storage.load_board(&board_id)?;
+
+            // Fetch project name for display
+            let projects = monotask_linear::list_projects(&token, &team).await?;
+            let project_name = projects.iter()
+                .find(|p| p.id == project)
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| project.clone());
+
+            println!("Setting up columns from Linear workflow states…");
+            let (done_col_id, done_state_id) = monotask_linear::setup_columns_from_states(
+                &mut doc,
+                &token,
+                &team,
+                done_col.as_deref(),
+            ).await?;
+
+            let config = monotask_linear::LinearConfig {
+                team_id: team.clone(),
+                project_id: project.clone(),
+                project_name: project_name.clone(),
+                done_column_id: done_col_id.clone(),
+                done_state_id,
+                last_sync: None,
+            };
+            monotask_linear::set_linear_config(&mut doc, Some(&config))?;
+            storage.save_board(&board_id, &mut doc)?;
+
+            let cols = monotask_core::column::list_columns(&doc)?;
+            let done_title = cols.iter().find(|c| c.id == done_col_id)
+                .map(|c| c.title.as_str()).unwrap_or("?");
+            println!("{}", format!("Linked board {board_id} → {project_name}").green());
+            println!("  Done column: {} ({})", done_title, done_col_id.dimmed());
+        }
+        LinearCommands::Unlink { board_id } => {
+            let mut doc = storage.load_board(&board_id)?;
+            monotask_linear::set_linear_config(&mut doc, None)?;
+            storage.save_board(&board_id, &mut doc)?;
+            println!("Unlinked board {board_id} from Linear");
+        }
+        LinearCommands::Sync { board_id } => {
+            let token = monotask_linear::load_token(data_dir)?
+                .ok_or_else(|| anyhow::anyhow!("No token saved. Run `monotask linear connect` first."))?;
+            let mut doc = storage.load_board(&board_id)?;
+            let config = monotask_linear::get_linear_config(&doc)
+                .ok_or_else(|| anyhow::anyhow!("Board not linked to Linear. Run `monotask linear link` first."))?;
+            let actor_pk = identity.public_key_bytes().to_vec();
+            let result = monotask_linear::sync_board(&mut doc, &token, &config, &actor_pk).await?;
             storage.save_board(&board_id, &mut doc)?;
             println!("Sync complete: ↑{} pushed  ↓{} pulled  ✕{} closed",
                 result.pushed, result.pulled, result.closed);

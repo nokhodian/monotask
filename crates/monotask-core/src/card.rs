@@ -29,6 +29,7 @@ pub struct Card {
     pub attachments: std::collections::HashMap<String, Attachment>,
     pub impact: Option<u8>,
     pub effort: Option<u8>,
+    pub direct_priority: Option<u8>,
     pub github_issue_number: Option<u64>,
 }
 
@@ -185,6 +186,7 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
     };
     let impact = get_u8_card_field(doc, &card_obj, "impact");
     let effort = get_u8_card_field(doc, &card_obj, "effort");
+    let direct_priority = get_u8_card_field(doc, &card_obj, "direct_priority");
     let github_issue_number = get_u64_card_field(doc, &card_obj, "github_issue_number");
     Ok(Card {
         id: card_id.to_string(),
@@ -203,6 +205,7 @@ pub fn read_card(doc: &AutoCommit, card_id: &str) -> Result<Card> {
         attachments,
         impact,
         effort,
+        direct_priority,
         github_issue_number,
         ..Default::default()
     })
@@ -421,6 +424,19 @@ pub fn set_due_date(doc: &mut AutoCommit, card_id: &str, due_date: Option<&str>)
     Ok(())
 }
 
+pub fn set_direct_priority(doc: &mut AutoCommit, card_id: &str, value: Option<u8>) -> Result<()> {
+    let cards_map = crate::get_cards_map(doc)?;
+    let card_obj = match doc.get(&cards_map, card_id)? {
+        Some((_, id)) => id,
+        None => return Err(crate::Error::NotFound(card_id.into())),
+    };
+    match value {
+        Some(v) => doc.put(&card_obj, "direct_priority", v as u64)?,
+        None => { let _ = doc.delete(&card_obj, "direct_priority"); }
+    }
+    Ok(())
+}
+
 pub fn set_priority(doc: &mut AutoCommit, card_id: &str, priority: &str) -> Result<()> {
     let cards_map = crate::get_cards_map(doc)?;
     let card_obj = match doc.get(&cards_map, card_id)? {
@@ -553,6 +569,74 @@ pub fn add_subtask_ref(doc: &mut AutoCommit, card_id: &str, child_board_id: &str
 pub fn list_subtask_refs(doc: &AutoCommit, card_id: &str) -> Result<Vec<(String, String)>> {
     let card_obj = get_card_obj(doc, card_id)?;
     let refs_list = match doc.get(&card_obj, "subtask_refs")? {
+        Some((_, list_id)) => list_id,
+        None => return Ok(vec![]),
+    };
+    let mut result = Vec::new();
+    for i in 0..doc.length(&refs_list) {
+        if let Some((_, entry)) = doc.get(&refs_list, i)? {
+            let bid = crate::get_string(doc, &entry, "board_id")?.unwrap_or_default();
+            let cid = crate::get_string(doc, &entry, "card_id")?.unwrap_or_default();
+            if !bid.is_empty() && !cid.is_empty() {
+                result.push((bid, cid));
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// Append a prerequisite reference to a card's prerequisite_refs list.
+/// Records that `card_id` depends on (prereq_board_id, prereq_card_id).
+pub fn add_prerequisite_ref(doc: &mut AutoCommit, card_id: &str, prereq_board_id: &str, prereq_card_id: &str) -> Result<()> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let refs_list = match doc.get(&card_obj, "prerequisite_refs")? {
+        Some((_, list_id)) => list_id,
+        None => doc.put_object(&card_obj, "prerequisite_refs", ObjType::List)?,
+    };
+    // Deduplicate
+    for i in 0..doc.length(&refs_list) {
+        if let Some((_, entry)) = doc.get(&refs_list, i)? {
+            let bid = crate::get_string(doc, &entry, "board_id")?.unwrap_or_default();
+            let cid = crate::get_string(doc, &entry, "card_id")?.unwrap_or_default();
+            if bid == prereq_board_id && cid == prereq_card_id {
+                return Ok(());
+            }
+        }
+    }
+    let idx = doc.length(&refs_list);
+    let entry = doc.insert_object(&refs_list, idx, ObjType::Map)?;
+    doc.put(&entry, "board_id", prereq_board_id)?;
+    doc.put(&entry, "card_id", prereq_card_id)?;
+    Ok(())
+}
+
+/// Remove a prerequisite reference from a card's prerequisite_refs list.
+pub fn remove_prerequisite_ref(doc: &mut AutoCommit, card_id: &str, prereq_board_id: &str, prereq_card_id: &str) -> Result<()> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let refs_list = match doc.get(&card_obj, "prerequisite_refs")? {
+        Some((_, list_id)) => list_id,
+        None => return Ok(()),
+    };
+    let mut to_delete: Vec<usize> = Vec::new();
+    for i in 0..doc.length(&refs_list) {
+        if let Some((_, entry)) = doc.get(&refs_list, i)? {
+            let bid = crate::get_string(doc, &entry, "board_id")?.unwrap_or_default();
+            let cid = crate::get_string(doc, &entry, "card_id")?.unwrap_or_default();
+            if bid == prereq_board_id && cid == prereq_card_id {
+                to_delete.push(i);
+            }
+        }
+    }
+    for i in to_delete.into_iter().rev() {
+        doc.delete(&refs_list, i)?;
+    }
+    Ok(())
+}
+
+/// List prerequisite refs stored on a card. Returns (board_id, card_id) pairs.
+pub fn list_prerequisite_refs(doc: &AutoCommit, card_id: &str) -> Result<Vec<(String, String)>> {
+    let card_obj = get_card_obj(doc, card_id)?;
+    let refs_list = match doc.get(&card_obj, "prerequisite_refs")? {
         Some((_, list_id)) => list_id,
         None => return Ok(vec![]),
     };

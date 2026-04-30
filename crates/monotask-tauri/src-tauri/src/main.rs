@@ -8,7 +8,7 @@ use tauri::{Emitter, Manager};
 use automerge::transaction::Transactable;
 
 struct AppState {
-    storage: Mutex<Storage>,
+    storage: std::sync::Arc<Mutex<Storage>>,
     identity: Identity,
     data_dir: std::path::PathBuf,
     net: Mutex<Option<monotask_net::NetworkHandle>>,
@@ -319,8 +319,11 @@ struct CardView {
     priority: Option<String>,
     impact: Option<u8>,
     effort: Option<u8>,
+    direct_priority: Option<u8>,
     computed_priority: Option<u8>,
     github_issue_number: Option<u64>,
+    linear_issue_identifier: Option<String>,
+    prerequisite_count: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -388,11 +391,16 @@ struct CardDetailView {
     attachments: Vec<AttachmentView>,
     parent: Option<SubtaskRef>,
     subtasks: Vec<SubtaskRef>,
+    prerequisites: Vec<SubtaskRef>,
     impact: Option<u8>,
     effort: Option<u8>,
+    direct_priority: Option<u8>,
     computed_priority: Option<u8>,
     github_issue_number: Option<u64>,
     github_synced_at: Option<String>,
+    linear_issue_id: Option<String>,
+    linear_issue_identifier: Option<String>,
+    linear_synced_at: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -506,15 +514,20 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                     let priority = get_card_str_field(&doc, &cid, "priority");
                     let impact = get_card_u8_field(&doc, &cid, "impact");
                     let effort = get_card_u8_field(&doc, &cid, "effort");
+                    let direct_priority = get_card_u8_field(&doc, &cid, "direct_priority");
                     let computed_priority = if impact.is_some() || effort.is_some() {
                         Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
-                    } else { None };
+                    } else { direct_priority };
                     let (checklist_total, checklist_done) = monotask_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
                         .flat_map(|cl| cl.items.iter())
                         .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
                     let github_issue_number = monotask_github::get_github_issue_number(&doc, &card.id);
+                    let linear_issue_identifier = monotask_linear::get_linear_issue_identifier(&doc, &card.id);
+                    let prerequisite_count = monotask_core::card::list_prerequisite_refs(&doc, &cid)
+                        .unwrap_or_default()
+                        .len();
                     cards.push(CardView {
                         id: card.id.clone(),
                         title: card.title,
@@ -530,8 +543,11 @@ fn get_board_detail(board_id: String, state: tauri::State<AppState>) -> Result<B
                         priority,
                         impact,
                         effort,
+                        direct_priority,
                         computed_priority,
                         github_issue_number,
+                        linear_issue_identifier,
+                        prerequisite_count,
                     });
                 }
             }
@@ -603,15 +619,20 @@ fn export_board_cmd(
                     let priority = get_card_str_field(&doc, &cid, "priority");
                     let impact = get_card_u8_field(&doc, &cid, "impact");
                     let effort = get_card_u8_field(&doc, &cid, "effort");
+                    let direct_priority = get_card_u8_field(&doc, &cid, "direct_priority");
                     let computed_priority = if impact.is_some() || effort.is_some() {
                         Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
-                    } else { None };
+                    } else { direct_priority };
                     let (checklist_total, checklist_done) = monotask_core::checklist::list_checklists(&doc, &cid)
                         .unwrap_or_default()
                         .iter()
                         .flat_map(|cl| cl.items.iter())
                         .fold((0usize, 0usize), |(tot, done), item| (tot + 1, done + if item.checked { 1 } else { 0 }));
                     let github_issue_number = monotask_github::get_github_issue_number(&doc, &card.id);
+                    let linear_issue_identifier = monotask_linear::get_linear_issue_identifier(&doc, &card.id);
+                    let prerequisite_count = monotask_core::card::list_prerequisite_refs(&doc, &cid)
+                        .unwrap_or_default()
+                        .len();
                     cards.push(CardView {
                         id: card.id.clone(),
                         title: card.title,
@@ -627,8 +648,11 @@ fn export_board_cmd(
                         priority,
                         impact,
                         effort,
+                        direct_priority,
                         computed_priority,
                         github_issue_number,
+                        linear_issue_identifier,
+                        prerequisite_count,
                     });
                 }
             }
@@ -1172,13 +1196,37 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
             }
         }
     }
+    let prereq_refs = monotask_core::card::list_prerequisite_refs(&doc, &card_id)
+        .unwrap_or_default();
+    let mut prerequisites = Vec::new();
+    for (prereq_board_id, prereq_card_id) in prereq_refs {
+        if let Ok(prereq_doc) = monotask_storage::board::load_board(storage.conn(), &prereq_board_id) {
+            if let Ok(prereq_card) = monotask_core::card::read_card(&prereq_doc, &prereq_card_id) {
+                if !prereq_card.deleted {
+                    let board_title = monotask_core::board::get_board_title(&prereq_doc)
+                        .unwrap_or_else(|_| prereq_board_id.clone());
+                    prerequisites.push(SubtaskRef {
+                        board_id: prereq_board_id,
+                        card_id: prereq_card_id,
+                        title: prereq_card.title,
+                        number: prereq_card.number.map(|n| n.to_display()),
+                        board_title,
+                    });
+                }
+            }
+        }
+    }
     let impact = get_card_u8_field(&doc, &card_id, "impact");
     let effort = get_card_u8_field(&doc, &card_id, "effort");
+    let direct_priority = get_card_u8_field(&doc, &card_id, "direct_priority");
     let computed_priority = if impact.is_some() || effort.is_some() {
         Some(monotask_core::card::compute_priority(impact.unwrap_or(0), effort.unwrap_or(0)))
-    } else { None };
+    } else { direct_priority };
     let github_issue_number = monotask_github::get_github_issue_number(&doc, &card_id);
     let github_synced_at = monotask_github::get_github_synced_at(&doc, &card_id);
+    let linear_issue_id = monotask_linear::get_linear_issue_id(&doc, &card_id);
+    let linear_issue_identifier = monotask_linear::get_linear_issue_identifier(&doc, &card_id);
+    let linear_synced_at = monotask_linear::get_linear_synced_at(&doc, &card_id);
     Ok(CardDetailView {
         id: card.id,
         title: card.title,
@@ -1196,11 +1244,16 @@ fn get_card_cmd(board_id: String, card_id: String, state: tauri::State<AppState>
         attachments,
         parent,
         subtasks,
+        prerequisites,
         impact,
         effort,
+        direct_priority,
         computed_priority,
         github_issue_number,
         github_synced_at,
+        linear_issue_id,
+        linear_issue_identifier,
+        linear_synced_at,
     })
 }
 
@@ -1267,6 +1320,62 @@ fn add_subtask_cmd(
             board_title,
         })
     }
+}
+
+#[tauri::command]
+fn add_prerequisite_cmd(
+    board_id: String,
+    card_id: String,
+    prereq_board_id: String,
+    prereq_card_id: String,
+    state: tauri::State<AppState>,
+) -> Result<SubtaskRef, String> {
+    if card_id == prereq_card_id && board_id == prereq_board_id {
+        return Err("A card cannot be its own prerequisite".to_string());
+    }
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let prereq_doc = monotask_storage::board::load_board(storage.conn(), &prereq_board_id)
+        .map_err(|e| e.to_string())?;
+    let prereq_card = monotask_core::card::read_card(&prereq_doc, &prereq_card_id)
+        .map_err(|e| e.to_string())?;
+    if prereq_card.deleted {
+        return Err("Prerequisite card is deleted".to_string());
+    }
+    let prereq_board_title = monotask_core::board::get_board_title(&prereq_doc)
+        .unwrap_or_else(|_| prereq_board_id.clone());
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    monotask_core::card::add_prerequisite_ref(&mut doc, &card_id, &prereq_board_id, &prereq_card_id)
+        .map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(SubtaskRef {
+        board_id: prereq_board_id,
+        card_id: prereq_card_id,
+        title: prereq_card.title,
+        number: prereq_card.number.map(|n| n.to_display()),
+        board_title: prereq_board_title,
+    })
+}
+
+#[tauri::command]
+fn remove_prerequisite_cmd(
+    board_id: String,
+    card_id: String,
+    prereq_board_id: String,
+    prereq_card_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    monotask_core::card::remove_prerequisite_ref(&mut doc, &card_id, &prereq_board_id, &prereq_card_id)
+        .map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1344,6 +1453,16 @@ fn set_effort_cmd(board_id: String, card_id: String, value: u8, state: tauri::St
     monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc).map_err(|e| e.to_string())?;
     trigger_board_sync(&board_id, &state);
     Ok(cp)
+}
+
+#[tauri::command]
+fn set_direct_priority_cmd(board_id: String, card_id: String, value: Option<u8>, state: tauri::State<AppState>) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id).map_err(|e| e.to_string())?;
+    monotask_core::card::set_direct_priority(&mut doc, &card_id, value).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc).map_err(|e| e.to_string())?;
+    trigger_board_sync(&board_id, &state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2735,11 +2854,45 @@ fn main() {
             }
 
             app.manage(AppState {
-                storage: Mutex::new(storage),
+                storage: std::sync::Arc::new(Mutex::new(storage)),
                 identity,
                 data_dir: data_dir.clone(),
                 net: Mutex::new(net_handle),
             });
+
+            // Background watcher: poll board last_modified timestamps every 1.5 s and
+            // emit "board-synced" for any board modified externally (CLI, other sessions).
+            {
+                let app_handle_w = app.app_handle().clone();
+                let storage_w = {
+                    let state: tauri::State<AppState> = app.state();
+                    std::sync::Arc::clone(&state.storage)
+                };
+                tauri::async_runtime::spawn(async move {
+                    let mut known: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+                    // Seed with current timestamps so we don't fire spuriously on startup.
+                    if let Ok(s) = storage_w.lock() {
+                        if let Ok(rows) = monotask_storage::board::list_all_board_timestamps(s.conn()) {
+                            for (id, ts) in rows { known.insert(id, ts); }
+                        }
+                    }
+                    loop {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                        let rows = match storage_w.lock() {
+                            Ok(s) => monotask_storage::board::list_all_board_timestamps(s.conn()).unwrap_or_default(),
+                            Err(_) => continue,
+                        };
+                        for (board_id, ts) in rows {
+                            let prev = known.get(&board_id).copied().unwrap_or(0);
+                            if ts != prev {
+                                known.insert(board_id.clone(), ts);
+                                let _ = app_handle_w.emit("board-synced",
+                                    serde_json::json!({"board_id": board_id, "peer_id": "local-watcher"}));
+                            }
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -2757,6 +2910,7 @@ fn main() {
             update_card_cmd,
             set_impact_cmd,
             set_effort_cmd,
+            set_direct_priority_cmd,
             delete_card_cmd,
             delete_column_cmd,
             add_comment_cmd,
@@ -2809,6 +2963,8 @@ fn main() {
             attach_image_cmd,
             remove_attachment_cmd,
             add_subtask_cmd,
+            add_prerequisite_cmd,
+            remove_prerequisite_cmd,
             get_github_token_status_cmd,
             set_github_token_cmd,
             get_github_board_status_cmd,
@@ -2816,6 +2972,16 @@ fn main() {
             unlink_github_board_cmd,
             sync_github_board_cmd,
             sync_card_cmd,
+            get_linear_token_status_cmd,
+            set_linear_token_cmd,
+            get_linear_teams_cmd,
+            get_linear_projects_cmd,
+            get_linear_workflow_states_cmd,
+            get_linear_board_status_cmd,
+            link_linear_board_cmd,
+            unlink_linear_board_cmd,
+            sync_linear_board_cmd,
+            sync_linear_card_cmd,
             open_url_cmd,
         ])
         .run(tauri::generate_context!())
@@ -2973,6 +3139,229 @@ async fn sync_card_cmd(
         .ok_or_else(|| "No GitHub token saved".to_string())?;
 
     let result = monotask_github::sync_single_card(&mut doc, &token, &config, &card_id, &actor_pk)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        let mut fresh = monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?;
+        fresh.merge(&mut doc).map_err(|e| e.to_string())?;
+        monotask_storage::board::save_board(storage.conn(), &board_id, &mut fresh)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(serde_json::to_value(result).unwrap_or_default())
+}
+
+// ── Linear Integration ───────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_linear_token_status_cmd(
+    state: tauri::State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let saved = monotask_linear::load_token(&state.data_dir)
+        .map(|t| t.is_some())
+        .unwrap_or(false);
+    Ok(serde_json::json!({ "saved": saved }))
+}
+
+#[tauri::command]
+async fn set_linear_token_cmd(
+    token: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let trimmed = token.trim().to_string();
+    if trimmed.is_empty() {
+        monotask_linear::delete_token(&data_dir).map_err(|e| e.to_string())?;
+        return Ok(serde_json::json!({ "ok": true, "deleted": true }));
+    }
+    let valid = monotask_linear::test_token(&trimmed).await.unwrap_or(false);
+    if !valid {
+        return Ok(serde_json::json!({ "ok": false, "error": "Invalid token or no network access" }));
+    }
+    monotask_linear::save_token(&data_dir, &trimmed).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn get_linear_teams_cmd(
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let token = monotask_linear::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No Linear token saved".to_string())?;
+    let teams = monotask_linear::list_teams(&token).await.map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(teams).unwrap_or_default())
+}
+
+#[tauri::command]
+async fn get_linear_projects_cmd(
+    team_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let token = monotask_linear::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No Linear token saved".to_string())?;
+    let projects = monotask_linear::list_projects(&token, &team_id).await.map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(projects).unwrap_or_default())
+}
+
+#[tauri::command]
+async fn get_linear_workflow_states_cmd(
+    team_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let token = monotask_linear::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No Linear token saved".to_string())?;
+    let states = monotask_linear::list_workflow_states(&token, &team_id).await.map_err(|e| e.to_string())?;
+    Ok(serde_json::to_value(states).unwrap_or_default())
+}
+
+#[tauri::command]
+fn get_linear_board_status_cmd(
+    board_id: String,
+    state: tauri::State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    match monotask_linear::get_linear_config(&doc) {
+        Some(c) => Ok(serde_json::json!({
+            "linked": true,
+            "project_id": c.project_id,
+            "project_name": c.project_name,
+            "team_id": c.team_id,
+            "last_sync": c.last_sync,
+            "done_column_id": c.done_column_id
+        })),
+        None => Ok(serde_json::json!({ "linked": false })),
+    }
+}
+
+#[tauri::command]
+async fn link_linear_board_cmd(
+    board_id: String,
+    team_id: String,
+    project_id: String,
+    project_name: String,
+    done_col_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let token = monotask_linear::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No Linear token saved".to_string())?;
+
+    let mut doc = {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?
+    };
+
+    let (done_column_id, done_state_id) = monotask_linear::setup_columns_from_states(
+        &mut doc,
+        &token,
+        &team_id,
+        done_col_id.as_deref(),
+    ).await.map_err(|e| e.to_string())?;
+
+    let config = monotask_linear::LinearConfig {
+        team_id,
+        project_id,
+        project_name,
+        done_column_id: done_column_id.clone(),
+        done_state_id,
+        last_sync: None,
+    };
+    monotask_linear::set_linear_config(&mut doc, Some(&config)).map_err(|e| e.to_string())?;
+
+    {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(serde_json::json!({ "ok": true, "done_column_id": done_column_id }))
+}
+
+#[tauri::command]
+fn unlink_linear_board_cmd(
+    board_id: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let storage = state.storage.lock().map_err(|e| e.to_string())?;
+    let mut doc = monotask_storage::board::load_board(storage.conn(), &board_id)
+        .map_err(|e| e.to_string())?;
+    monotask_linear::set_linear_config(&mut doc, None).map_err(|e| e.to_string())?;
+    monotask_storage::board::save_board(storage.conn(), &board_id, &mut doc)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_linear_board_cmd(
+    board_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let actor_pk = state.identity.public_key_bytes().to_vec();
+
+    let mut doc = {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?
+    };
+
+    let config = monotask_linear::get_linear_config(&doc)
+        .ok_or_else(|| "Board not linked to Linear".to_string())?;
+    let token = monotask_linear::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No Linear token saved".to_string())?;
+
+    let result = monotask_linear::sync_board(&mut doc, &token, &config, &actor_pk)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        let mut fresh = monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?;
+        fresh.merge(&mut doc).map_err(|e| e.to_string())?;
+        monotask_storage::board::save_board(storage.conn(), &board_id, &mut fresh)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(serde_json::to_value(result).unwrap_or_default())
+}
+
+#[tauri::command]
+async fn sync_linear_card_cmd(
+    board_id: String,
+    card_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data_dir = state.data_dir.clone();
+    let actor_pk = state.identity.public_key_bytes().to_vec();
+
+    let mut doc = {
+        let storage = state.storage.lock().map_err(|e| e.to_string())?;
+        monotask_storage::board::load_board(storage.conn(), &board_id)
+            .map_err(|e| e.to_string())?
+    };
+
+    let config = monotask_linear::get_linear_config(&doc)
+        .ok_or_else(|| "Board not linked to Linear".to_string())?;
+    let token = monotask_linear::load_token(&data_dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No Linear token saved".to_string())?;
+
+    let result = monotask_linear::sync_single_linear_card(&mut doc, &token, &config, &card_id, &actor_pk)
         .await
         .map_err(|e| e.to_string())?;
 

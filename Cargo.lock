@@ -3491,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "monotask"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "automerge",
@@ -3500,6 +3500,7 @@ dependencies = [
  "monotask-core",
  "monotask-crypto",
  "monotask-github",
+ "monotask-linear",
  "monotask-net",
  "monotask-storage",
  "rusqlite",
@@ -3516,7 +3517,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "automerge",
@@ -3528,6 +3529,7 @@ dependencies = [
  "monotask-core",
  "monotask-crypto",
  "monotask-github",
+ "monotask-linear",
  "monotask-net",
  "monotask-storage",
  "rusqlite",
@@ -3542,7 +3544,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "automerge",
  "base32",
@@ -3561,7 +3563,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-crypto"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base32",
  "bs58",
@@ -3580,7 +3582,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-github"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "automerge",
@@ -3597,8 +3599,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "monotask-linear"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "automerge",
+ "chrono",
+ "dirs 5.0.1",
+ "hex",
+ "monotask-core",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "monotask-net"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "automerge",
@@ -3618,7 +3637,7 @@ dependencies = [
 
 [[package]]
 name = "monotask-storage"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "automerge",
  "chrono",

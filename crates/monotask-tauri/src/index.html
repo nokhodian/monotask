@@ -770,6 +770,20 @@
     .subtask-parent-ref { display: flex; align-items: center; gap: 6px; padding: 4px 0 10px; font-size: 12px; color: #666; }
     .subtask-parent-link { color: #c8962a; cursor: pointer; text-decoration: underline; }
     .subtask-parent-link:hover { color: #e0a830; }
+    /* Prerequisites */
+    .prereq-section { margin-bottom: 16px; margin-top: 14px; }
+    .prereq-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .prereq-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #0a0a16; border: 1px solid #1e1e3a; border-radius: 4px; margin-bottom: 4px; transition: border-color 0.15s; }
+    .prereq-item:hover { border-color: #3a3a6a; }
+    .prereq-item-num { font-size: 11px; color: #444; font-family: monospace; flex-shrink: 0; }
+    .prereq-item-title { flex: 1; font-size: 13px; color: #ccc; cursor: pointer; }
+    .prereq-item-title:hover { color: #fff; text-decoration: underline; }
+    .prereq-item-board { font-size: 11px; color: #444; flex-shrink: 0; }
+    .prereq-item-remove { background: none; border: none; color: #555; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; flex-shrink: 0; }
+    .prereq-item-remove:hover { color: #c44; }
+    .prereq-add-form { display: none; margin-top: 8px; flex-direction: column; gap: 6px; }
+    .prereq-add-form.visible { display: flex; }
+    .prereq-badge { font-size:10px;color:#b06a10;font-weight:600;background:#1a100a;border:1px solid #3a2a0a;border-radius:4px;padding:1px 5px;line-height:1.5;white-space:nowrap; }
     .btn-del-checklist { background: none; border: none; color: #3a3a5a; cursor: pointer; font-size: 10px; padding: 0 3px; }
     .btn-del-checklist:hover { color: #c05050; }
     /* Card checklist progress chip */
@@ -1283,7 +1297,8 @@
         <button id="btn-add-column">+ Column</button>
         <button id="btn-export-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Export board as JSON">&#8595; Export</button>
         <button id="btn-import-board" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Import cards from file">&#8593; Import</button>
-        <button id="btn-integrations" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Integrations" onclick="openIntegrationsModal()">&#9889; Integrations</button>
+        <button id="btn-integrations" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Integrations" onclick="openIntegrationsModal()">&#9889; GitHub</button>
+        <button id="btn-linear-integrations" class="btn-secondary" style="font-size:12px;padding:4px 10px;" aria-label="Linear Integrations" onclick="openLinearModal()">&#9651; Linear</button>
         <div style="display:flex;gap:4px;margin-left:auto;background:#0d0d1c;border:1px solid #1e1e3a;border-radius:6px;padding:2px;">
           <button id="btn-view-kanban" onclick="setBoardViewMode('kanban')" title="Kanban view" style="background:#1e1e3a;border:none;color:#e0e0f0;padding:4px 9px;border-radius:4px;cursor:pointer;font-size:13px;">⊞</button>
           <button id="btn-view-list" onclick="setBoardViewMode('list')" title="List view" style="background:none;border:none;color:#888;padding:4px 9px;border-radius:4px;cursor:pointer;font-size:13px;">☰</button>
@@ -1547,8 +1562,15 @@
           <input type="range" id="card-detail-effort" min="0" max="10" step="1" value="0"
             style="width:100%;accent-color:#c8962a;cursor:pointer;" oninput="onEffortChange(this.value)">
         </div>
-        <div class="card-detail-section">
-          <div class="card-detail-label">Priority <span style="font-size:10px;color:#444;">(impact+10−effort)÷2</span></div>
+        <div class="card-detail-section" id="direct-priority-section" style="display:none;">
+          <div class="card-detail-label" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Priority (0–10)</span><span id="direct-priority-val-display" style="font-weight:700;color:#aafa9a;font-size:13px;">—</span>
+          </div>
+          <input type="range" id="card-detail-direct-priority" min="0" max="10" step="1" value="0"
+            style="width:100%;accent-color:#aafa9a;cursor:pointer;" oninput="onDirectPriorityChange(this.value)">
+        </div>
+        <div class="card-detail-section" id="computed-priority-section">
+          <div class="card-detail-label">Priority <span id="priority-formula-label" style="font-size:10px;color:#444;">(impact+10−effort)÷2</span></div>
           <div id="card-detail-computed-priority" style="font-size:22px;font-weight:700;color:#aafa9a;letter-spacing:0.05em;">—</div>
         </div>
         <div class="card-detail-section">
@@ -1580,6 +1602,24 @@
             <div style="display:flex;gap:6px;justify-content:flex-end;">
               <button id="btn-subtask-cancel" style="background:none;border:1px solid #1e1e3a;color:#888;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;">Cancel</button>
               <button id="btn-subtask-add" class="btn-primary" style="font-size:12px;padding:4px 10px;">Add Subtask</button>
+            </div>
+          </div>
+        </div>
+        <!-- Prerequisites -->
+        <div class="prereq-section">
+          <div class="prereq-section-header">
+            <div class="card-detail-label" style="margin-bottom:0;">Prerequisites</div>
+            <button id="btn-toggle-add-prereq" style="background:none;border:none;color:#888;cursor:pointer;font-size:12px;padding:0;">+ Add</button>
+          </div>
+          <div id="card-detail-prerequisites"></div>
+          <div id="prereq-add-form" class="prereq-add-form">
+            <div style="display:flex;gap:6px;">
+              <select id="prereq-board-select" style="flex:1;background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:5px 8px;border-radius:4px;font-size:12px;outline:none;min-width:0;"></select>
+              <select id="prereq-card-select" style="flex:1;background:#0d0d1a;border:1px solid #1e1e3a;color:#ccc;padding:5px 8px;border-radius:4px;font-size:12px;outline:none;min-width:0;"></select>
+            </div>
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button id="btn-prereq-cancel" style="background:none;border:1px solid #1e1e3a;color:#888;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;">Cancel</button>
+              <button id="btn-prereq-add" class="btn-primary" style="font-size:12px;padding:4px 10px;">Add Prerequisite</button>
             </div>
           </div>
         </div>
@@ -1782,6 +1822,81 @@
         <button id="btn-sync-now" style="background:#7c3aed;border:none;color:#fff;padding:5px 13px;border-radius:5px;cursor:pointer;font-size:12px;" onclick="runGithubSync()">&#8635; Sync Now</button>
       </div>
       <div id="gh-sync-status" style="color:#555;font-size:11px;">Auto-poll every 60 s · push on change (3 s debounce)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Linear Integrations Modal -->
+<div id="linear-integrations-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+  <div style="background:#16162a;border:1px solid #2a2a4a;border-radius:10px;padding:24px;width:520px;max-width:92vw;max-height:82vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.6);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h3 style="margin:0;color:#e0e0f0;font-size:16px;">&#9889; Integrations</h3>
+      <button style="background:none;border:none;color:#888;cursor:pointer;font-size:20px;line-height:1;padding:2px 6px;" onclick="closeLinearModal()">&#10005;</button>
+    </div>
+    <div id="linear-board-label" style="color:#555;font-size:11px;margin-bottom:16px;"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <span style="font-size:20px;">&#9651;</span>
+      <span style="color:#e0e0f0;font-size:14px;font-weight:600;">Linear Issues</span>
+      <span id="linear-status-badge" style="font-size:11px;padding:2px 9px;border-radius:10px;background:#1a1a2e;color:#555;margin-left:4px;">not linked</span>
+    </div>
+
+    <!-- Token -->
+    <div style="background:#0d0d1a;border-radius:7px;padding:13px;margin-bottom:10px;">
+      <div style="color:#888;font-size:12px;margin-bottom:7px;">Linear API key (Personal Access Token from Linear → Settings → API)</div>
+      <div style="display:flex;gap:7px;">
+        <input id="linear-token-input" type="password" placeholder="lin_api_…" autocomplete="off"
+          style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;min-width:0;">
+        <button id="btn-save-linear-token" style="background:#2563eb;border:none;color:#fff;padding:7px 13px;border-radius:5px;cursor:pointer;font-size:13px;white-space:nowrap;" onclick="saveLinearToken()">Save</button>
+        <button style="background:#1a1a2e;border:1px solid #333;color:#888;padding:7px 11px;border-radius:5px;cursor:pointer;font-size:13px;white-space:nowrap;" onclick="clearLinearToken()">Clear</button>
+      </div>
+      <div id="linear-token-status" style="color:#555;font-size:11px;margin-top:6px;">—</div>
+    </div>
+
+    <!-- Project link -->
+    <div style="background:#0d0d1a;border-radius:7px;padding:13px;margin-bottom:10px;">
+      <div style="color:#888;font-size:12px;margin-bottom:7px;">Link board ↔ Linear project</div>
+
+      <div style="margin-bottom:8px;">
+        <div style="color:#777;font-size:11px;margin-bottom:4px;">Team</div>
+        <select id="linear-team-select" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;" onchange="onLinearTeamChange()">
+          <option value="">— load token first —</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <div style="color:#777;font-size:11px;margin-bottom:4px;">Project</div>
+        <select id="linear-project-select" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;" onchange="onLinearProjectChange()">
+          <option value="">— select team first —</option>
+        </select>
+      </div>
+
+      <div id="linear-states-preview" style="display:none;margin-bottom:10px;">
+        <div style="color:#777;font-size:11px;margin-bottom:5px;">Workflow states → Monotask columns (will be created if missing)</div>
+        <div id="linear-states-list" style="font-size:11px;color:#aaa;line-height:1.8;"></div>
+      </div>
+
+      <div style="margin-bottom:9px;">
+        <div style="color:#888;font-size:12px;margin-bottom:4px;">Done column <span style="color:#555;font-size:10px;">(completed/cancelled/iced states map here)</span></div>
+        <select id="linear-done-col-select" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0f0;padding:7px 10px;border-radius:5px;font-size:13px;outline:none;">
+          <option value="">— auto-detect —</option>
+        </select>
+      </div>
+
+      <div style="display:flex;gap:8px;">
+        <button id="btn-link-linear" style="background:#5b21b6;border:none;color:#fff;padding:7px 15px;border-radius:5px;cursor:pointer;font-size:13px;" onclick="linkLinearBoard()">Link Project</button>
+        <button id="btn-unlink-linear" style="display:none;background:#1a1a2e;border:1px solid #dc2626;color:#dc2626;padding:7px 14px;border-radius:5px;cursor:pointer;font-size:13px;" onclick="unlinkLinearBoard()">Unlink</button>
+      </div>
+      <div id="linear-link-status" style="color:#f87171;font-size:11px;margin-top:6px;min-height:14px;"></div>
+    </div>
+
+    <!-- Sync status -->
+    <div id="linear-sync-section" style="display:none;background:#0d0d1a;border-radius:7px;padding:13px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="color:#888;font-size:12px;">Last sync: <span id="linear-last-sync" style="color:#aaa;">never</span></span>
+        <button style="background:#7c3aed;border:none;color:#fff;padding:5px 13px;border-radius:5px;cursor:pointer;font-size:12px;" onclick="runLinearSync()">&#8635; Sync Now</button>
+      </div>
+      <div style="color:#555;font-size:11px;">Auto-poll every 60 s · push on change (3 s debounce)</div>
     </div>
   </div>
 </div>
@@ -2103,8 +2218,13 @@
   async function _refreshGhMeta(boardId) {
     try {
       const s = await invoke('get_github_board_status_cmd', { boardId });
-      if (s.linked) { _ghOwner = s.owner; _ghRepo = s.repo; }
-      else           { _ghOwner = null;   _ghRepo = null;  }
+      if (s.linked) { _ghOwner = s.owner; _ghRepo = s.repo; githubLinked = true; startGithubPoll(); }
+      else           { _ghOwner = null;   _ghRepo = null; githubLinked = false; stopGithubPoll(); }
+    } catch (_) {}
+    try {
+      const ls = await invoke('get_linear_board_status_cmd', { boardId });
+      if (ls.linked) { linearLinked = true; startLinearPoll(); }
+      else           { linearLinked = false; stopLinearPoll(); }
     } catch (_) {}
   }
 
@@ -2638,6 +2758,22 @@
       ghEl.onclick = (e) => { e.stopPropagation(); openGithubIssue(card.github_issue_number); };
       meta.appendChild(ghEl);
     }
+    if (card.linear_issue_identifier) {
+      const linEl = document.createElement('span');
+      linEl.style.cssText = 'font-size:10px;color:#a78bfa;font-weight:600;background:#1a0a3a;border:1px solid #4a1a8a;border-radius:4px;padding:1px 5px;line-height:1.5;white-space:nowrap;';
+      const linearPriorityNames = { 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
+      const priorityName = (card.computed_priority >= 1 && card.computed_priority <= 4) ? linearPriorityNames[card.computed_priority] : null;
+      linEl.title = 'Linear ' + card.linear_issue_identifier + (priorityName ? ' · ' + priorityName : '');
+      linEl.textContent = '▲ ' + card.linear_issue_identifier + (priorityName ? ' · ' + priorityName : '');
+      meta.appendChild(linEl);
+    }
+    if (card.prerequisite_count > 0) {
+      const preEl = document.createElement('span');
+      preEl.className = 'prereq-badge';
+      preEl.title = card.prerequisite_count + ' prerequisite' + (card.prerequisite_count > 1 ? 's' : '');
+      preEl.textContent = '■ ' + card.prerequisite_count;
+      meta.appendChild(preEl);
+    }
     if (card.has_description) {
       const descIcon = document.createElement('span');
       descIcon.className = 'card-meta-desc';
@@ -3138,7 +3274,41 @@
           };
           editSyncPill.appendChild(syncBtn);
           editSyncPill.style.display = 'flex';
-        } else {
+        }
+        if (card.linear_issue_identifier) {
+          const identifier = card.linear_issue_identifier;
+          let syncLabel = 'Never synced';
+          if (card.linear_synced_at) {
+            const d = new Date(card.linear_synced_at);
+            const diffMs = Date.now() - d.getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            const diffHr = Math.round(diffMs / 3600000);
+            syncLabel = diffMin < 2 ? 'Just now' : diffMin < 60 ? diffMin + 'm ago' : diffHr < 24 ? diffHr + 'h ago' : d.toLocaleDateString();
+          }
+          const linLabel = document.createElement('span');
+          linLabel.style.cssText = 'color:#a78bfa;font-weight:600;';
+          linLabel.textContent = '▲ ' + identifier;
+          editSyncPill.appendChild(linLabel);
+          const linTime = document.createElement('span');
+          linTime.style.cssText = 'color:#555;';
+          linTime.textContent = '· ' + syncLabel;
+          editSyncPill.appendChild(linTime);
+          const linSyncBtn = document.createElement('button');
+          linSyncBtn.style.cssText = 'background:#1a1a3a;border:1px solid #3a3a6a;color:#a0a0c0;padding:2px 8px;border-radius:5px;cursor:pointer;font-size:11px;';
+          linSyncBtn.textContent = '↺ Sync';
+          linSyncBtn.onclick = async () => {
+            linSyncBtn.disabled = true; linSyncBtn.textContent = '…';
+            try {
+              await invoke('sync_linear_card_cmd', { boardId, cardId });
+              showToast('Card synced with Linear');
+              openCardDetail(cardId, boardId);
+            } catch(e) { showToast('Linear sync failed: ' + e, 4000); }
+            finally { linSyncBtn.disabled = false; linSyncBtn.textContent = '↺ Sync'; }
+          };
+          editSyncPill.appendChild(linSyncBtn);
+          editSyncPill.style.display = 'flex';
+        }
+        if (!card.github_issue_number && !card.linear_issue_identifier) {
           editSyncPill.style.display = 'none';
         }
       }
@@ -3151,6 +3321,22 @@
       effortSlider.value = effortSet ? card.effort : 0;
       document.getElementById('impact-val-display').textContent = impactSet ? card.impact : '—';
       document.getElementById('effort-val-display').textContent = effortSet ? card.effort : '—';
+      const useDirectPriority = !impactSet && !effortSet;
+      const dpSection = document.getElementById('direct-priority-section');
+      const cpSection = document.getElementById('computed-priority-section');
+      const formulaLabel = document.getElementById('priority-formula-label');
+      if (useDirectPriority) {
+        dpSection.style.display = '';
+        cpSection.style.display = 'none';
+        const dpSlider = document.getElementById('card-detail-direct-priority');
+        const dpVal = card.direct_priority != null ? card.direct_priority : 0;
+        dpSlider.value = dpVal;
+        document.getElementById('direct-priority-val-display').textContent = card.direct_priority != null ? dpVal : '—';
+      } else {
+        dpSection.style.display = 'none';
+        cpSection.style.display = '';
+        formulaLabel.style.display = '';
+      }
       refreshComputedPriority(impactSet || effortSet ? card.computed_priority : null);
       document.getElementById('comment-input').value = '';
       renderLabelPicker(card.labels || []);
@@ -3162,6 +3348,9 @@
       renderSubtasks(card);
       populateSubtaskBoardSelector(spaceBoards, boardId);
       document.getElementById('subtask-add-form').classList.remove('visible');
+      renderPrerequisites(card);
+      populatePrereqBoardSelector(spaceBoards, boardId);
+      document.getElementById('prereq-add-form').classList.remove('visible');
       // Populate "Move to column" dropdown
       const moveColSel = document.getElementById('card-detail-move-col');
       moveColSel.innerHTML = '';
@@ -3203,13 +3392,19 @@
     el.style.color = cp >= 7 ? '#aafa9a' : cp >= 4 ? '#e0b840' : '#8888aa';
   }
 
-  let _impactDebounce = null, _effortDebounce = null;
+  let _impactDebounce = null, _effortDebounce = null, _directPriorityDebounce = null;
+
+  function _showComputedPriority() {
+    document.getElementById('direct-priority-section').style.display = 'none';
+    document.getElementById('computed-priority-section').style.display = '';
+  }
 
   function onImpactChange(val) {
     const v = parseInt(val, 10);
     document.getElementById('impact-val-display').textContent = v;
     const effort = parseInt(document.getElementById('card-detail-effort').value, 10);
     const cp = Math.floor((v + 10 - effort) / 2);
+    _showComputedPriority();
     refreshComputedPriority(cp);
     clearTimeout(_impactDebounce);
     _impactDebounce = setTimeout(async () => {
@@ -3225,6 +3420,7 @@
     document.getElementById('effort-val-display').textContent = v;
     const impact = parseInt(document.getElementById('card-detail-impact').value, 10);
     const cp = Math.floor((impact + 10 - v) / 2);
+    _showComputedPriority();
     refreshComputedPriority(cp);
     clearTimeout(_effortDebounce);
     _effortDebounce = setTimeout(async () => {
@@ -3232,6 +3428,18 @@
       const { boardId, cardId } = _cardDetailCtx;
       try { await invoke('set_effort_cmd', { boardId, cardId, value: v }); }
       catch (e) { console.error('set_effort_cmd failed', e); }
+    }, 400);
+  }
+
+  function onDirectPriorityChange(val) {
+    const v = parseInt(val, 10);
+    document.getElementById('direct-priority-val-display').textContent = v;
+    clearTimeout(_directPriorityDebounce);
+    _directPriorityDebounce = setTimeout(async () => {
+      if (!_cardDetailCtx) return;
+      const { boardId, cardId } = _cardDetailCtx;
+      try { await invoke('set_direct_priority_cmd', { boardId, cardId, value: v }); }
+      catch (e) { console.error('set_direct_priority_cmd failed', e); }
     }, 400);
   }
 
@@ -3260,6 +3468,86 @@
       item.onclick = () => openCardDetail(st.card_id, st.board_id);
       container.appendChild(item);
     }
+  }
+
+  function renderPrerequisites(card) {
+    const container = document.getElementById('card-detail-prerequisites');
+    container.innerHTML = '';
+    for (const pr of (card.prerequisites || [])) {
+      const item = document.createElement('div');
+      item.className = 'prereq-item';
+      if (pr.number) {
+        const num = document.createElement('span');
+        num.className = 'prereq-item-num';
+        num.textContent = '#' + pr.number;
+        item.appendChild(num);
+      }
+      const title = document.createElement('span');
+      title.className = 'prereq-item-title';
+      title.textContent = pr.title;
+      title.onclick = () => openCardDetail(pr.card_id, pr.board_id);
+      item.appendChild(title);
+      if (pr.board_id !== _cardDetailCtx.boardId) {
+        const board = document.createElement('span');
+        board.className = 'prereq-item-board';
+        board.textContent = pr.board_title;
+        item.appendChild(board);
+      }
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'prereq-item-remove';
+      rmBtn.title = 'Remove prerequisite';
+      rmBtn.textContent = '×';
+      rmBtn.onclick = async (e) => {
+        e.stopPropagation();
+        const { boardId, cardId } = _cardDetailCtx;
+        try {
+          await invoke('remove_prerequisite_cmd', { boardId, cardId, prereqBoardId: pr.board_id, prereqCardId: pr.card_id });
+          const refreshed = await invoke('get_card_cmd', { boardId, cardId });
+          renderPrerequisites(refreshed);
+        } catch (err) { showAlert('Error removing prerequisite: ' + err); }
+      };
+      item.appendChild(rmBtn);
+      container.appendChild(item);
+    }
+  }
+
+  async function populatePrereqBoardSelector(spaceBoards, currentBoardId) {
+    const boardSel = document.getElementById('prereq-board-select');
+    boardSel.innerHTML = '';
+    const ids = (spaceBoards && spaceBoards.length) ? spaceBoards : [currentBoardId];
+    for (const bid of ids) {
+      if (!(bid in allBoards)) continue;
+      const opt = document.createElement('option');
+      opt.value = bid;
+      opt.textContent = allBoards[bid] || bid.slice(0, 12);
+      if (bid === currentBoardId) opt.selected = true;
+      boardSel.appendChild(opt);
+    }
+    if (!boardSel.options.length) {
+      const opt = document.createElement('option');
+      opt.value = currentBoardId;
+      opt.textContent = allBoards[currentBoardId] || 'Current Board';
+      boardSel.appendChild(opt);
+    }
+    await updatePrereqCardSelector(boardSel.value);
+  }
+
+  async function updatePrereqCardSelector(boardId) {
+    const cardSel = document.getElementById('prereq-card-select');
+    cardSel.innerHTML = '';
+    try {
+      const detail = JSON.parse(await invoke('get_board_detail', { boardId }));
+      const { cardId: currentCardId } = _cardDetailCtx || {};
+      for (const col of (detail.columns || [])) {
+        for (const c of (col.cards || [])) {
+          if (c.id === currentCardId) continue;
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = (c.number ? '#' + c.number + ' ' : '') + c.title;
+          cardSel.appendChild(opt);
+        }
+      }
+    } catch (_) {}
   }
 
   async function populateSubtaskBoardSelector(spaceBoards, currentBoardId) {
@@ -3725,6 +4013,34 @@
     } catch (e) { showAlert('Error adding subtask: ' + e); }
   };
 
+  document.getElementById('btn-toggle-add-prereq').onclick = () => {
+    const form = document.getElementById('prereq-add-form');
+    form.classList.toggle('visible');
+  };
+
+  document.getElementById('btn-prereq-cancel').onclick = () => {
+    document.getElementById('prereq-add-form').classList.remove('visible');
+  };
+
+  document.getElementById('prereq-board-select').onchange = async () => {
+    const boardId = document.getElementById('prereq-board-select').value;
+    await updatePrereqCardSelector(boardId);
+  };
+
+  document.getElementById('btn-prereq-add').onclick = async () => {
+    if (!_cardDetailCtx) return;
+    const { boardId, cardId } = _cardDetailCtx;
+    const prereqBoardId = document.getElementById('prereq-board-select').value;
+    const prereqCardId = document.getElementById('prereq-card-select').value;
+    if (!prereqCardId) { showAlert('Please select a card.'); return; }
+    try {
+      await invoke('add_prerequisite_cmd', { boardId, cardId, prereqBoardId, prereqCardId });
+      document.getElementById('prereq-add-form').classList.remove('visible');
+      const refreshed = await invoke('get_card_cmd', { boardId, cardId });
+      renderPrerequisites(refreshed);
+    } catch (e) { showAlert('Error adding prerequisite: ' + e); }
+  };
+
   document.getElementById('btn-delete-card').onclick = () => {
     if (!_cardDetailCtx) return;
     showConfirm('Delete this card? This cannot be undone.', async () => {
@@ -3927,6 +4243,8 @@
     currentBoardId = null;
     stopGithubPoll();
     githubLinked = false;
+    stopLinearPoll();
+    linearLinked = false;
     showView('dashboard');
     loadSpacesSidebar();
     // Disable chat button when no space selected
@@ -3947,6 +4265,8 @@
     currentBoardId = null;
     stopGithubPoll();
     githubLinked = false;
+    stopLinearPoll();
+    linearLinked = false;
     showView('space-main');
     renderBoardsGrid(currentSpaceData || { boards: [] });
     document.querySelectorAll('.space-boards-sub li').forEach(li => li.classList.remove('active'));
@@ -5282,6 +5602,7 @@
       if (board_id === currentBoardId) {
         loadBoardColumns(board_id).catch(() => {});
         scheduleGithubSync();
+        scheduleLinearSync();
       }
     }).catch(() => {});
     // On peer connect/disconnect, refresh sync status display
@@ -5644,6 +5965,41 @@
         }
       }
 
+      // Linear sync pill
+      if (syncPill && card.linear_issue_identifier) {
+        const identifier = card.linear_issue_identifier;
+        const linearPillText = document.createElement('span');
+        linearPillText.style.cssText = 'color:#a78bfa;font-size:11px;font-weight:600;margin-right:4px;';
+        linearPillText.textContent = '▲ ' + identifier;
+        let syncLabel2 = 'Never synced';
+        if (card.linear_synced_at) {
+          const d2 = new Date(card.linear_synced_at);
+          const diffMs2 = Date.now() - d2.getTime();
+          const diffMin2 = Math.round(diffMs2 / 60000);
+          const diffHr2 = Math.round(diffMs2 / 3600000);
+          syncLabel2 = diffMin2 < 2 ? 'Just now' : diffMin2 < 60 ? diffMin2 + 'm ago' : diffHr2 < 24 ? diffHr2 + 'h ago' : d2.toLocaleDateString();
+        }
+        const syncTime2 = document.createElement('span');
+        syncTime2.style.cssText = 'color:#555;font-size:11px;';
+        syncTime2.textContent = '· ' + syncLabel2;
+        const linSyncBtn2 = document.createElement('button');
+        linSyncBtn2.style.cssText = 'background:#1a1a3a;border:1px solid #3a3a6a;color:#a0a0c0;padding:2px 8px;border-radius:5px;cursor:pointer;font-size:11px;';
+        linSyncBtn2.textContent = '↺ Sync';
+        linSyncBtn2.onclick = async () => {
+          linSyncBtn2.disabled = true; linSyncBtn2.textContent = '…';
+          try {
+            await invoke('sync_linear_card_cmd', { boardId, cardId });
+            showToast('Card synced with Linear');
+            await openCardPreview(cardId, boardId);
+          } catch(e) { showToast('Linear sync failed: ' + e, 4000); }
+          finally { linSyncBtn2.disabled = false; linSyncBtn2.textContent = '↺ Sync'; }
+        };
+        syncPill.appendChild(linearPillText);
+        syncPill.appendChild(syncTime2);
+        syncPill.appendChild(linSyncBtn2);
+        syncPill.style.display = 'flex';
+      }
+
       modal._ctx = { cardId, boardId };
       modal.style.display = 'flex';
     } catch (e) { showAlert('Error loading card: ' + e); }
@@ -5660,6 +6016,253 @@
     if (!githubLinked) return;
     if (githubDebounceTimer) clearTimeout(githubDebounceTimer);
     githubDebounceTimer = setTimeout(runGithubSync, 3000);
+  }
+
+  // ── Linear Integrations ────────────────────────────────────────────────────
+  let linearPollTimer = null;
+  let linearDebounceTimer = null;
+  let linearLinked = false;
+
+  function openLinearModal() {
+    const m = document.getElementById('linear-integrations-modal');
+    if (!m) return;
+    const labelEl = document.getElementById('linear-board-label');
+    if (labelEl) {
+      const name = currentBoardId ? (allBoards[currentBoardId] || currentBoardId.slice(0, 12) + '…') : '—';
+      labelEl.textContent = 'Board: ' + name;
+    }
+    setLinearLinkStatus('', false);
+    m.style.display = 'flex';
+    refreshLinearUI();
+  }
+
+  function closeLinearModal() {
+    const m = document.getElementById('linear-integrations-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  async function refreshLinearUI() {
+    if (!currentBoardId || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+
+    // Token status
+    try {
+      const ts = await invoke('get_linear_token_status_cmd');
+      const el = document.getElementById('linear-token-status');
+      el.textContent = ts.saved ? '✓ API key saved' : 'No API key saved';
+      el.style.color = ts.saved ? '#4ade80' : '#666';
+      if (ts.saved) {
+        document.getElementById('linear-token-input').placeholder = '••••••••••••••••••••';
+        loadLinearTeams();
+      }
+    } catch (_) {}
+
+    // Board link status
+    try {
+      const status = await invoke('get_linear_board_status_cmd', { boardId: currentBoardId });
+      linearLinked = status.linked;
+      const badge = document.getElementById('linear-status-badge');
+      const linkBtn = document.getElementById('btn-link-linear');
+      const unlinkBtn = document.getElementById('btn-unlink-linear');
+      const syncSec = document.getElementById('linear-sync-section');
+      if (status.linked) {
+        badge.textContent = 'linked: ' + status.project_name;
+        badge.style.background = '#1a1a3a'; badge.style.color = '#a78bfa';
+        linkBtn.textContent = 'Update Link';
+        unlinkBtn.style.display = 'inline-block';
+        syncSec.style.display = 'block';
+        if (status.last_sync) {
+          document.getElementById('linear-last-sync').textContent = new Date(status.last_sync).toLocaleString();
+        }
+        startLinearPoll();
+      } else {
+        badge.textContent = 'not linked';
+        badge.style.background = '#1a1a2e'; badge.style.color = '#555';
+        linkBtn.textContent = 'Link Project';
+        unlinkBtn.style.display = 'none';
+        syncSec.style.display = 'none';
+        stopLinearPoll();
+      }
+    } catch (_) {}
+
+    // Populate done col selector
+    try {
+      const detail = await invoke('get_board_detail', { boardId: currentBoardId });
+      const status = await invoke('get_linear_board_status_cmd', { boardId: currentBoardId }).catch(() => ({ linked: false }));
+      const sel = document.getElementById('linear-done-col-select');
+      sel.innerHTML = '<option value="">— auto-detect —</option>';
+      (detail.columns || []).forEach(col => {
+        const opt = document.createElement('option');
+        opt.value = col.id; opt.textContent = col.title;
+        sel.appendChild(opt);
+      });
+      if (status.linked && status.done_column_id) {
+        sel.value = status.done_column_id;
+      }
+    } catch (_) {}
+  }
+
+  async function loadLinearTeams() {
+    if (!window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    try {
+      const teams = await invoke('get_linear_teams_cmd');
+      const sel = document.getElementById('linear-team-select');
+      sel.innerHTML = '<option value="">— select team —</option>';
+      teams.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id; opt.textContent = t.name + ' [' + t.key + ']';
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      document.getElementById('linear-team-select').innerHTML = '<option value="">— failed to load teams —</option>';
+    }
+  }
+
+  async function onLinearTeamChange() {
+    const teamId = document.getElementById('linear-team-select').value;
+    if (!teamId || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    const projSel = document.getElementById('linear-project-select');
+    projSel.innerHTML = '<option value="">Loading…</option>';
+    try {
+      const projects = await invoke('get_linear_projects_cmd', { teamId });
+      projSel.innerHTML = '<option value="">— select project —</option>';
+      projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.name;
+        projSel.appendChild(opt);
+      });
+    } catch (e) {
+      projSel.innerHTML = '<option value="">— failed to load —</option>';
+    }
+    document.getElementById('linear-states-preview').style.display = 'none';
+  }
+
+  async function onLinearProjectChange() {
+    const teamId = document.getElementById('linear-team-select').value;
+    if (!teamId || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    const preview = document.getElementById('linear-states-preview');
+    const list = document.getElementById('linear-states-list');
+    try {
+      const states = await invoke('get_linear_workflow_states_cmd', { teamId });
+      const doneTypes = new Set(['completed', 'cancelled']);
+      list.innerHTML = states.map(s => {
+        const isDone = doneTypes.has(s.type_) || s.name.toLowerCase() === 'iced';
+        const badge = isDone
+          ? '<span style="background:#2a1a1a;color:#f87171;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">→ done</span>'
+          : '<span style="background:#1a2a1a;color:#4ade80;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">→ column</span>';
+        return `<div>${s.name} ${badge}</div>`;
+      }).join('');
+      preview.style.display = 'block';
+    } catch (_) {}
+  }
+
+  async function saveLinearToken() {
+    if (!window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    const token = document.getElementById('linear-token-input').value.trim();
+    const el = document.getElementById('linear-token-status');
+    el.textContent = 'Verifying…'; el.style.color = '#888';
+    try {
+      const r = await invoke('set_linear_token_cmd', { token });
+      if (r.ok) {
+        el.textContent = r.deleted ? 'API key cleared.' : '✓ Key saved and verified';
+        el.style.color = '#4ade80';
+        if (!r.deleted) loadLinearTeams();
+      } else {
+        el.textContent = '✗ ' + (r.error || 'Failed');
+        el.style.color = '#f87171';
+      }
+    } catch (e) { el.textContent = '✗ ' + e; el.style.color = '#f87171'; }
+  }
+
+  async function clearLinearToken() {
+    if (!window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    document.getElementById('linear-token-input').value = '';
+    try { await invoke('set_linear_token_cmd', { token: '' }); } catch (_) {}
+    document.getElementById('linear-token-status').textContent = 'API key cleared.';
+    document.getElementById('linear-token-status').style.color = '#888';
+  }
+
+  function setLinearLinkStatus(msg, isError) {
+    const el = document.getElementById('linear-link-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = isError ? '#f87171' : '#4ade80';
+  }
+
+  async function linkLinearBoard() {
+    if (!currentBoardId || !window.__TAURI__) { setLinearLinkStatus('No board selected.', true); return; }
+    const { invoke } = window.__TAURI__.core;
+    const teamId = document.getElementById('linear-team-select').value;
+    const projectSel = document.getElementById('linear-project-select');
+    const projectId = projectSel.value;
+    const projectName = projectSel.options[projectSel.selectedIndex]?.textContent || projectId;
+    const doneColId = document.getElementById('linear-done-col-select').value || null;
+    if (!teamId) { setLinearLinkStatus('Select a team first.', true); return; }
+    if (!projectId) { setLinearLinkStatus('Select a project first.', true); return; }
+    try {
+      setLinearLinkStatus('Linking and creating columns…', false);
+      await invoke('link_linear_board_cmd', { boardId: currentBoardId, teamId, projectId, projectName, doneColId });
+      setLinearLinkStatus('Linked ✓ — starting sync…', false);
+      await refreshLinearUI();
+      setTimeout(() => closeLinearModal(), 800);
+      setTimeout(async () => {
+        linearLinked = true;
+        await runLinearSync();
+      }, 900);
+    } catch (e) {
+      setLinearLinkStatus('✗ ' + e, true);
+    }
+  }
+
+  async function unlinkLinearBoard() {
+    if (!currentBoardId || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    showConfirm('Unlink this board from Linear? Sync will stop.', async () => {
+      try {
+        await invoke('unlink_linear_board_cmd', { boardId: currentBoardId });
+        linearLinked = false;
+        stopLinearPoll();
+        setLinearLinkStatus('', false);
+        await refreshLinearUI();
+      } catch (e) {
+        setLinearLinkStatus('✗ ' + e, true);
+      }
+    });
+  }
+
+  async function runLinearSync() {
+    if (!currentBoardId || !linearLinked || !window.__TAURI__) return;
+    const { invoke } = window.__TAURI__.core;
+    showSyncToast('Linear sync in progress…', false);
+    try {
+      const r = await invoke('sync_linear_board_cmd', { boardId: currentBoardId });
+      const msg = `↑${r.pushed} pushed  ↓${r.pulled} pulled  ✕${r.closed} closed`;
+      const lastEl = document.getElementById('linear-last-sync');
+      if (lastEl) lastEl.textContent = new Date().toLocaleString();
+      if (r.errors && r.errors.length) console.warn('[Linear sync errors]', r.errors);
+      showSyncToast('Linear sync done: ' + msg, false);
+      loadBoardColumns(currentBoardId).catch(() => {});
+    } catch (e) {
+      showSyncToast('Linear sync failed: ' + e, true);
+    }
+  }
+
+  function startLinearPoll() {
+    if (linearPollTimer) return;
+    linearPollTimer = setInterval(runLinearSync, 60000);
+  }
+  function stopLinearPoll() {
+    if (linearPollTimer) { clearInterval(linearPollTimer); linearPollTimer = null; }
+  }
+  function scheduleLinearSync() {
+    if (!linearLinked) return;
+    if (linearDebounceTimer) clearTimeout(linearDebounceTimer);
+    linearDebounceTimer = setTimeout(runLinearSync, 3000);
   }
 </script>
 

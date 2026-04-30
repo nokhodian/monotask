@@ -1,6 +1,6 @@
 [package]
 name = "monotask-cli"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 
 [[bin]]
@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 monotask-core    = { path = "../monotask-core" }
 monotask-github  = { path = "../monotask-github" }
+monotask-linear  = { path = "../monotask-linear" }
 monotask-crypto  = { path = "../monotask-crypto" }
 monotask-storage = { path = "../monotask-storage" }
 clap           = { workspace = true }

@@ -5,6 +5,7 @@ members = [
     "crates/monotask-net",
     "crates/monotask-storage",
     "crates/monotask-github",
+    "crates/monotask-linear",
     "crates/monotask-cli",
     "crates/monotask-tauri/src-tauri",
 ]
