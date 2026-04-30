@@ -1,8 +1,0 @@
-{
-  "initialized": "2026-04-21T09:02:17.270Z",
-  "status": "PENDING",
-  "cvesFixed": 0,
-  "totalCves": 3,
-  "lastScan": null,
-  "_note": "Run: npx monomind@latest security scan"
-}

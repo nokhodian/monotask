@@ -3,3 +3,12 @@ target/
 assets/monotask.iconset/
 replicate/
 .claude-flow/
+.claude/
+.monobrain/
+.monomind/
+.swarm/
+.superpowers/
+.mcp.json
+.DS_Store
+docs/improvements-plan*.md
+docs/superpowers/
